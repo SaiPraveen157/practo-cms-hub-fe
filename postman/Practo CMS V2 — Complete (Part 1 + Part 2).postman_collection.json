@@ -1,0 +1,1870 @@
+{
+  "info": {
+    "_postman_id": "39d257eb-e5cd-4083-9782-2b36e64ef932",
+    "name": "Practo CMS V2 — Complete (Part 1 + Part 2)",
+    "description": "Complete API collection for Practo Hub CMS V2.\n\n## Part 1 — Script Workflow (Phases 1–3)\nCovering script creation → Content/Brand review → Agency production → Medical review → Content/Brand approval → Content Approver lock.\n\n## Part 2 — Video Workflow (Phases 4–5)\nCovering First Line Up (rough cut) and First Cut (final cut) video upload, Medical Affairs review, Content/Brand review, approve/reject cycle.\n\n---\n\n## Base URL\n- Direct IP (permanent): http://164.52.204.34:5001\n- Cloudflare HTTPS (session): check /tmp/v2-backend-url.txt on server\n\n⚠️ Cloudflare URL changes on server restart. Direct IP never changes.\n\n## How to use\n1. Run the Login request for the role you want to test\n2. Token is auto-saved to {{token}} — no manual copy needed\n3. All other requests use {{token}} automatically\n\n## Test Accounts (all use password: Admin@123)\n- Super Admin      → admin@practo.com\n- Medical Affairs  → medical@practo.com\n- Content/Brand    → brand@practo.com\n- Agency POC       → agency@practo.com\n- Content Approver → approver@practo.com\n\n## Part 1 Workflow Order\nStep 0  [Medical Affairs]   POST /api/scripts                         → Create Script\nStep 1  [Medical Affairs]   POST /api/scripts/:id/submit             → DRAFT → CONTENT_BRAND_REVIEW\nStep 2a [Content/Brand]     POST /api/scripts/:id/reject             → CONTENT_BRAND_REVIEW → DRAFT\nStep 2b [Content/Brand]     POST /api/scripts/:id/approve            → CONTENT_BRAND_REVIEW → AGENCY_PRODUCTION\nStep 3  [Agency POC]        POST /api/scripts/:id/submit-revision    → AGENCY_PRODUCTION → MEDICAL_REVIEW\nStep 4a [Medical Affairs]   POST /api/scripts/:id/reject             → MEDICAL_REVIEW → AGENCY_PRODUCTION\nStep 4b [Medical Affairs]   POST /api/scripts/:id/approve            → MEDICAL_REVIEW → CONTENT_BRAND_APPROVAL\nStep 5  [Content/Brand]     POST /api/scripts/:id/approve            → CONTENT_BRAND_APPROVAL → CONTENT_APPROVER_REVIEW\nStep 6  [Content Approver]  POST /api/scripts/:id/lock               → CONTENT_APPROVER_REVIEW → LOCKED ✅\nEmergency [Super Admin]:    POST /api/scripts/:id/unlock             → LOCKED → CONTENT_APPROVER_REVIEW\n\n## Part 2 Workflow Order\nStep A  [Agency POC]        POST /api/videos/upload-url              → Get presigned S3 URL\nStep B  [Agency POC]        PUT <uploadUrl>                          → Upload file to S3 directly\nStep C  [Agency POC]        POST /api/videos                         → Register video → MEDICAL_REVIEW\nStep D  [Medical Affairs]   POST /api/videos/:id/approve             → MEDICAL_REVIEW → CONTENT_BRAND_REVIEW\n   or   [Medical Affairs]   POST /api/videos/:id/reject              → MEDICAL_REVIEW → new AGENCY_UPLOAD_PENDING\nStep E  [Content/Brand]     POST /api/videos/:id/approve             → CONTENT_BRAND_REVIEW → APPROVED\n   or   [Content/Brand]     POST /api/videos/:id/reject              → CONTENT_BRAND_REVIEW → new AGENCY_UPLOAD_PENDING\n   ↳ If FIRST_LINE_UP approved → system auto-creates FIRST_CUT placeholder in AGENCY_UPLOAD_PENDING\n   ↳ Agency repeats Steps A–C for phase: FIRST_CUT\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "53168836",
+    "_collection_link": "https://go.postman.co/collection/50573890-39d257eb-e5cd-4083-9782-2b36e64ef932?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "🔐 Auth",
+      "item": [
+        {
+          "name": "Login — Super Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var r=pm.response.json(); if(r.token){pm.collectionVariables.set('token',r.token);console.log('Token set: Super Admin');}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@practo.com\",\n  \"password\": \"Admin@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login — Medical Affairs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var r=pm.response.json(); if(r.token){pm.collectionVariables.set('token',r.token);console.log('Token set: Medical Affairs');}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"medical@practo.com\",\n  \"password\": \"Admin@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login — Content/Brand",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var r=pm.response.json(); if(r.token){pm.collectionVariables.set('token',r.token);console.log('Token set: Content/Brand');}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"brand@practo.com\",\n  \"password\": \"Admin@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login — Agency POC",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var r=pm.response.json(); if(r.token){pm.collectionVariables.set('token',r.token);console.log('Token set: Agency POC');}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"agency@practo.com\",\n  \"password\": \"Admin@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login — Content Approver",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var r=pm.response.json(); if(r.token){pm.collectionVariables.set('token',r.token);console.log('Token set: Content Approver');}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"approver@practo.com\",\n  \"password\": \"Admin@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Current User (me)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"Admin@123\",\n  \"newPassword\": \"NewPass@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/change-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "change-password"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@practo.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "forgot-password"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"PASTE_RESET_TOKEN_HERE\",\n  \"newPassword\": \"NewPass@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "reset-password"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "👤 Users (Super Admin only)",
+      "item": [
+        {
+          "name": "List All Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "role",
+                  "value": "MEDICAL_AFFAIRS",
+                  "description": "Filter: SUPER_ADMIN | MEDICAL_AFFAIRS | CONTENT_BRAND | AGENCY_POC | CONTENT_APPROVER",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "ACTIVE",
+                  "description": "Filter: ACTIVE | INACTIVE | SUSPENDED",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/USER_ID_HERE",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "USER_ID_HERE"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create New User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Test\",\n  \"lastName\": \"User\",\n  \"email\": \"testuser@practo.com\",\n  \"password\": \"Admin@123\",\n  \"role\": \"CONTENT_BRAND\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update User Role",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"USER_ID_HERE\",\n  \"role\": \"AGENCY_POC\"\n}\n\n// Valid roles: SUPER_ADMIN | MEDICAL_AFFAIRS | CONTENT_BRAND | AGENCY_POC | CONTENT_APPROVER"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/update-role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "update-role"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Toggle User Status (ACTIVE ↔ INACTIVE)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"USER_ID_HERE\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/toggle-status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "toggle-status"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update User Status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"USER_ID_HERE\",\n  \"status\": \"INACTIVE\"\n}\n\n// Valid statuses: ACTIVE | INACTIVE | SUSPENDED"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/update-status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "update-status"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "🔧 Force Move Workflow (Super Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contentId\": \"{{scriptId}}\",\n  \"targetStage\": \"CONTENT_BRAND_REVIEW\"\n}\n\n// Valid targetStage values:\n// DRAFT | CONTENT_BRAND_REVIEW | AGENCY_PRODUCTION\n// MEDICAL_REVIEW | CONTENT_BRAND_APPROVAL | CONTENT_APPROVER_REVIEW | LOCKED"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/force-move-workflow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "force-move-workflow"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📝 Part 1 — Scripts CRUD",
+      "item": [
+        {
+          "name": "Create Script (Medical Affairs)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var r=pm.response.json(); if(r.script&&r.script.id){pm.collectionVariables.set('scriptId',r.script.id);console.log('scriptId set:',r.script.id);}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Diabetes Management in Adults\",\n  \"insight\": \"Patients often misunderstand insulin resistance. This script should clarify the basics in simple language suitable for a general audience.\",\n  \"content\": \"Hello, today we will talk about diabetes. Diabetes is a condition where your body cannot properly use sugar for energy. There are two main types: Type 1 and Type 2...\"\n}\n\n// title   = Title/Topic\n// insight = Medical Affairs brief / context for Agency\n// content = Full script text (required, non-empty)"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List All Scripts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "status",
+                  "value": "DRAFT",
+                  "description": "DRAFT | CONTENT_BRAND_REVIEW | AGENCY_PRODUCTION | MEDICAL_REVIEW | CONTENT_BRAND_APPROVAL | CONTENT_APPROVER_REVIEW | LOCKED",
+                  "disabled": true
+                },
+                {
+                  "key": "title",
+                  "value": "",
+                  "description": "Search by title (case-insensitive)",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Script by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/{{scriptId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "{{scriptId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Script (DRAFT or AGENCY_PRODUCTION only)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Updated Script Title\",\n  \"insight\": \"Updated insight for Agency.\",\n  \"content\": \"Updated script content goes here...\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/{{scriptId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "{{scriptId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Script Stats (dashboard counts)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "stats"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Review Queue",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/queue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "queue"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Reviews — Approved history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/my-reviews?decision=APPROVED&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "my-reviews"
+              ],
+              "query": [
+                {
+                  "key": "decision",
+                  "value": "APPROVED",
+                  "description": "APPROVED or REJECTED — required"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Reviews — Rejected history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/my-reviews?decision=REJECTED&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "my-reviews"
+              ],
+              "query": [
+                {
+                  "key": "decision",
+                  "value": "REJECTED"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Script Review History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/reviews",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "{{scriptId}}",
+                "reviews"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Script Comments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "{{scriptId}}",
+                "comments"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add Comment to Script",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Please clarify the dosage section on paragraph 3.\",\n  \"scriptId\": \"{{scriptId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "{{scriptId}}",
+                "comments"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "⚙️ Part 1 — Script Workflow (follow steps in order)",
+      "item": [
+        {
+          "name": "Step 1 — Submit Script  [Medical Affairs → CONTENT_BRAND_REVIEW]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "{{scriptId}}",
+                "submit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Step 2a — Reject  [Content/Brand → DRAFT]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Script needs more clarity on the medication section. Please revise.\"\n}\n\n// comments is REQUIRED for rejection"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "{{scriptId}}",
+                "reject"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Step 2b — Approve  [Content/Brand → AGENCY_PRODUCTION]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Script looks good. Sending to Agency for production refinement.\"\n}\n\n// comments is REQUIRED on approve"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "{{scriptId}}",
+                "approve"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Step 3 — Agency Submits Revision  [Agency POC → MEDICAL_REVIEW]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Revised script by Agency: Hello, today we cover diabetes management in a simplified, audience-friendly way. Diabetes is a chronic condition where the body cannot regulate blood sugar effectively...\"\n}\n\n// content is REQUIRED and must be non-empty"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/submit-revision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "{{scriptId}}",
+                "submit-revision"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Step 4a — Reject Revision  [Medical Affairs → AGENCY_PRODUCTION]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"The medication dosage on paragraph 2 is incorrect. Please correct and resubmit.\"\n}\n\n// comments is REQUIRED for rejection"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "{{scriptId}}",
+                "reject"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Step 4b — Approve Revision  [Medical Affairs → CONTENT_BRAND_APPROVAL]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Agency version is medically accurate. Approved.\"\n}\n\n// comments is REQUIRED on approve"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "{{scriptId}}",
+                "approve"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Step 5 — Final Approve  [Content/Brand → CONTENT_APPROVER_REVIEW]  ⚠️ NO REJECT",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Final brand review passed. Ready for lock.\"\n}\n\n// comments is REQUIRED on approve\n// ⚠️ NO REJECT at CONTENT_BRAND_APPROVAL stage — approve-only by design"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "{{scriptId}}",
+                "approve"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Step 6 — Lock Script  [Content Approver → LOCKED ✅]  ⚠️ NO REJECT",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/lock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "{{scriptId}}",
+                "lock"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "🚨 Emergency Unlock  [Super Admin → CONTENT_APPROVER_REVIEW]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/unlock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "{{scriptId}}",
+                "unlock"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📧 Medical Affairs Fan-out Emails",
+      "item": [
+        {
+          "name": "List Fan-out Emails",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/medical-affairs-emails",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "medical-affairs-emails"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add Fan-out Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"medicalteam6@practo.com\"\n}\n\n// @@unique([userId, email]) — duplicate email per user returns 400"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/medical-affairs-emails",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "medical-affairs-emails"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Fan-out Email (soft delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/scripts/medical-affairs-emails/EMAIL_RECORD_ID_HERE",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "scripts",
+                "medical-affairs-emails",
+                "EMAIL_RECORD_ID_HERE"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🎬 Part 2 — Video Stats & Queue",
+      "item": [
+        {
+          "name": "Get Video Stats (dashboard)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/videos/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "videos",
+                "stats"
+              ]
+            },
+            "description": "Returns counts per phase.\n\nResponse:\n- firstLineUp: { awaitingUpload, pending, overdue, approved }\n- firstCut:    { awaitingUpload, pending, overdue, approved }\n- tatConfig:   { limitHours: 24, repeatCycleHours: 6 }\n\nAccess: All roles"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Video Queue (my action items)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/videos/queue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "videos",
+                "queue"
+              ]
+            },
+            "description": "Returns videos waiting for my action + videos I already reviewed.\n\nResponse: { available: [...], myReviews: [...], total }\n\nWhat each role sees:\n- Agency POC      → AGENCY_UPLOAD_PENDING + APPROVED videos\n- Medical Affairs → MEDICAL_REVIEW videos\n- Content/Brand   → CONTENT_BRAND_REVIEW videos\n- Super Admin     → all statuses\n\nEach video includes a TAT field (or null if not in review stage).\nAccess: Agency, Medical Affairs, Content/Brand, Super Admin"
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Reviews — Approved videos history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/videos/my-reviews?decision=APPROVED&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "videos",
+                "my-reviews"
+              ],
+              "query": [
+                {
+                  "key": "decision",
+                  "value": "APPROVED",
+                  "description": "APPROVED or REJECTED — REQUIRED"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Paginated history of videos this user has reviewed.\n\nAccess: Medical Affairs, Content/Brand, Super Admin\n\nError if decision is missing or wrong value:\n{ success: false, message: 'decision must be APPROVED or REJECTED' }"
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Reviews — Rejected videos history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/videos/my-reviews?decision=REJECTED&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "videos",
+                "my-reviews"
+              ],
+              "query": [
+                {
+                  "key": "decision",
+                  "value": "REJECTED"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🎬 Part 2 — Video Upload (Agency POC)",
+      "item": [
+        {
+          "name": "Step A — Get S3 Presigned Upload URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var r=pm.response.json(); if(r.uploadUrl){pm.collectionVariables.set('uploadUrl',r.uploadUrl);pm.collectionVariables.set('fileUrl',r.fileUrl);console.log('uploadUrl set. fileUrl:',r.fileUrl);}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileName\": \"first-line-up-v1.mp4\",\n  \"fileType\": \"video/mp4\",\n  \"fileSize\": 52428800\n}\n\n// fileType examples:\n// video/mp4, video/quicktime, video/x-msvideo\n// application/pdf\n// image/jpeg, image/png\n//\n// After this call:\n// 1. PUT the file binary to uploadUrl (Content-Type = fileType)\n// 2. On S3 success → call Step C with the fileUrl"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/videos/upload-url",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "videos",
+                "upload-url"
+              ]
+            },
+            "description": "Step 1 of upload. Get presigned S3 URL.\n\nAccess: Agency POC, Super Admin\n\nResponse:\n- uploadUrl: PUT this URL with file binary\n- fileUrl: use this in Step C (POST /api/videos)\n- key: S3 object key"
+          },
+          "response": []
+        },
+        {
+          "name": "Step B — Upload File to S3 (PUT to uploadUrl)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "video/mp4",
+                "description": "Must match fileType from Step A"
+              }
+            ],
+            "body": {
+              "mode": "file",
+              "file": {
+                "src": ""
+              }
+            },
+            "url": {
+              "raw": "PASTE_UPLOAD_URL_HERE",
+              "host": [
+                "PASTE_UPLOAD_URL_HERE"
+              ]
+            },
+            "description": "PUT the raw file binary to the presigned URL from Step A.\n\n⚠️ NO Authorization header — this goes directly to S3/MinIO, not to our API.\n⚠️ Content-Type must exactly match what you sent in Step A.\n\nIn Postman:\n- Select Body → binary\n- Choose your file\n- Set Content-Type header to match (e.g. video/mp4)\n\nOn success → HTTP 200 (no body) → proceed to Step C"
+          },
+          "response": []
+        },
+        {
+          "name": "Step C — Submit Video (register after S3 upload) — FIRST_LINE_UP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var r=pm.response.json(); if(r.video&&r.video.id){pm.collectionVariables.set('videoId',r.video.id);console.log('videoId set:',r.video.id);}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scriptId\": \"{{scriptId}}\",\n  \"phase\": \"FIRST_LINE_UP\",\n  \"fileUrl\": \"PASTE_FILE_URL_FROM_STEP_A_HERE\",\n  \"fileName\": \"first-line-up-v1.mp4\",\n  \"fileType\": \"video/mp4\",\n  \"fileSize\": 52428800\n}\n\n// phase: FIRST_LINE_UP (Phase 4 rough cut)\n//        FIRST_CUT     (Phase 5 final cut — only after FIRST_LINE_UP is APPROVED)\n//\n// scriptId: must belong to a LOCKED script\n//\n// Error cases:\n// { message: 'Cannot submit video — script is not yet locked (current status: CONTENT_BRAND_REVIEW)' }\n// { message: 'Cannot submit First Cut — First Line Up has not been approved yet' }\n// { message: 'A First Line Up video is already under review (status: MEDICAL_REVIEW)' }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/videos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "videos"
+              ]
+            },
+            "description": "Step 2 of upload. Register the video after S3 upload succeeds.\n\nAccess: Agency POC, Super Admin\n\nResponse 201:\n{ success: true, message: 'Video submitted for review', video: { ...VideoObject, status: 'MEDICAL_REVIEW' } }"
+          },
+          "response": []
+        },
+        {
+          "name": "Step C (alt) — Submit Video — FIRST_CUT",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var r=pm.response.json(); if(r.video&&r.video.id){pm.collectionVariables.set('videoId',r.video.id);console.log('videoId (First Cut) set:',r.video.id);}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scriptId\": \"{{scriptId}}\",\n  \"phase\": \"FIRST_CUT\",\n  \"fileUrl\": \"PASTE_FILE_URL_FROM_STEP_A_HERE\",\n  \"fileName\": \"first-cut-final.mp4\",\n  \"fileType\": \"video/mp4\",\n  \"fileSize\": 78643200\n}\n\n// Only possible after FIRST_LINE_UP is APPROVED\n// Backend updates the AGENCY_UPLOAD_PENDING placeholder that was auto-created"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/videos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "videos"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🎬 Part 2 — Video Workflow (review cycle)",
+      "item": [
+        {
+          "name": "Get Video by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/videos/{{videoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "videos",
+                "{{videoId}}"
+              ]
+            },
+            "description": "Full video object with reviews[], tat field, script info.\n\nfileCategory field guide:\n- 'video'  → use <video> tag\n- 'pdf'    → use PDF viewer / iframe\n- 'image'  → use <img> tag\n- 'other'  → show download link\n- null     → no file yet (AGENCY_UPLOAD_PENDING) — show 'Awaiting upload'\n\nAccess: All roles"
+          },
+          "response": []
+        },
+        {
+          "name": "Step D — Approve at MEDICAL_REVIEW  [Medical Affairs → CONTENT_BRAND_REVIEW]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Medically accurate. Looks good.\"\n}\n\n// comments is REQUIRED on approve\n// Medical Affairs approves MEDICAL_REVIEW → video moves to CONTENT_BRAND_REVIEW"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/videos/{{videoId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "videos",
+                "{{videoId}}",
+                "approve"
+              ]
+            },
+            "description": "Access: Medical Affairs (at MEDICAL_REVIEW stage), Super Admin\n\nError:\n{ message: 'Role AGENCY_POC cannot approve at stage MEDICAL_REVIEW' }\n{ message: 'Cannot approve video in status: APPROVED' }"
+          },
+          "response": []
+        },
+        {
+          "name": "Step D (alt) — Reject at MEDICAL_REVIEW  [Medical Affairs → new AGENCY_UPLOAD_PENDING]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Audio sync issue at 00:45 — please fix and re-upload.\"\n}\n\n// comments is REQUIRED on reject\n// Creates new video record: same scriptId + phase, version+1, status: AGENCY_UPLOAD_PENDING, no file"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/videos/{{videoId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "videos",
+                "{{videoId}}",
+                "reject"
+              ]
+            },
+            "description": "Access: Medical Affairs (at MEDICAL_REVIEW stage), Super Admin\n\nResponse:\n{ rejectedVideo: {...}, newVersion: { fileUrl: null, fileCategory: null, status: 'AGENCY_UPLOAD_PENDING' } }"
+          },
+          "response": []
+        },
+        {
+          "name": "Step E — Approve at CONTENT_BRAND_REVIEW  [Content/Brand → APPROVED]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Brand approved. Visuals and messaging are on point.\"\n}\n\n// comments is REQUIRED on approve\n// If phase is FIRST_LINE_UP → system auto-creates FIRST_CUT placeholder in AGENCY_UPLOAD_PENDING\n// Agency will see it in their queue with fileCategory: null (Awaiting upload)"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/videos/{{videoId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "videos",
+                "{{videoId}}",
+                "approve"
+              ]
+            },
+            "description": "Access: Content/Brand (at CONTENT_BRAND_REVIEW stage), Super Admin"
+          },
+          "response": []
+        },
+        {
+          "name": "Step E (alt) — Reject at CONTENT_BRAND_REVIEW  [Content/Brand → new AGENCY_UPLOAD_PENDING]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Brand colors are off — please adjust and re-upload.\"\n}\n\n// comments is REQUIRED on reject"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/videos/{{videoId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "videos",
+                "{{videoId}}",
+                "reject"
+              ]
+            },
+            "description": "Access: Content/Brand (at CONTENT_BRAND_REVIEW stage), Super Admin\n\nError:\n{ message: 'Role CONTENT_BRAND cannot reject at stage MEDICAL_REVIEW' }"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🎬 Part 2 — Video Comments",
+      "item": [
+        {
+          "name": "Get Comments on Video",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/videos/{{videoId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "videos",
+                "{{videoId}}",
+                "comments"
+              ]
+            },
+            "description": "Returns all comments oldest first.\n\nAccess: All roles"
+          },
+          "response": []
+        },
+        {
+          "name": "Add Comment to Video",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Frame looks a bit dark — could we brighten it?\"\n}\n\n// content is required\n// Error: { message: 'Comment content is required' }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/videos/{{videoId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "videos",
+                "{{videoId}}",
+                "comments"
+              ]
+            },
+            "description": "Access: All roles\n\nResponse 201:\n{ success: true, comment: { id, content, createdAt, author: { id, firstName, lastName, role } } }"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🔔 Notifications",
+      "item": [
+        {
+          "name": "Get My Notifications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Unread Count",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/unread-count",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "unread-count"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Mark One as Read",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/NOTIFICATION_ID_HERE/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "NOTIFICATION_ID_HERE",
+                "read"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Mark All as Read",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/read-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "read-all"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📋 Audit Logs",
+      "item": [
+        {
+          "name": "Get All Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/audit-logs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "entityType",
+                  "value": "SCRIPT",
+                  "disabled": true
+                },
+                {
+                  "key": "action",
+                  "value": "SUBMIT_SCRIPT",
+                  "disabled": true
+                },
+                {
+                  "key": "startDate",
+                  "value": "2026-01-01",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-12-31",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Audit Logs for Script",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/audit-logs/script/{{scriptId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "audit-logs",
+                "script",
+                "{{scriptId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Audit Logs for User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/audit-logs/user/USER_ID_HERE",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "audit-logs",
+                "user",
+                "USER_ID_HERE"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "❤️ Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Root",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                ""
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://164.52.204.34:5001",
+      "description": "Permanent direct IP — never changes."
+    },
+    {
+      "key": "token",
+      "value": "",
+      "description": "JWT token — auto-set after any Login request"
+    },
+    {
+      "key": "scriptId",
+      "value": "",
+      "description": "Auto-set after Create Script"
+    },
+    {
+      "key": "videoId",
+      "value": "",
+      "description": "Auto-set after Submit Video (POST /api/videos)"
+    },
+    {
+      "key": "minioUrl",
+      "value": "http://164.52.204.34:9002",
+      "description": "MinIO direct URL for file downloads. Cloudflare tunnel URL may differ — check server."
+    }
+  ]
+}

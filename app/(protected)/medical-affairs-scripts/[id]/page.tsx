@@ -28,14 +28,17 @@ import { toast } from "sonner"
 import { useAuthStore } from "@/store"
 import {
   getScript,
+  getScriptQueue,
   updateScript,
   submitScript,
   approveScript,
   rejectScript,
 } from "@/lib/scripts-api"
 import type { Script, ScriptStatus } from "@/types/script"
-import { getScriptStatusClassName } from "@/lib/script-status-styles"
+import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import { ScriptDetailSkeleton } from "@/components/loading/script-detail-skeleton"
+import { ScriptRejectionFeedback } from "@/components/script-rejection-feedback"
+import { ScriptTatBar } from "@/components/script-tat-bar"
 import { ArrowLeft, CheckCircle, Loader2, Send, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -92,18 +95,33 @@ export default function MedicalAffairsScriptDetailPage() {
   const [editInsight, setEditInsight] = useState("")
   const [editContent, setEditContent] = useState("")
 
+  const hasUnsavedChanges =
+    !!script &&
+    (editTitle !== (script.title ?? "") ||
+      editInsight !== (script.insight ?? "") ||
+      editContent !== (script.content ?? ""))
+
   useEffect(() => {
     if (!token || !id) return
     let cancelled = false
     setLoading(true)
-    getScript(token, id)
-      .then((res) => {
-        if (!cancelled && res.script) {
-          setScript(res.script)
-          setEditTitle(res.script.title ?? "")
-          setEditInsight(res.script.insight ?? "")
-          setEditContent(res.script.content ?? "")
+    Promise.all([getScript(token, id), getScriptQueue(token)])
+      .then(([scriptRes, queueRes]) => {
+        if (cancelled) return
+        const s = scriptRes.script
+        if (!s) return
+        const inQueue = [...(queueRes.available ?? []), ...(queueRes.myReviews ?? [])].find(
+          (q) => q.id === id
+        )
+        const scriptWithTat = {
+          ...s,
+          ...(inQueue?.tat && { tat: inQueue.tat }),
+          ...(inQueue?.latestRejection != null && { latestRejection: inQueue.latestRejection }),
         }
+        setScript(scriptWithTat)
+        setEditTitle(s.title ?? "")
+        setEditInsight(s.insight ?? "")
+        setEditContent(s.content ?? "")
       })
       .catch((err) => {
         if (!cancelled)
@@ -146,6 +164,12 @@ export default function MedicalAffairsScriptDetailPage() {
 
   async function handleConfirmSubmit() {
     if (!token || !id) return
+    if (hasUnsavedChanges) {
+      toast.error("Please save your changes before submitting.", {
+        description: "Click Save changes, then submit to Content/Brand.",
+      })
+      return
+    }
     setSubmitting(true)
     setError(null)
     try {
@@ -250,12 +274,9 @@ export default function MedicalAffairsScriptDetailPage() {
             <div className="mt-1 flex items-center gap-2">
               <Badge
                 variant="outline"
-                className={cn(
-                  "uppercase",
-                  getScriptStatusClassName(script.status)
-                )}
+                className={cn("uppercase", getScriptDisplayInfo(script).className)}
               >
-                {STATUS_LABELS[script.status]}
+                {getScriptDisplayInfo(script).label}
               </Badge>
               <span className="text-xs text-muted-foreground">
                 Updated {formatDate(script.updatedAt)}
@@ -263,6 +284,8 @@ export default function MedicalAffairsScriptDetailPage() {
             </div>
           </div>
         </div>
+
+        <ScriptTatBar script={script} />
 
         {error && (
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -323,7 +346,15 @@ export default function MedicalAffairsScriptDetailPage() {
         {isDraft && (
           <div className="flex flex-wrap gap-2 border-t pt-6">
             <Button
-              onClick={() => setSubmitDialogOpen(true)}
+              onClick={() => {
+                if (hasUnsavedChanges) {
+                  toast.error("Please save your changes before submitting.", {
+                    description: "Click Save changes, then submit to Content/Brand.",
+                  })
+                  return
+                }
+                setSubmitDialogOpen(true)
+              }}
               variant="outline"
               className="text-green-600 focus-visible:ring-green-500/30"
             >
@@ -387,6 +418,8 @@ export default function MedicalAffairsScriptDetailPage() {
             )}
           </>
         )}
+
+        <ScriptRejectionFeedback script={script} />
       </div>
 
       <Dialog open={submitDialogOpen} onOpenChange={setSubmitDialogOpen}>
@@ -409,7 +442,11 @@ export default function MedicalAffairsScriptDetailPage() {
             >
               Cancel
             </Button>
-            <Button onClick={handleConfirmSubmit} disabled={submitting}>
+            <Button
+              onClick={handleConfirmSubmit}
+              disabled={submitting || hasUnsavedChanges}
+              title={hasUnsavedChanges ? "Save your changes first" : undefined}
+            >
               {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
               Submit
             </Button>

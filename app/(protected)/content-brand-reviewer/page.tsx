@@ -7,10 +7,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useAuthStore } from "@/store"
-import { listScripts, getMyReviews } from "@/lib/scripts-api"
-import { getScriptStatusClassName } from "@/lib/script-status-styles"
+import { getScriptQueue, getMyReviews } from "@/lib/scripts-api"
+import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import type { Script, ScriptStatus } from "@/types/script"
 import { ScriptListSkeleton } from "@/components/loading/script-list-skeleton"
+import { ScriptTatBar } from "@/components/script-tat-bar"
 import { ScriptListPagination } from "@/components/ui/pagination"
 import { FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -79,15 +80,11 @@ export default function ContentBrandReviewerPage() {
       }
     })
     if (tab === "all") {
-      Promise.all([
-        listScripts(token, { page: 1, limit: 50, status: "CONTENT_BRAND_REVIEW" }),
-        listScripts(token, { page: 1, limit: 50, status: "CONTENT_BRAND_APPROVAL" }),
-      ])
-        .then(([reviewRes, approvalRes]) => {
+      getScriptQueue(token)
+        .then((res) => {
           if (!cancelled) {
-            const review = reviewRes.scripts ?? []
-            const approval = approvalRes.scripts ?? []
-            setScripts([...review, ...approval])
+            const combined = [...(res.available ?? []), ...(res.myReviews ?? [])]
+            setScripts(combined)
             setPage(1)
           }
         })
@@ -220,9 +217,9 @@ export default function ContentBrandReviewerPage() {
                       </Link>
                       <Badge
                         variant="outline"
-                        className={cn("shrink-0 uppercase", getScriptStatusClassName(script.status))}
+                        className={cn("shrink-0 uppercase", getScriptDisplayInfo(script).className)}
                       >
-                        {STATUS_LABELS[script.status]}
+                        {getScriptDisplayInfo(script).label}
                       </Badge>
                     </div>
                     <p className="line-clamp-2 text-sm text-muted-foreground">
@@ -235,6 +232,7 @@ export default function ContentBrandReviewerPage() {
                       {" · "}
                       {formatDate(script.updatedAt)}
                     </p>
+                    <ScriptTatBar script={script} />
                     <Button asChild variant="outline" className="w-fit text-blue-600 hover:bg-blue-50 hover:text-blue-700 focus-visible:ring-blue-500/30 dark:text-blue-500 dark:hover:bg-blue-950/50 dark:hover:text-blue-400">
                       <Link href={`/content-brand-reviewer/${script.id}`}>
                         {script.status === "CONTENT_BRAND_APPROVAL" ? "Final approve" : "Review script"}

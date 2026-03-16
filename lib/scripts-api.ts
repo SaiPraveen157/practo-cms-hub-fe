@@ -1,6 +1,6 @@
 /**
  * Scripts API — Phase 1 (Create, List, Get, Update, Submit).
- * Aligned with postman/Practo CMS V2 — Part 1- Script Workflow API.
+ * Aligned with postman/Practo CMS V2 — Complete (Part 1 + Part 2).
  */
 
 import { apiRequest } from "@/lib/api"
@@ -9,6 +9,7 @@ import type {
   UpdateScriptBody,
   ListScriptsParams,
   ListScriptsResponse,
+  ScriptQueueResponse,
   SingleScriptResponse,
 } from "@/types/script"
 
@@ -44,6 +45,14 @@ export async function listScripts(
     `/api/scripts${query ? `?${query}` : ""}`,
     { token }
   )
+}
+
+/** GET /api/scripts/queue — role-based queue (available + myReviews). Use for scripts list. */
+export async function getScriptQueue(
+  token: string | null
+): Promise<ScriptQueueResponse> {
+  checkToken(token)
+  return apiRequest<ScriptQueueResponse>("/api/scripts/queue", { token })
 }
 
 export async function getScript(

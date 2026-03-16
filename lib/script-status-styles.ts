@@ -1,4 +1,4 @@
-import type { ScriptStatus } from "@/types/script"
+import type { Script, ScriptStatus } from "@/types/script"
 
 /**
  * Text and border (outline) colors per script status. No background fill.
@@ -23,6 +23,37 @@ export const SCRIPT_STATUS_STYLES: Record<
     "border-green-500 text-green-700 dark:border-green-400 dark:text-green-300",
 }
 
+/** Display label when script came back due to rejection (from queue latestRejection). */
+const REJECTED_DISPLAY_STYLE =
+  "border-red-500 text-red-700 dark:border-red-400 dark:text-red-300"
+
+export const STATUS_DISPLAY_LABELS: Record<ScriptStatus, string> = {
+  DRAFT: "Draft",
+  CONTENT_BRAND_REVIEW: "Content/Brand Review",
+  AGENCY_PRODUCTION: "Agency Production",
+  MEDICAL_REVIEW: "Medical Review",
+  CONTENT_BRAND_APPROVAL: "Content/Brand Approval",
+  CONTENT_APPROVER_REVIEW: "Content Approver Review",
+  LOCKED: "Locked",
+}
+
 export function getScriptStatusClassName(status: ScriptStatus): string {
   return SCRIPT_STATUS_STYLES[status] ?? SCRIPT_STATUS_STYLES.DRAFT
+}
+
+/**
+ * Label and className for badge display. When script has latestRejection (from
+ * queue), show "Rejected" with red style so user sees it came back from review.
+ */
+export function getScriptDisplayInfo(script: Script): {
+  label: string
+  className: string
+} {
+  if (script.latestRejection?.comments != null) {
+    return { label: "Rejected", className: REJECTED_DISPLAY_STYLE }
+  }
+  return {
+    label: STATUS_DISPLAY_LABELS[script.status] ?? script.status,
+    className: getScriptStatusClassName(script.status),
+  }
 }

@@ -20,10 +20,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useAuthStore } from "@/store"
-import { listScripts, getMyReviews } from "@/lib/scripts-api"
-import { getScriptStatusClassName } from "@/lib/script-status-styles"
+import { getScriptQueue, getMyReviews } from "@/lib/scripts-api"
+import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import type { Script, ScriptStatus } from "@/types/script"
 import { ScriptListSkeleton } from "@/components/loading/script-list-skeleton"
+import { ScriptTatBar } from "@/components/script-tat-bar"
 import { ScriptListPagination } from "@/components/ui/pagination"
 import { ArrowRight, FileText, PlusCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -86,6 +87,22 @@ export default function MedicalAffairsScriptsPage() {
     return list
   }, [scripts, sortBy])
 
+  const filteredSortedScripts = useMemo(() => {
+    if (tab !== "all" || !statusFilter) return sortedScripts
+    return sortedScripts.filter((s) => s.status === statusFilter)
+  }, [tab, statusFilter, sortedScripts])
+
+  const displayedScripts = useMemo(() => {
+    if (tab !== "all") return filteredSortedScripts
+    const start = (page - 1) * PAGE_SIZE
+    return filteredSortedScripts.slice(start, start + PAGE_SIZE)
+  }, [tab, page, filteredSortedScripts])
+
+  const queuePaginationTotal = filteredSortedScripts.length
+  const queueTotalPages = Math.max(1, Math.ceil(queuePaginationTotal / PAGE_SIZE))
+  const paginationTotal = tab === "all" ? queuePaginationTotal : total
+  const paginationTotalPages = tab === "all" ? queueTotalPages : totalPages
+
   const isMedicalAffairs = user?.role === "MEDICAL_AFFAIRS"
 
   useEffect(() => {
@@ -98,16 +115,13 @@ export default function MedicalAffairsScriptsPage() {
       }
     })
     if (tab === "all") {
-      listScripts(token, {
-        page,
-        limit: PAGE_SIZE,
-        ...(statusFilter && { status: statusFilter as ScriptStatus }),
-      })
+      getScriptQueue(token)
         .then((res) => {
-          if (!cancelled && res.scripts) {
-            setScripts(res.scripts)
-            setTotal(res.total ?? 0)
-            setTotalPages(res.totalPages ?? 1)
+          if (!cancelled) {
+            const combined = [...(res.available ?? []), ...(res.myReviews ?? [])]
+            setScripts(combined)
+            setTotal(res.total ?? combined.length)
+            setTotalPages(Math.max(1, Math.ceil((res.total ?? combined.length) / PAGE_SIZE)))
           }
         })
         .catch((err) => {
@@ -303,7 +317,7 @@ export default function MedicalAffairsScriptsPage() {
           </Card>
         ) : (
           <ul className="space-y-4">
-            {sortedScripts.map((script) => (
+            {displayedScripts.map((script) => (
               <li key={script.id}>
                 <Card className="overflow-hidden shadow-sm transition-shadow hover:shadow-md">
                   <CardContent className="flex flex-col gap-4 p-5">
@@ -318,10 +332,10 @@ export default function MedicalAffairsScriptsPage() {
                         variant="outline"
                         className={cn(
                           "shrink-0 uppercase",
-                          getScriptStatusClassName(script.status)
+                          getScriptDisplayInfo(script).className
                         )}
                       >
-                        {STATUS_LABELS[script.status]}
+                        {getScriptDisplayInfo(script).label}
                       </Badge>
                     </div>
                     <p className="line-clamp-2 text-sm text-muted-foreground">
@@ -331,6 +345,7 @@ export default function MedicalAffairsScriptsPage() {
                       Created by Medical Affairs ·{" "}
                       {formatDate(script.createdAt ?? script.updatedAt)}
                     </p>
+                    <ScriptTatBar script={script} />
                     {script.status === "DRAFT" && (
                       <Button asChild className="mt-1 w-fit text-blue-500 focus-visible:ring-blue-500/30" variant="outline">
                         <Link
@@ -351,8 +366,8 @@ export default function MedicalAffairsScriptsPage() {
         {!loading && scripts.length > 0 && (
           <ScriptListPagination
             page={page}
-            totalPages={totalPages}
-            total={total}
+            totalPages={paginationTotalPages}
+            total={paginationTotal}
             limit={PAGE_SIZE}
             onPageChange={setPage}
           />
