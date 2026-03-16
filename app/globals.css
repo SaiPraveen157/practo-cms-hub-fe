@@ -126,3 +126,10 @@
     @apply font-sans;
     }
 }
+
+/* Sonner toast: close/dismiss button on top right */
+[data-sonner-toast] [data-close-button] {
+  left: auto !important;
+  right: 0 !important;
+  top: 0 !important;
+}

@@ -1,0 +1,57 @@
+---
+description: CMS product scope, workflow phases, roles, and code standards
+alwaysApply: true
+---
+
+# Practo CMS Hub — Product & Workflow
+
+## What we're building
+
+A **CMS-style web app** for managing **videos and their metadata** (timestamps, scripts, etc.), similar to how YouTube lets creators manage content. The app orchestrates script creation, review, approval, and (later) video production across multiple roles.
+
+**Flow reference:** Always refer to **`FRONTEND-API-GUIDE.md`** for how the application flow works (script states, role visibility, API usage).
+
+---
+
+## Current scope: Phases 1–3 (Script workflow)
+
+We are focusing on **Phases 1–3** (scripts only). Phases 4–7 (video production, first cut, final package, language packages) will be implemented later.
+
+- **Phase 1 — Script creation:** Medical Affairs creates script (title/topic, insight, script in English). Submits to Content/Brand. TAT 24h; email to mapped Medical Affairs IDs.
+- **Phase 2 — Script review & approval:** Content/Brand reviews → Approve (to Agency) or Reject (back to Medical Affairs for revision). Loop until approved.
+- **Phase 3 — Agency script production:** Approved script goes to Agency. Agency edits and submits revision → Medical Affairs review (approve/reject with comments). Then Content/Brand approval → Content Approver final approval → Script locked. Super Admin can unlock in emergencies.
+
+Script status flow (from FRONTEND-API-GUIDE):  
+`DRAFT → CONTENT_BRAND_REVIEW → AGENCY_PRODUCTION → MEDICAL_REVIEW → CONTENT_BRAND_APPROVAL → CONTENT_APPROVER_REVIEW → LOCKED`.
+
+---
+
+## Roles and permissions
+
+| Role | Responsibility / Visibility |
+|------|-----------------------------|
+| **Super Admin** | All states; user management; unlock script (emergency). |
+| **Medical Affairs** | Creates scripts; sees DRAFT, MEDICAL_REVIEW; submits, approves/rejects at medical stage. |
+| **Content/Brand** | Reviews scripts; sees CONTENT_BRAND_REVIEW, CONTENT_BRAND_APPROVAL; approves/rejects. |
+| **Agency POC** | Produces/revises scripts; sees AGENCY_PRODUCTION, LOCKED; submits revisions. |
+| **Content Approver** | Final sign-off; sees CONTENT_APPROVER_REVIEW; locks script. |
+
+Each role has its own set of permissions; APIs and UI must respect role-based visibility (e.g. `GET /api/scripts/queue` is role-filtered).
+
+---
+
+## Routes and architecture
+
+- **Routes:** Decide routes based on the workflow above (e.g. `/login`, `/dashboard`, `/scripts`, `/scripts/[id]`, `/scripts/queue`, role-specific views). Add or adjust routes as needed for clarity and role-based access.
+- **State management:** Use **Zustand** for global/client state (auth, UI state, cache). Keep stores focused and readable.
+- **Code quality:** Keep code **readable and maintainable**: clear names, small functions, shared types, minimal duplication. Prefer composition and explicit data flow.
+
+---
+
+## Summary
+
+- **Product:** CMS for videos and metadata; script workflow first (Phases 1–3).
+- **Flow:** Use **FRONTEND-API-GUIDE.md** as the source of truth for flow and APIs.
+- **Roles:** Super Admin, Medical Affairs, Content/Brand, Agency POC, Content Approver — each with distinct permissions and visibility.
+- **Now:** Script creation → review → agency production → lock. **Later:** Phases 4–7 (video, first cut, final package, languages).
+- **Tech:** Zustand for state; routes designed around the workflow; readable, maintainable code.

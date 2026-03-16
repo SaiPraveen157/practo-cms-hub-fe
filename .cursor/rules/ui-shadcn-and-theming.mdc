@@ -1,0 +1,25 @@
+---
+description: Use shadcn components and modern UI with light/dark theme support
+alwaysApply: true
+---
+
+# UI — shadcn and theming
+
+When building UI in this repo, follow these rules.
+
+## Prefer shadcn components
+
+1. **Always use shadcn components** from `components/ui/` when they fit the use case (buttons, inputs, dialogs, cards, tables, dropdowns, etc.).
+2. **Before adding custom UI**, check if a shadcn component exists or can be added via `npx shadcn@latest add <component>` — use it first.
+3. **If no shadcn component fits** a particular use case, **remind the user** explicitly (e.g. “No shadcn component for X; using custom markup”) and only then implement custom components or markup.
+4. Compose screens from existing `components/ui` primitives; avoid one-off custom elements when a shadcn equivalent exists.
+
+## Look and feel
+
+- **Modern and stylish:** Clean layout, consistent spacing, clear hierarchy. Use Tailwind and shadcn design tokens (e.g. `muted-foreground`, semantic colors) so the app feels polished.
+- **Light/dark theme:** The app supports theme toggling (e.g. via `next-themes` and `ThemeProvider`). Ensure new UI uses theme-aware tokens (no hardcoded light-only or dark-only colors) so it looks good in both modes. Prefer semantic classes like `background`, `foreground`, `muted`, `border`, etc.
+
+## Summary
+
+- Default to shadcn → remind if we can’t use it → then custom.
+- Keep UI modern and theme-aware for light and dark.
