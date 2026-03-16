@@ -191,9 +191,9 @@ export default function ContentApproverScriptDetailPage() {
         {canLock && (
           <div className="flex flex-wrap gap-2 border-t pt-6">
             <Button
-              onClick={() => setLockDialogOpen(true)}
               variant="outline"
-              className="text-green-600 focus-visible:ring-green-500/30"
+              onClick={() => setLockDialogOpen(true)}
+              className="text-blue-600 hover:bg-blue-50 hover:text-blue-700 focus-visible:ring-blue-500/30 dark:text-blue-500 dark:hover:bg-blue-950/50 dark:hover:text-blue-400"
             >
               <Lock className="mr-2 size-4" />
               Lock script
@@ -221,9 +221,10 @@ export default function ContentApproverScriptDetailPage() {
               Cancel
             </Button>
             <Button
+              variant="outline"
               onClick={handleLock}
               disabled={locking}
-              className="bg-green-600 text-white hover:bg-green-700 focus-visible:ring-green-500/30 dark:bg-green-600 dark:hover:bg-green-700"
+              className="text-blue-600 hover:bg-blue-50 hover:text-blue-700 focus-visible:ring-blue-500/30 dark:text-blue-500 dark:hover:bg-blue-950/50 dark:hover:text-blue-400"
             >
               {locking && <Loader2 className="mr-2 size-4 animate-spin" />}
               Lock

@@ -3,8 +3,7 @@
  * Base URL from env; all requests (except login) send Authorization: Bearer <token>.
  */
 
-const getBaseUrl = () =>
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://164.52.204.34:5001"
+const getBaseUrl = () => process.env.NEXT_PUBLIC_API_BASE_URL || ""
 
 export function getApiBaseUrl(): string {
   return getBaseUrl()
