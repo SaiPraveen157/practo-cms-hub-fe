@@ -235,7 +235,7 @@ export default function ContentBrandReviewerScriptPage() {
             {canReview && (
               <Button
                 variant="outline"
-                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                className="text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-500/30 dark:text-red-500 dark:hover:bg-red-950/50 dark:hover:text-red-400"
                 onClick={() => setRejectDialogOpen(true)}
               >
                 <XCircle className="mr-2 size-4" />
@@ -243,8 +243,9 @@ export default function ContentBrandReviewerScriptPage() {
               </Button>
             )}
             <Button
+              variant="outline"
+              className="text-green-600 hover:bg-green-50 hover:text-green-700 focus-visible:ring-green-500/30 dark:text-green-500 dark:hover:bg-green-950/50 dark:hover:text-green-400"
               onClick={() => setApproveDialogOpen(true)}
-              className="bg-green-600 text-white hover:bg-green-700 focus-visible:ring-green-500/30 dark:bg-green-600 dark:hover:bg-green-700"
             >
               <CheckCircle className="mr-2 size-4" />
               {canFinalApprove ? "Final approve" : "Approve"}
@@ -286,9 +287,10 @@ export default function ContentBrandReviewerScriptPage() {
               Cancel
             </Button>
             <Button
+              variant="outline"
               onClick={handleApprove}
               disabled={approving}
-              className="bg-green-600 text-white hover:bg-green-700 focus-visible:ring-green-500/30 dark:bg-green-600 dark:hover:bg-green-700"
+              className="text-green-600 hover:bg-green-50 hover:text-green-700 focus-visible:ring-green-500/30 dark:text-green-500 dark:hover:bg-green-950/50 dark:hover:text-green-400"
             >
               {approving && <Loader2 className="mr-2 size-4 animate-spin" />}
               Approve
@@ -329,7 +331,8 @@ export default function ContentBrandReviewerScriptPage() {
               Cancel
             </Button>
             <Button
-              variant="destructive"
+              variant="outline"
+              className="text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-500/30 dark:text-red-500 dark:hover:bg-red-950/50 dark:hover:text-red-400"
               onClick={handleReject}
               disabled={rejecting || !rejectComments.trim()}
             >

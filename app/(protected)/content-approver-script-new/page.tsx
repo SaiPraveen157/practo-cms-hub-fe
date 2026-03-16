@@ -216,7 +216,7 @@ export default function ContentApproverScriptNewPage() {
                     <p className="text-xs text-muted-foreground">
                       Ready to lock · {formatDate(script.updatedAt)}
                     </p>
-                    <Button variant="outline" asChild className="w-fit text-blue-500">
+                    <Button variant="outline" asChild className="w-fit text-blue-600 hover:bg-blue-50 hover:text-blue-700 focus-visible:ring-blue-500/30 dark:text-blue-500 dark:hover:bg-blue-950/50 dark:hover:text-blue-400">
                       <Link href={`/content-approver-script-new/${script.id}`}>
                         Review & lock
                       </Link>
