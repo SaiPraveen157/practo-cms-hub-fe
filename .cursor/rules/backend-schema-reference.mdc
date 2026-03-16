@@ -1,0 +1,20 @@
+---
+description: Use backend database schema as reference for types and data shapes
+alwaysApply: true
+---
+
+# Backend schema reference
+
+When working with **data models**, **API request/response shapes**, **TypeScript types** for entities (User, Script, ScriptReview, Comment, Notification, etc.), or **UI that displays or edits backend data**, always refer to the backend database schema.
+
+## Reference file
+
+- **Path:** `docs/database-schema.prisma`
+- **Content:** Prisma schema for Practo Hub CMS V2 (Part 1 — Script workflow). Defines enums (`UserRole`, `ScriptStatus`, `ReviewDecision`, etc.) and models (`User`, `Script`, `ScriptReview`, `Comment`, `Notification`, `AuditLog`, `MedicalAffairsEmail`, `Topic`).
+
+## What to do
+
+1. **Before defining or changing types** that mirror backend entities (e.g. Script, User), read the corresponding model and enums in `docs/database-schema.prisma` so field names, types, and relations match.
+2. **API payloads:** Request/response shapes should align with the schema (e.g. Script has `title`, `insight`, `content`, `status`; use `ScriptStatus` enum values).
+3. **Naming:** Prefer schema-aligned names in the frontend (e.g. `createdById`, `scriptId`) or document any intentional mapping (e.g. camelCase in API JSON vs snake_case in DB).
+4. Keep the schema file in the repo as the single source of truth for backend structure; update it when the backend schema changes so the frontend stays in sync.

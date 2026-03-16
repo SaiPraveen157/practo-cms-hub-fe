@@ -1,0 +1,261 @@
+// Practo Hub CMS — V2 New Workflow Schema (backend reference)
+// Branch: feature/v2-script-era
+// Part 1: Script Creation → Script Lock
+// Use this schema when defining types, API payloads, or UI that mirrors backend data.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum UserRole {
+  SUPER_ADMIN
+  MEDICAL_AFFAIRS
+  CONTENT_BRAND       // renamed from BRAND_REVIEWER — new flow role
+  AGENCY_POC
+  CONTENT_APPROVER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum TopicStatus {
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+}
+
+// V2 Script Status — New workflow state machine (Part 1)
+// DRAFT → CONTENT_BRAND_REVIEW → AGENCY_PRODUCTION → MEDICAL_REVIEW → CONTENT_BRAND_APPROVAL → CONTENT_APPROVER_REVIEW → LOCKED
+enum ScriptStatus {
+  DRAFT                    // Medical Affairs writing / revising
+  CONTENT_BRAND_REVIEW     // Phase 2: Content/Brand reviewing — can approve or reject
+  AGENCY_PRODUCTION        // Phase 3: Script sent to Agency for refinement
+  MEDICAL_REVIEW           // Phase 3: Agency submitted back, Medical Affairs reviewing — can approve or reject
+  CONTENT_BRAND_APPROVAL   // Phase 3: Medical approved, Content/Brand final check — approve only
+  CONTENT_APPROVER_REVIEW  // Phase 3: Content/Brand approved, Content Approver locks — lock only
+  LOCKED                   // Script locked, sent to Agency for production
+}
+
+enum ReviewDecision {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum NotificationType {
+  EMAIL
+  IN_APP
+}
+
+// ============================================================================
+// MODELS
+// ============================================================================
+
+model User {
+  id              String     @id @default(uuid())
+  email           String     @unique
+  password        String
+  firstName       String     @map("first_name")
+  lastName        String     @map("last_name")
+  role            UserRole
+  status          UserStatus @default(ACTIVE)
+
+  // OAuth
+  googleId        String?    @unique @map("google_id")
+
+  // Password Reset
+  resetToken      String?    @unique @map("reset_token")
+  resetTokenExpiry DateTime? @map("reset_token_expiry")
+
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+  lastLoginAt     DateTime?  @map("last_login_at")
+
+  // Relations
+  createdTopics         Topic[]               @relation("CreatedTopics")
+  createdScripts        Script[]              @relation("CreatedScripts")
+  lockedScripts         Script[]              @relation("LockedScripts")
+  assignedScripts       Script[]              @relation("AssignedScriptReviewer")
+  scriptReviews         ScriptReview[]
+  comments              Comment[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+  medicalAffairsEmails  MedicalAffairsEmail[]
+
+  @@map("users")
+}
+
+// Medical Affairs mapped email IDs for notification fan-out
+// One central login → multiple email IDs get notified on every action
+model MedicalAffairsEmail {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email     String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, email])
+  @@index([userId])
+  @@map("medical_affairs_emails")
+}
+
+model Topic {
+  id          String      @id @default(uuid())
+  title       String
+  description String?     @db.Text
+  status      TopicStatus @default(ASSIGNED)
+
+  // Doctor is optional in new flow — Medical Affairs creates scripts directly
+  assignedDoctorId  String?  @map("assigned_doctor_id")
+
+  createdById String      @map("created_by_id")
+  createdBy   User        @relation("CreatedTopics", fields: [createdById], references: [id], onDelete: Restrict)
+
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  @@map("topics")
+}
+
+model Script {
+  id                    String       @id @default(uuid())
+
+  version               Int          @default(1)
+
+  // Script content — Medical Affairs creates: Title/Topic (one string) + Insight + Content
+  title                 String?      // "Title or Topic" — single label field per flowchart
+  insight               String?      @db.Text
+  content               String       @db.Text
+
+  status                ScriptStatus @default(DRAFT)
+
+  // AI-generated fields (future use)
+  summary               String?      @db.Text
+  tags                  String[]
+  entities              Json?
+  qualityScore          Int?         @map("quality_score")
+  aiProcessedAt         DateTime?    @map("ai_processed_at")
+  aiProcessingStatus    String?      @map("ai_processing_status")
+
+  // Workflow tracking
+  createdById           String?      @map("created_by_id")
+  createdBy             User?        @relation("CreatedScripts", fields: [createdById], references: [id])
+
+  lockedById            String?      @map("locked_by_id")
+  lockedBy              User?        @relation("LockedScripts", fields: [lockedById], references: [id])
+  lockedAt              DateTime?    @map("locked_at")
+
+  // Current reviewer assignment (for queue)
+  assignedReviewerId    String?      @map("assigned_reviewer_id")
+  assignedReviewer      User?        @relation("AssignedScriptReviewer", fields: [assignedReviewerId], references: [id])
+  assignedAt            DateTime?    @map("assigned_at")
+
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  reviews               ScriptReview[]
+  comments              Comment[]
+
+  @@index([assignedReviewerId])
+  @@index([status])
+  @@index([title])
+  @@map("scripts")
+}
+
+model ScriptReview {
+  id            String         @id @default(uuid())
+  scriptId      String         @map("script_id")
+  script        Script         @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+
+  reviewerId    String         @map("reviewer_id")
+  reviewer      User           @relation(fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  reviewerType  UserRole       @map("reviewer_type")
+  decision      ReviewDecision @default(PENDING)
+  comments      String?        @db.Text
+
+  // Stage at which this review happened
+  stageAtReview ScriptStatus?  @map("stage_at_review")
+
+  reviewedAt    DateTime?      @map("reviewed_at")
+  createdAt     DateTime       @default(now()) @map("created_at")
+
+  @@map("script_reviews")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+
+  // Part 1: script comments only (video support added in Part 2)
+  scriptId  String   @map("script_id")
+  script    Script   @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+
+  authorId  String   @map("author_id")
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  content   String   @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("comments")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String           @map("user_id")
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type      NotificationType @default(IN_APP)
+  title     String
+  message   String           @db.Text
+
+  isRead    Boolean          @default(false) @map("is_read")
+  readAt    DateTime?        @map("read_at")
+
+  metadata  Json?
+
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  action     String   // SUBMIT_SCRIPT, APPROVE_SCRIPT, REJECT_SCRIPT, LOCK_SCRIPT, etc.
+  entityType String   @map("entity_type") // TOPIC, SCRIPT
+  entityId   String   @map("entity_id")
+
+  oldValue   Json?    @map("old_value")
+  newValue   Json?    @map("new_value")
+
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
