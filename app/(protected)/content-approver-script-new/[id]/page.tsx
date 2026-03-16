@@ -16,10 +16,12 @@ import {
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
 import { useAuthStore } from "@/store"
-import { getScript, lockScript } from "@/lib/scripts-api"
+import { getScript, getScriptQueue, lockScript } from "@/lib/scripts-api"
 import type { Script, ScriptStatus } from "@/types/script"
-import { getScriptStatusClassName } from "@/lib/script-status-styles"
+import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import { ScriptDetailSkeleton } from "@/components/loading/script-detail-skeleton"
+import { ScriptRejectionFeedback } from "@/components/script-rejection-feedback"
+import { ScriptTatBar } from "@/components/script-tat-bar"
 import { ArrowLeft, Loader2, Lock } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -66,9 +68,19 @@ export default function ContentApproverScriptDetailPage() {
     if (!token || !id) return
     let cancelled = false
     setLoading(true)
-    getScript(token, id)
-      .then((res) => {
-        if (!cancelled && res.script) setScript(res.script)
+    Promise.all([getScript(token, id), getScriptQueue(token)])
+      .then(([scriptRes, queueRes]) => {
+        if (cancelled) return
+        const s = scriptRes.script
+        if (!s) return
+        const inQueue = [...(queueRes.available ?? []), ...(queueRes.myReviews ?? [])].find(
+          (q) => q.id === id
+        )
+        setScript({
+          ...s,
+          ...(inQueue?.tat && { tat: inQueue.tat }),
+          ...(inQueue?.latestRejection != null && { latestRejection: inQueue.latestRejection }),
+        })
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load script")
@@ -134,9 +146,9 @@ export default function ContentApproverScriptDetailPage() {
             <div className="mt-1 flex items-center gap-2">
               <Badge
                 variant="outline"
-                className={cn("uppercase", getScriptStatusClassName(script.status))}
+                className={cn("uppercase", getScriptDisplayInfo(script).className)}
               >
-                {STATUS_LABELS[script.status]}
+                {getScriptDisplayInfo(script).label}
               </Badge>
               <span className="text-xs text-muted-foreground">
                 Updated {formatDate(script.updatedAt)}
@@ -144,6 +156,8 @@ export default function ContentApproverScriptDetailPage() {
             </div>
           </div>
         </div>
+
+        <ScriptTatBar script={script} />
 
         {error && (
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -200,6 +214,8 @@ export default function ContentApproverScriptDetailPage() {
             </Button>
           </div>
         )}
+
+        <ScriptRejectionFeedback script={script} />
       </div>
 
       <Dialog open={lockDialogOpen} onOpenChange={setLockDialogOpen}>

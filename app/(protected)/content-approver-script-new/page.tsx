@@ -1,16 +1,17 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useAuthStore } from "@/store"
-import { listScripts, getMyReviews } from "@/lib/scripts-api"
-import { getScriptStatusClassName } from "@/lib/script-status-styles"
+import { getScriptQueue, getMyReviews } from "@/lib/scripts-api"
+import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import type { Script, ScriptStatus } from "@/types/script"
 import { ScriptListSkeleton } from "@/components/loading/script-list-skeleton"
+import { ScriptTatBar } from "@/components/script-tat-bar"
 import { ScriptListPagination } from "@/components/ui/pagination"
 import { FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -55,6 +56,17 @@ export default function ContentApproverScriptNewPage() {
 
   const isContentApprover = user?.role === "CONTENT_APPROVER"
 
+  const displayedScripts = useMemo(() => {
+    if (tab !== "all") return scripts
+    const start = (page - 1) * PAGE_SIZE
+    return scripts.slice(start, start + PAGE_SIZE)
+  }, [tab, page, scripts])
+
+  const paginationTotal = tab === "all" ? scripts.length : total
+  const paginationTotalPages = tab === "all"
+    ? Math.max(1, Math.ceil(scripts.length / PAGE_SIZE))
+    : totalPages
+
   useEffect(() => {
     if (!token) return
     let cancelled = false
@@ -65,16 +77,13 @@ export default function ContentApproverScriptNewPage() {
       }
     })
     if (tab === "all") {
-      listScripts(token, {
-        page,
-        limit: PAGE_SIZE,
-        status: "CONTENT_APPROVER_REVIEW",
-      })
+      getScriptQueue(token)
         .then((res) => {
-          if (!cancelled && res.scripts) {
-            setScripts(res.scripts)
-            setTotal(res.total ?? 0)
-            setTotalPages(res.totalPages ?? 1)
+          if (!cancelled) {
+            const combined = [...(res.available ?? []), ...(res.myReviews ?? [])]
+            setScripts(combined)
+            setTotal(res.total ?? combined.length)
+            setTotalPages(Math.max(1, Math.ceil((res.total ?? combined.length) / PAGE_SIZE)))
           }
         })
         .catch((err) => {
@@ -192,7 +201,7 @@ export default function ContentApproverScriptNewPage() {
           </Card>
         ) : (
           <ul className="space-y-4">
-            {scripts.map((script) => (
+            {displayedScripts.map((script) => (
               <li key={script.id}>
                 <Card className="overflow-hidden shadow-sm transition-shadow hover:shadow-md">
                   <CardContent className="flex flex-col gap-4 p-5">
@@ -205,9 +214,9 @@ export default function ContentApproverScriptNewPage() {
                       </Link>
                       <Badge
                         variant="outline"
-                        className={cn("shrink-0 uppercase", getScriptStatusClassName(script.status))}
+                        className={cn("shrink-0 uppercase", getScriptDisplayInfo(script).className)}
                       >
-                        {STATUS_LABELS[script.status]}
+                        {getScriptDisplayInfo(script).label}
                       </Badge>
                     </div>
                     <p className="line-clamp-2 text-sm text-muted-foreground">
@@ -216,6 +225,7 @@ export default function ContentApproverScriptNewPage() {
                     <p className="text-xs text-muted-foreground">
                       Ready to lock · {formatDate(script.updatedAt)}
                     </p>
+                    <ScriptTatBar script={script} />
                     <Button variant="outline" asChild className="w-fit text-blue-600 hover:bg-blue-50 hover:text-blue-700 focus-visible:ring-blue-500/30 dark:text-blue-500 dark:hover:bg-blue-950/50 dark:hover:text-blue-400">
                       <Link href={`/content-approver-script-new/${script.id}`}>
                         Review & lock
@@ -231,8 +241,8 @@ export default function ContentApproverScriptNewPage() {
         {!loading && scripts.length > 0 && (
           <ScriptListPagination
             page={page}
-            totalPages={totalPages}
-            total={total}
+            totalPages={paginationTotalPages}
+            total={paginationTotal}
             limit={PAGE_SIZE}
             onPageChange={setPage}
           />

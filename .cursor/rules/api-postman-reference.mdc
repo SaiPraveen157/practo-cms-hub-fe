@@ -9,8 +9,8 @@ When integrating API endpoints into this repo (API client, hooks, pages, or serv
 
 ## Reference file
 
-- **Path:** `postman/Practo CMS V2 — Part 1- Script Workflow API.postman_collection.json`
-- **Scope:** Practo Hub CMS V2 — Part 1 (Script workflow: Phases 1–3 — Script Creation to Script Lock)
+- **Path:** `postman/Practo CMS V2 — Complete (Part 1 + Part 2).postman_collection.json`
+- **Scope:** Part 1 — Script workflow (Phases 1–3). Part 2 — Video workflow (Phases 4–5: First Line Up, First Cut, approve/reject).
 
 ## What to do
 
@@ -25,6 +25,7 @@ When integrating API endpoints into this repo (API client, hooks, pages, or serv
 - **Users (Super Admin):** List, Get profile, Get by ID, Create, Update role, Toggle status
 - **Scripts — CRUD:** Create, List, Get by ID, Update, Reviews history, My queue/approved/rejected, Search (by status)
 - **Scripts — Workflow:** Submit, Approve, Reject, Submit revision, Lock, Unlock (Super Admin)
+- **Videos (Part 2):** Upload URL, Register video, Approve, Reject (Medical Affairs & Content/Brand)
 - **Medical Affairs Fan-out Emails:** List, Add, Remove
 - **Comments:** Get, Add, Update, Delete
 - **Notifications:** Get mine, Unread count, Mark read / Mark all read
