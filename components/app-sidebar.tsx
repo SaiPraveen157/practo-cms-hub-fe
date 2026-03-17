@@ -74,16 +74,14 @@ export function AppSidebar() {
   })
   const [unreadNotificationCount, setUnreadNotificationCount] = useState<number>(0)
   const token = useAuthStore((s) => s.token)
+  const displayUnreadCount = token ? unreadNotificationCount : 0
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed))
   }, [collapsed])
 
   useEffect(() => {
-    if (!token) {
-      setUnreadNotificationCount(0)
-      return
-    }
+    if (!token) return
     let cancelled = false
     getUnreadCount(token)
       .then((count) => {
@@ -139,13 +137,13 @@ export function AppSidebar() {
       )}
     >
       {/* Header: Practo HUB CMS, Content Management, collapse */}
-      <div className="flex h-14 items-center gap-2 border-b border-slate-700/80 px-3">
+      <div className="flex items-center gap-2 border-b border-slate-700/80 px-3">
         {!collapsed && (
-          <div className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate text-base font-bold tracking-tight text-white">
+          <div className="flex min-w-0 flex-1 flex-col my-5 px-2">
+            <span className="truncate bg-linear-to-r from-[#518dcd] to-[#7ac0ca] bg-clip-text font-bold tracking-tight text-transparent text-xl">
               Practo HUB CMS
             </span>
-            <span className="truncate text-xs text-slate-400">Content Management</span>
+            <span className="truncate text-md text-slate-400">Content Management</span>
           </div>
         )}
         <Button
@@ -173,7 +171,7 @@ export function AppSidebar() {
           const Icon = iconMap[item.icon] ?? LayoutDashboard
           const showUnreadBadge =
             (item.key === "NOTIFICATIONS" || item.key === "NOCIFICATIONS") &&
-            unreadNotificationCount > 0
+            displayUnreadCount > 0
           return (
             <Link
               key={item.key}
@@ -191,9 +189,9 @@ export function AppSidebar() {
                 {showUnreadBadge && (
                   <span
                     className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium text-white"
-                    aria-label={`${unreadNotificationCount} unread notifications`}
+                    aria-label={`${displayUnreadCount} unread notifications`}
                   >
-                    {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+                    {displayUnreadCount > 99 ? "99+" : displayUnreadCount}
                   </span>
                 )}
               </span>
@@ -202,7 +200,7 @@ export function AppSidebar() {
                   <span className="truncate">{item.label}</span>
                   {showUnreadBadge && (
                     <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-medium text-white">
-                      {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+                      {displayUnreadCount > 99 ? "99+" : displayUnreadCount}
                     </span>
                   )}
                 </>

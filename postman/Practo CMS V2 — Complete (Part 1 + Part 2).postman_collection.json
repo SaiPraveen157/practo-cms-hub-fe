@@ -279,7 +279,10 @@
               ]
             }
           },
-          "response": []
+          "response": {
+            "success": true,
+            "message": "If the email exists, a reset link has been sent"
+          }
         },
         {
           "name": "Reset Password",
