@@ -4,14 +4,8 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -20,13 +14,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useAuthStore } from "@/store"
-import { getScriptQueue, getMyReviews } from "@/lib/scripts-api"
-import { getScriptDisplayInfo } from "@/lib/script-status-styles"
-import type { Script, ScriptStatus } from "@/types/script"
+import { getScriptQueue, getMyReviews, getScriptStats } from "@/lib/scripts-api"
+import { filterScriptsBySearch } from "@/lib/script-search"
+import type { Script, ScriptStatus, ScriptStatsResponse } from "@/types/script"
 import { ScriptListSkeleton } from "@/components/loading/script-list-skeleton"
-import { ScriptTatBar } from "@/components/script-tat-bar"
+import { ScriptListingCard } from "@/components/script-listing-card"
 import { ScriptListPagination } from "@/components/ui/pagination"
-import { ArrowRight, FileText, PlusCircle } from "lucide-react"
+import { ScriptStatsCards } from "@/components/script-stats-cards"
+import { ArrowRight, FileText, Filter, PlusCircle, Search } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 10
@@ -39,18 +34,6 @@ const STATUS_LABELS: Record<ScriptStatus, string> = {
   CONTENT_BRAND_APPROVAL: "CONTENT BRAND APPROVAL",
   CONTENT_APPROVER_REVIEW: "CONTENT APPROVER REVIEW",
   LOCKED: "LOCKED",
-}
-
-function formatDate(s: string) {
-  try {
-    return new Date(s).toLocaleDateString(undefined, {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    })
-  } catch {
-    return s
-  }
 }
 
 type TabKey = "all" | "approved" | "rejected"
@@ -68,6 +51,8 @@ export default function MedicalAffairsScriptsPage() {
   const [statusFilter, setStatusFilter] = useState<ScriptStatus | "">("")
   const [sortBy, setSortBy] = useState<"name" | "dateCreated">("dateCreated")
   const [error, setError] = useState<string | null>(null)
+  const [stats, setStats] = useState<ScriptStatsResponse | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
 
   const sortedScripts = useMemo(() => {
     const list = [...scripts]
@@ -92,13 +77,18 @@ export default function MedicalAffairsScriptsPage() {
     return sortedScripts.filter((s) => s.status === statusFilter)
   }, [tab, statusFilter, sortedScripts])
 
-  const displayedScripts = useMemo(() => {
-    if (tab !== "all") return filteredSortedScripts
-    const start = (page - 1) * PAGE_SIZE
-    return filteredSortedScripts.slice(start, start + PAGE_SIZE)
-  }, [tab, page, filteredSortedScripts])
+  const searchFilteredScripts = useMemo(
+    () => filterScriptsBySearch(filteredSortedScripts, searchQuery),
+    [filteredSortedScripts, searchQuery]
+  )
 
-  const queuePaginationTotal = filteredSortedScripts.length
+  const displayedScripts = useMemo(() => {
+    if (tab !== "all") return searchFilteredScripts
+    const start = (page - 1) * PAGE_SIZE
+    return searchFilteredScripts.slice(start, start + PAGE_SIZE)
+  }, [tab, page, searchFilteredScripts])
+
+  const queuePaginationTotal = searchFilteredScripts.length
   const queueTotalPages = Math.max(1, Math.ceil(queuePaginationTotal / PAGE_SIZE))
   const paginationTotal = tab === "all" ? queuePaginationTotal : total
   const paginationTotalPages = tab === "all" ? queueTotalPages : totalPages
@@ -157,6 +147,11 @@ export default function MedicalAffairsScriptsPage() {
     }
   }, [token, tab, statusFilter, page])
 
+  useEffect(() => {
+    if (!token) return
+    getScriptStats(token).then(setStats).catch(() => setStats(null))
+  }, [token])
+
   if (!isMedicalAffairs) {
     return (
       <div className="p-6 md:p-8">
@@ -180,18 +175,17 @@ export default function MedicalAffairsScriptsPage() {
 
   return (
     <div className="p-6 md:p-8">
-      <div className="mx-auto max-w-4xl space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-auto max-w-6xl space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
               Medical Affairs Scripts
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Create scripts and send them to Content/Brand for review. TAT 24
-              hours.
+              Create scripts and send them to Content/Brand for review. TAT 24 hours.
             </p>
           </div>
-          <Button asChild>
+          <Button asChild className="shrink-0 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white border-0 hover:opacity-90">
             <Link href="/medical-affairs-scripts/new">
               <PlusCircle className="mr-2 size-4" />
               Create script
@@ -199,12 +193,64 @@ export default function MedicalAffairsScriptsPage() {
           </Button>
         </div>
 
-        <div className="border-b">
-          <nav
-            className="flex gap-1"
-            role="tablist"
-            aria-label="Script list tabs"
-          >
+        <ScriptStatsCards stats={stats} />
+
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search by title..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                setPage(1)
+              }}
+              className="h-10 pl-9"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={sortBy}
+              onValueChange={(v) => setSortBy(v as "name" | "dateCreated")}
+            >
+              <SelectTrigger className="h-10 w-[140px]">
+                <SelectValue>{sortBy === "name" ? "Name" : "Date"}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="name">Name</SelectItem>
+                <SelectItem value="dateCreated">Date</SelectItem>
+              </SelectContent>
+            </Select>
+            {tab === "all" && (
+              <Select
+                value={statusFilter || "all"}
+                onValueChange={(v) => {
+                  setStatusFilter(v === "all" ? "" : (v as ScriptStatus))
+                  setPage(1)
+                }}
+              >
+                <SelectTrigger className="h-10 w-[140px]" aria-label="Filter by status">
+                  <Filter className="mr-1.5 size-4 shrink-0" />
+                  <SelectValue>
+                    {statusFilter ? STATUS_LABELS[statusFilter] : "Filter"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  {(Object.keys(STATUS_LABELS) as ScriptStatus[]).map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {STATUS_LABELS[s]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        </div>
+
+        <div className="border-b border-border">
+          <nav className="flex gap-1" role="tablist" aria-label="Script list tabs">
             {(
               [
                 { key: "all" as TabKey, label: "All" },
@@ -221,7 +267,7 @@ export default function MedicalAffairsScriptsPage() {
                 className={cn(
                   "border-b-2 px-4 py-3 text-sm font-medium transition-colors",
                   tab === key
-                    ? "border-primary text-primary"
+                    ? "border-primary text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -229,56 +275,6 @@ export default function MedicalAffairsScriptsPage() {
               </button>
             ))}
           </nav>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-end gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-muted-foreground">
-              Sort by
-            </span>
-            <Select
-              value={sortBy}
-              onValueChange={(v) => setSortBy(v as "name" | "dateCreated")}
-            >
-              <SelectTrigger className="min-w-[160px]">
-                <SelectValue>{sortBy === "name" ? "Name" : "Date"}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="name">Name</SelectItem>
-                <SelectItem value="dateCreated">Date</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {tab === "all" && (
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-muted-foreground">
-                Filter by status
-              </span>
-              <Select
-                value={statusFilter || "all"}
-              onValueChange={(v) => {
-                setStatusFilter(v === "all" ? "" : (v as ScriptStatus))
-                setPage(1)
-              }}
-              >
-                <SelectTrigger className="min-w-[200px] lowercase">
-                  <SelectValue>
-                    {statusFilter ? STATUS_LABELS[statusFilter].toLowerCase() : "All statuses"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="lowercase">
-                  <SelectItem value="all" className="text-md">
-                    All statuses
-                  </SelectItem>
-                  {(Object.keys(STATUS_LABELS) as ScriptStatus[]).map((s) => (
-                    <SelectItem key={s} value={s} className="text-xs">
-                      {STATUS_LABELS[s]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
         </div>
 
         {error && (
@@ -309,61 +305,59 @@ export default function MedicalAffairsScriptsPage() {
                   "Scripts you reject in Medical Review will appear here."}
               </p>
               {tab === "all" && (
-                <Button asChild className="mt-4">
+                <Button asChild className="mt-4 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white border-0 hover:opacity-90">
                   <Link href="/medical-affairs-scripts/new">Create script</Link>
                 </Button>
               )}
             </CardContent>
           </Card>
+        ) : searchFilteredScripts.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+              <Search className="size-12 text-muted-foreground" />
+              <p className="mt-4 font-medium">No scripts match your search</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Try a different search term or clear the search.
+              </p>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => { setSearchQuery(""); setPage(1) }}
+              >
+                Clear search
+              </Button>
+            </CardContent>
+          </Card>
         ) : (
-          <ul className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             {displayedScripts.map((script) => (
-              <li key={script.id}>
-                <Card className="overflow-hidden shadow-sm transition-shadow hover:shadow-md">
-                  <CardContent className="flex flex-col gap-4 p-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <Link
-                        href={`/medical-affairs-scripts/${script.id}`}
-                        className="min-w-0 flex-1 text-xl leading-tight font-semibold hover:underline"
-                      >
-                        {script.title || "Untitled script"}
+              <ScriptListingCard
+                key={script.id}
+                script={script}
+                detailHref={`/medical-affairs-scripts/${script.id}`}
+                authorSubtitle="Medical Affairs"
+                onCardClick={() => router.push(`/medical-affairs-scripts/${script.id}`)}
+                actions={
+                  script.status === "DRAFT" ? (
+                    <Button
+                      asChild
+                      size="sm"
+                      className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Link href={`/medical-affairs-scripts/${script.id}?submit=1`}>
+                        Send to Content/Brand
+                        <ArrowRight className="size-4 shrink-0" />
                       </Link>
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "shrink-0 uppercase",
-                          getScriptDisplayInfo(script).className
-                        )}
-                      >
-                        {getScriptDisplayInfo(script).label}
-                      </Badge>
-                    </div>
-                    <p className="line-clamp-2 text-sm text-muted-foreground">
-                      {script.insight || "No insight"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Created by Medical Affairs ·{" "}
-                      {formatDate(script.createdAt ?? script.updatedAt)}
-                    </p>
-                    <ScriptTatBar script={script} />
-                    {script.status === "DRAFT" && (
-                      <Button asChild className="mt-1 w-fit text-blue-500 focus-visible:ring-blue-500/30" variant="outline">
-                        <Link
-                          href={`/medical-affairs-scripts/${script.id}?submit=1`}
-                        >
-                          Send to Content/Brand for review
-                          <ArrowRight className="ml-2 size-4" />
-                        </Link>
-                      </Button>
-                    )}
-                  </CardContent>
-                </Card>
-              </li>
+                    </Button>
+                  ) : null
+                }
+              />
             ))}
-          </ul>
+          </div>
         )}
 
-        {!loading && scripts.length > 0 && (
+        {!loading && searchFilteredScripts.length > 0 && (
           <ScriptListPagination
             page={page}
             totalPages={paginationTotalPages}

@@ -29,7 +29,7 @@ export const ROLE_ACCESS: Record<UserRole, RouteKey[]> = {
     "CONTENT_APPROVER_SCRIPTS",
     // "CONTENT_APPROVER_VIDEOS", // Phase 4+
     "NOCIFICATIONS",
-    "DOCTOR_PROFILE",
+    // "DOCTOR_PROFILE",
   ],
 
   CONTENT_BRAND: [

@@ -32,7 +32,7 @@ export default function ContentApproverHomePage() {
             <p className="text-sm text-muted-foreground">
               You see scripts in Content Approver Review (approved by Content/Brand). Lock a script to move it to Locked; then the Agency can use it for production.
             </p>
-            <Button asChild>
+            <Button asChild className="bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white border-0 hover:opacity-90">
               <Link href="/content-approver-script-new">
                 <ShieldCheck className="mr-2 size-4" />
                 Open script queue

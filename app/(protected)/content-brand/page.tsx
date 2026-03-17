@@ -32,7 +32,7 @@ export default function ContentBrandHomePage() {
             <p className="text-sm text-muted-foreground">
               You see scripts in Content/Brand Review and Content/Brand Approval. Approve to send to Agency or to Content Approver; reject to send back with feedback. TAT 24 hours.
             </p>
-            <Button asChild>
+            <Button asChild className="bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white border-0 hover:opacity-90">
               <Link href="/content-brand-reviewer">
                 <FileText className="mr-2 size-4" />
                 Open review queue

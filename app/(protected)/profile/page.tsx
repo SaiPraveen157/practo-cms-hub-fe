@@ -9,19 +9,11 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ArrowLeft } from "lucide-react"
 
 function getInitials(firstName: string, lastName: string, email: string) {
-  if (firstName && lastName) return `${firstName[0]}${lastName[0]}`.toUpperCase()
+  if (firstName && lastName)
+    return `${firstName[0]}${lastName[0]}`.toUpperCase()
   if (firstName) return firstName.slice(0, 2).toUpperCase()
   if (email) return email.slice(0, 2).toUpperCase()
   return "U"
-}
-
-function formatDate(value: string | undefined) {
-  if (!value) return "—"
-  try {
-    return new Date(value).toLocaleString()
-  } catch {
-    return value
-  }
 }
 
 function DetailRow({
@@ -33,10 +25,10 @@ function DetailRow({
 }) {
   return (
     <div className="flex flex-col gap-1.5 py-5 first:pt-0 last:pb-0">
-      <dt className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <dt className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
         {label}
       </dt>
-      <dd className="text-base text-foreground leading-relaxed">{value}</dd>
+      <dd className="text-base leading-relaxed text-foreground">{value}</dd>
     </div>
   )
 }
@@ -50,7 +42,7 @@ function Section({
 }) {
   return (
     <section className="space-y-1">
-      <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+      <h2 className="text-sm font-medium tracking-wider text-muted-foreground uppercase">
         {title}
       </h2>
       <div className="mt-4">{children}</div>
@@ -64,7 +56,7 @@ export default function ProfilePage() {
   return (
     <div className="min-h-svh p-8 md:p-10 lg:p-12">
       <div className="mx-auto max-w-3xl">
-        <Button variant="ghost" size="sm" className="-ml-2 mb-8" asChild>
+        <Button variant="ghost" size="sm" className="mb-8 -ml-2" asChild>
           <Link href="/">
             <ArrowLeft className="mr-1 size-4" />
             Back
@@ -96,54 +88,34 @@ export default function ProfilePage() {
               </p>
               {user && (
                 <p className="text-sm text-muted-foreground">
-                  {ROLE_LABELS[user.role as UserRole] ?? user.role} · {user.status}
+                  {ROLE_LABELS[user.role as UserRole] ?? user.role} ·{" "}
+                  {user.status}
                 </p>
               )}
             </div>
           </div>
 
           {user ? (
-            <div className="grid gap-12 border-t border-border pt-10 md:grid-cols-2 md:gap-16 md:pt-14">
+            <div className="border-t border-border pt-10 md:pt-14">
               <Section title="Identity">
-                <dl className="divide-y divide-border">
-                  <DetailRow
-                    label="Name"
-                    value={
-                      [user.firstName, user.lastName].filter(Boolean).join(" ") ||
-                      "—"
-                    }
-                  />
-                  <DetailRow label="Email" value={<span className="break-all">{user.email}</span>} />
-                  <DetailRow
-                    label="Role"
-                    value={ROLE_LABELS[user.role as UserRole] ?? user.role}
-                  />
-                  <DetailRow label="Status" value={user.status ?? "ACTIVE"} />
-                  <DetailRow
-                    label="User ID"
-                    value={
-                      <span className="break-all font-mono text-sm text-muted-foreground">
-                        {user.id}
-                      </span>
-                    }
-                  />
-                </dl>
-              </Section>
-
-              <Section title="Activity">
-                <dl className="divide-y divide-border">
-                  <DetailRow
-                    label="Account created"
-                    value={formatDate(user.createdAt)}
-                  />
-                  <DetailRow
-                    label="Last updated"
-                    value={formatDate(user.updatedAt)}
-                  />
-                  <DetailRow
-                    label="Last login"
-                    value={formatDate(user.lastLoginAt ?? undefined)}
-                  />
+                <dl className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:gap-x-16 md:gap-y-6">
+                <DetailRow
+                  label="Name"
+                  value={
+                    [user.firstName, user.lastName]
+                      .filter(Boolean)
+                      .join(" ") || "—"
+                  }
+                />
+                <DetailRow
+                  label="Email"
+                  value={<span className="break-all">{user.email}</span>}
+                />
+                <DetailRow
+                  label="Role"
+                  value={ROLE_LABELS[user.role as UserRole] ?? user.role}
+                />
+                <DetailRow label="Status" value={user.status ?? "ACTIVE"} />
                 </dl>
               </Section>
             </div>

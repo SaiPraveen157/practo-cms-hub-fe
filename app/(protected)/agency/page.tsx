@@ -32,7 +32,7 @@ export default function AgencyHomePage() {
             <p className="text-sm text-muted-foreground">
               You see scripts in Agency Production. Edit and submit your revision; Medical Affairs will review and can approve or send back with feedback. Once locked by Content Approver, the script is ready for production.
             </p>
-            <Button asChild>
+            <Button asChild className="bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white border-0 hover:opacity-90">
               <Link href="/agency-poc">
                 <FileText className="mr-2 size-4" />
                 Open production queue

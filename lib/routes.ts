@@ -1,6 +1,4 @@
-/**
- * Central route path constants. Use these for navigation and ROLE_ACCESS.
- */
+
 
 export const ROUTES = {
   LOGIN: "/login",
@@ -15,20 +13,18 @@ export const ROUTES = {
   SETTINGS: "/settings",
   USER_PROFILE: "/profile",
   NOTIFICATIONS: "/notifications",
-  /** Alias used in ROLE_ACCESS */
   NOCIFICATIONS: "/notifications",
   MEDICAL_AFFAIRS_SCRIPTS: "/medical-affairs-scripts",
   CONTENT_BRAND_REVIEWER: "/content-brand-reviewer",
   MY_DOCTOR_NOTES: "/doctor-notes",
   AGENCY_POC: "/agency-poc",
   SCRIPT: "/script",
-  // Phase 4+ (video) — commented out for Phases 1–3
   // VIDEOS: "/videos",
   CONTENT_APPROVER_SCRIPTS: "/content-approver-script",
   CONTENT_APPROVER_SCRIPTS_NEW: "/content-approver-script-new",
   // CONTENT_APPROVER_VIDEOS: "/content-approver-videos",
   PUBLISHER: "/publisher",
-  DOCTOR_PROFILE: "/doctor-profile",
+  // DOCTOR_PROFILE: "/doctor-profile",
   CONTENT_LIBRARY: "/content-library",
 } as const
 
@@ -62,6 +58,6 @@ export const ROUTE_META: Record<
   CONTENT_APPROVER_SCRIPTS_NEW: { label: "Content Approver Scripts", icon: "shield-check" },
   // CONTENT_APPROVER_VIDEOS: { label: "Content Approver Videos", icon: "video" },
   PUBLISHER: { label: "Publisher", icon: "layout-dashboard" },
-  DOCTOR_PROFILE: { label: "Doctor Profile", icon: "user" },
+  // DOCTOR_PROFILE: { label: "Doctor Profile", icon: "user" },
   CONTENT_LIBRARY: { label: "Content Library", icon: "folder-open" },
 }

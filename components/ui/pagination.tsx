@@ -171,7 +171,7 @@ function ScriptListPagination({
       )}
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="whitespace-nowrap text-sm text-muted-foreground">
+        <p className="text-sm whitespace-nowrap text-muted-foreground">
           {total !== undefined && start != null && end != null ? (
             <>
               Showing{" "}
