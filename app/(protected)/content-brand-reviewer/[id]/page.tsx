@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
 import { useAuthStore } from "@/store"
-import { getScript, getScriptQueue, approveScript, rejectScript } from "@/lib/scripts-api"
+import { getScriptQueue, approveScript, rejectScript } from "@/lib/scripts-api"
 import type { Script, ScriptStatus } from "@/types/script"
 import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import { ScriptDetailSkeleton } from "@/components/loading/script-detail-skeleton"
@@ -76,19 +76,19 @@ export default function ContentBrandReviewerScriptPage() {
     if (!token || !id) return
     let cancelled = false
     setLoading(true)
-    Promise.all([getScript(token, id), getScriptQueue(token)])
-      .then(([scriptRes, queueRes]) => {
+    setError(null)
+    getScriptQueue(token)
+      .then((queueRes) => {
         if (cancelled) return
-        const s = scriptRes.script
-        if (!s) return
-        const inQueue = [...(queueRes.available ?? []), ...(queueRes.myReviews ?? [])].find(
+        const s = [...(queueRes.available ?? []), ...(queueRes.myReviews ?? [])].find(
           (q) => q.id === id
         )
-        setScript({
-          ...s,
-          ...(inQueue?.tat && { tat: inQueue.tat }),
-          ...(inQueue?.latestRejection != null && { latestRejection: inQueue.latestRejection }),
-        })
+        if (!s) {
+          setError("Script not found in your queue.")
+          setScript(null)
+          return
+        }
+        setScript(s)
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load script")
@@ -106,18 +106,15 @@ export default function ContentBrandReviewerScriptPage() {
     setError(null)
     setApproving(true)
     try {
-      const res = await approveScript(token, id, {
+      await approveScript(token, id, {
         comments: approveComments.trim() || undefined,
       })
-      if (res.script) {
-        setScript(res.script)
-        setApproveDialogOpen(false)
-        setApproveComments("")
-        toast.success(canFinalApprove ? "Final approval sent" : "Script approved", {
-          description: canFinalApprove ? "Moved to Content Approver for lock." : "Moved to Agency Production.",
-        })
-        router.push("/content-brand-reviewer")
-      }
+      setApproveDialogOpen(false)
+      setApproveComments("")
+      toast.success(canFinalApprove ? "Final approval sent" : "Script approved", {
+        description: canFinalApprove ? "Moved to Content Approver for lock." : "Moved to Agency Production.",
+      })
+      router.push("/content-brand-reviewer")
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to approve"
       setError(message)
@@ -137,14 +134,11 @@ export default function ContentBrandReviewerScriptPage() {
     setError(null)
     setRejecting(true)
     try {
-      const res = await rejectScript(token, id, { comments })
-      if (res.script) {
-        setScript(res.script)
-        setRejectDialogOpen(false)
-        setRejectComments("")
-        toast.warning("Sent back for changes", { description: "Medical Affairs will be notified. TAT 24 hours." })
-        router.push("/content-brand-reviewer")
-      }
+      await rejectScript(token, id, { comments })
+      setRejectDialogOpen(false)
+      setRejectComments("")
+      toast.warning("Sent back for changes", { description: "Medical Affairs will be notified. TAT 24 hours." })
+      router.push("/content-brand-reviewer")
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to reject"
       setError(message)

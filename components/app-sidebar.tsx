@@ -14,7 +14,6 @@ import {
   LogOut,
   Sun,
   Moon,
-  PanelLeftClose,
   PanelLeft,
   Upload,
   Bell,
@@ -23,6 +22,7 @@ import {
   BookOpen,
   User,
   Settings,
+  ChevronLeft,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -30,6 +30,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { toast } from "sonner"
 import { useAuthStore } from "@/store"
 import { getSidebarNavForRole } from "@/lib/sidebar-nav"
+import { getUnreadCount } from "@/lib/notifications-api"
 import type { UserRole } from "@/types/auth"
 
 const SIDEBAR_COLLAPSED_KEY = "practo-sidebar-collapsed"
@@ -71,10 +72,41 @@ export function AppSidebar() {
     if (typeof window === "undefined") return false
     return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true"
   })
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState<number>(0)
+  const token = useAuthStore((s) => s.token)
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed))
   }, [collapsed])
+
+  useEffect(() => {
+    if (!token) {
+      setUnreadNotificationCount(0)
+      return
+    }
+    let cancelled = false
+    getUnreadCount(token)
+      .then((count) => {
+        if (!cancelled) setUnreadNotificationCount(count)
+      })
+      .catch(() => {
+        if (!cancelled) setUnreadNotificationCount(0)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  useEffect(() => {
+    if (!token) return
+    const refetch = () => {
+      getUnreadCount(token)
+        .then(setUnreadNotificationCount)
+        .catch(() => setUnreadNotificationCount(0))
+    }
+    window.addEventListener("notifications-updated", refetch)
+    return () => window.removeEventListener("notifications-updated", refetch)
+  }, [token])
 
   const navItems = user?.role ? getSidebarNavForRole(user.role as UserRole) : []
 
@@ -86,54 +118,62 @@ export function AppSidebar() {
 
   const sidebarWidth = collapsed ? "w-16" : "w-72"
 
+  const roleLabel =
+    user?.role === "MEDICAL_AFFAIRS"
+      ? "Medical Affairs"
+      : user?.role === "CONTENT_BRAND"
+        ? "Content/Brand"
+        : user?.role === "CONTENT_APPROVER"
+          ? "Content Approver"
+          : user?.role === "AGENCY_POC"
+            ? "Agency POC"
+            : user?.role === "SUPER_ADMIN"
+              ? "Super Admin"
+              : user?.role ?? "User"
+
   return (
     <aside
       className={cn(
-        "sticky top-0 flex h-svh shrink-0 flex-col overflow-hidden border-r border-border transition-[width] duration-200 dark:bg-gray-900 bg-gray-300",
+        "sticky top-0 flex h-svh shrink-0 flex-col overflow-hidden border-r border-slate-700/80 bg-[#1A202C] transition-[width] duration-200",
         sidebarWidth
       )}
     >
-      {/* Header: title, theme toggle, collapse */}
-      <div className="flex h-14 items-center gap-1 border-b border-border px-2">
+      {/* Header: Practo HUB CMS, Content Management, collapse */}
+      <div className="flex h-14 items-center gap-2 border-b border-slate-700/80 px-3">
         {!collapsed && (
-          <span className="truncate text-sm font-semibold text-foreground">
-            Practo CMS
-          </span>
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate text-base font-bold tracking-tight text-white">
+              Practo HUB CMS
+            </span>
+            <span className="truncate text-xs text-slate-400">Content Management</span>
+          </div>
         )}
-        <div className={cn("ml-auto flex shrink-0 items-center gap-0.5", collapsed && "mx-auto flex-col")}>
-          {!collapsed && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8 shrink-0"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              title={theme === "dark" ? "Switch to light" : "Switch to dark"}
-            >
-              <Sun className="size-5 dark:hidden" />
-              <Moon className="hidden size-5 dark:block" />
-            </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn(
+            "shrink-0 text-slate-400 hover:bg-slate-700/50 hover:text-white",
+            collapsed && "mx-auto"
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn("size-8 shrink-0", collapsed && "mt-0.5")}
-            onClick={() => setCollapsed((c) => !c)}
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {collapsed ? (
-              <PanelLeft className="size-5" />
-            ) : (
-              <PanelLeftClose className="size-5" />
-            )}
-          </Button>
-        </div>
+          onClick={() => setCollapsed((c) => !c)}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? (
+            <PanelLeft className="size-5" />
+          ) : (
+            <ChevronLeft className="size-5" />
+          )}
+        </Button>
       </div>
 
       {/* Nav */}
-      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
+      <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
         {navItems.map((item) => {
           const isActive = pathname === item.href
           const Icon = iconMap[item.icon] ?? LayoutDashboard
+          const showUnreadBadge =
+            (item.key === "NOTIFICATIONS" || item.key === "NOCIFICATIONS") &&
+            unreadNotificationCount > 0
           return (
             <Link
               key={item.key}
@@ -142,12 +182,31 @@ export function AppSidebar() {
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  ? "bg-blue-600 text-white"
+                  : "text-slate-300 hover:bg-slate-700/50 hover:text-white"
               )}
             >
-              <Icon className="size-5 shrink-0" />
-              {!collapsed && <span className="truncate">{item.label}</span>}
+              <span className="relative shrink-0">
+                <Icon className="size-5" />
+                {showUnreadBadge && (
+                  <span
+                    className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium text-white"
+                    aria-label={`${unreadNotificationCount} unread notifications`}
+                  >
+                    {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+                  </span>
+                )}
+              </span>
+              {!collapsed && (
+                <>
+                  <span className="truncate">{item.label}</span>
+                  {showUnreadBadge && (
+                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-medium text-white">
+                      {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+                    </span>
+                  )}
+                </>
+              )}
             </Link>
           )
         })}
@@ -155,7 +214,7 @@ export function AppSidebar() {
           <Button
             variant="ghost"
             size="icon"
-            className="mt-1 size-8 shrink-0 w-full justify-center"
+            className="mt-1 size-8 w-full shrink-0 justify-center text-slate-400 hover:bg-slate-700/50 hover:text-white"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             title={theme === "dark" ? "Switch to light" : "Switch to dark"}
           >
@@ -168,27 +227,27 @@ export function AppSidebar() {
           onClick={handleLogout}
           title="Log out"
           className={cn(
-            "mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition-colors dark:text-red-400 cursor-pointer",
+            "mt-1 flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-400 transition-colors hover:bg-slate-700/50 hover:text-red-300",
             collapsed && "justify-center px-2"
           )}
         >
           <LogOut className="size-5 shrink-0" />
-          {!collapsed && <span className="truncate">Log out</span>}
+          {!collapsed && <span className="truncate">Logout</span>}
         </button>
       </nav>
 
-      {/* User block: link to profile */}
-      <div className="border-t border-border p-2">
+      {/* User block: avatar (teal), name, role */}
+      <div className="border-t border-slate-700/80 p-3">
         <Link
           href="/profile"
           className={cn(
-            "flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-muted",
+            "flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-slate-700/50",
             collapsed && "justify-center"
           )}
           title="View profile"
         >
-          <Avatar size="sm" className="size-8 shrink-0">
-            <AvatarFallback className="text-xs">
+          <Avatar size="sm" className="size-9 shrink-0">
+            <AvatarFallback className="bg-teal-500 text-xs font-medium text-white">
               {user
                 ? getInitials(user.firstName, user.lastName, user.email)
                 : "?"}
@@ -196,14 +255,12 @@ export function AppSidebar() {
           </Avatar>
           {!collapsed && user && (
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-foreground">
+              <p className="truncate text-sm font-medium text-white">
                 {user.firstName || user.lastName
                   ? [user.firstName, user.lastName].filter(Boolean).join(" ")
                   : user.email}
               </p>
-              <p className="truncate text-xs text-muted-foreground">
-                {user.email}
-              </p>
+              <p className="truncate text-xs text-slate-400">{roleLabel}</p>
             </div>
           )}
         </Link>

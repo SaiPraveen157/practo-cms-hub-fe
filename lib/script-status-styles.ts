@@ -3,10 +3,7 @@ import type { Script, ScriptStatus } from "@/types/script"
 /**
  * Text and border (outline) colors per script status. No background fill.
  */
-export const SCRIPT_STATUS_STYLES: Record<
-  ScriptStatus,
-  string
-> = {
+export const SCRIPT_STATUS_STYLES: Record<ScriptStatus, string> = {
   DRAFT:
     "border-slate-400 text-slate-700 dark:border-slate-500 dark:text-slate-300",
   CONTENT_BRAND_REVIEW:
@@ -27,6 +24,27 @@ export const SCRIPT_STATUS_STYLES: Record<
 const REJECTED_DISPLAY_STYLE =
   "border-red-500 text-red-700 dark:border-red-400 dark:text-red-300"
 
+/** Oval status pill on script cards: background + text (matches Script Approvals UI). */
+export const SCRIPT_STATUS_PILL_STYLES: Record<ScriptStatus, string> = {
+  DRAFT:
+    "bg-slate-200 text-slate-800 dark:bg-slate-600 dark:text-slate-200",
+  CONTENT_BRAND_REVIEW:
+    "bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200",
+  AGENCY_PRODUCTION:
+    "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200",
+  MEDICAL_REVIEW:
+    "bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-200",
+  CONTENT_BRAND_APPROVAL:
+    "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200",
+  CONTENT_APPROVER_REVIEW:
+    "bg-violet-100 text-violet-800 dark:bg-violet-900/50 dark:text-violet-200",
+  LOCKED:
+    "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200",
+}
+
+export const REJECTED_PILL_STYLE =
+  "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200"
+
 export const STATUS_DISPLAY_LABELS: Record<ScriptStatus, string> = {
   DRAFT: "Draft",
   CONTENT_BRAND_REVIEW: "Content/Brand Review",
@@ -42,18 +60,32 @@ export function getScriptStatusClassName(status: ScriptStatus): string {
 }
 
 /**
- * Label and className for badge display. When script has latestRejection (from
- * queue), show "Rejected" with red style so user sees it came back from review.
+ * Label and className for badge display. Show "Rejected" only when the script
+ * is still in a rejected state (DRAFT after rejection, or still at the stage
+ * where it was rejected). Once the script has moved forward (e.g. re-submitted
+ * and approved, now in MEDICAL_REVIEW), show the actual status.
  */
 export function getScriptDisplayInfo(script: Script): {
   label: string
   className: string
+  pillClassName: string
 } {
-  if (script.latestRejection?.comments != null) {
-    return { label: "Rejected", className: REJECTED_DISPLAY_STYLE }
+  const rejection = script.latestRejection
+  if (rejection != null) {
+    const stageAtRejection = rejection.stageAtReview
+    const stillAtRejectedStage =
+      script.status === "DRAFT" || script.status === stageAtRejection
+    if (stillAtRejectedStage) {
+      return {
+        label: "Rejected",
+        className: REJECTED_DISPLAY_STYLE,
+        pillClassName: REJECTED_PILL_STYLE,
+      }
+    }
   }
   return {
     label: STATUS_DISPLAY_LABELS[script.status] ?? script.status,
     className: getScriptStatusClassName(script.status),
+    pillClassName: SCRIPT_STATUS_PILL_STYLES[script.status] ?? SCRIPT_STATUS_PILL_STYLES.DRAFT,
   }
 }

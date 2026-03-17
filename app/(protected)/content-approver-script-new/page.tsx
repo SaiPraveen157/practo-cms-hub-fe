@@ -5,15 +5,16 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { useAuthStore } from "@/store"
-import { getScriptQueue, getMyReviews } from "@/lib/scripts-api"
-import { getScriptDisplayInfo } from "@/lib/script-status-styles"
-import type { Script, ScriptStatus } from "@/types/script"
+import { getScriptQueue, getMyReviews, getScriptStats } from "@/lib/scripts-api"
+import { filterScriptsBySearch } from "@/lib/script-search"
+import type { Script, ScriptStatus, ScriptStatsResponse } from "@/types/script"
 import { ScriptListSkeleton } from "@/components/loading/script-list-skeleton"
-import { ScriptTatBar } from "@/components/script-tat-bar"
+import { ScriptListingCard } from "@/components/script-listing-card"
 import { ScriptListPagination } from "@/components/ui/pagination"
-import { FileText } from "lucide-react"
+import { ScriptStatsCards } from "@/components/script-stats-cards"
+import { FileText, Lock, Search } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 10
@@ -30,18 +31,6 @@ const STATUS_LABELS: Record<ScriptStatus, string> = {
 
 type TabKey = "all" | "approved" | "rejected"
 
-function formatDate(s: string) {
-  try {
-    return new Date(s).toLocaleDateString(undefined, {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    })
-  } catch {
-    return s
-  }
-}
-
 export default function ContentApproverScriptNewPage() {
   const router = useRouter()
   const token = useAuthStore((s) => s.token)
@@ -53,18 +42,24 @@ export default function ContentApproverScriptNewPage() {
   const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [stats, setStats] = useState<ScriptStatsResponse | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
 
   const isContentApprover = user?.role === "CONTENT_APPROVER"
 
+  const searchFilteredScripts = useMemo(
+    () => filterScriptsBySearch(scripts, searchQuery),
+    [scripts, searchQuery]
+  )
   const displayedScripts = useMemo(() => {
-    if (tab !== "all") return scripts
+    if (tab !== "all") return searchFilteredScripts
     const start = (page - 1) * PAGE_SIZE
-    return scripts.slice(start, start + PAGE_SIZE)
-  }, [tab, page, scripts])
+    return searchFilteredScripts.slice(start, start + PAGE_SIZE)
+  }, [tab, page, searchFilteredScripts])
 
-  const paginationTotal = tab === "all" ? scripts.length : total
+  const paginationTotal = tab === "all" ? searchFilteredScripts.length : total
   const paginationTotalPages = tab === "all"
-    ? Math.max(1, Math.ceil(scripts.length / PAGE_SIZE))
+    ? Math.max(1, Math.ceil(searchFilteredScripts.length / PAGE_SIZE))
     : totalPages
 
   useEffect(() => {
@@ -117,6 +112,11 @@ export default function ContentApproverScriptNewPage() {
     }
   }, [token, tab, page])
 
+  useEffect(() => {
+    if (!token) return
+    getScriptStats(token).then(setStats).catch(() => setStats(null))
+  }, [token])
+
   if (!isContentApprover) {
     return (
       <div className="p-6 md:p-8">
@@ -134,15 +134,33 @@ export default function ContentApproverScriptNewPage() {
 
   return (
     <div className="p-6 md:p-8">
-      <div className="mx-auto max-w-4xl space-y-6">
+      <div className="mx-auto max-w-6xl space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Content Approver Scripts</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Script Approvals</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Scripts approved by Content/Brand. Lock a script to move it to Locked; then it can be sent to Agency for production.
+            Final approval authority — Review all content before moving to production.
           </p>
         </div>
 
-        <div className="border-b">
+        <ScriptStatsCards stats={stats} />
+
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search by title..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                setPage(1)
+              }}
+              className="h-10 pl-9"
+            />
+          </div>
+        </div>
+
+        <div className="border-b border-border">
           <nav className="flex gap-1" role="tablist" aria-label="Script list tabs">
             {(
               [
@@ -160,7 +178,7 @@ export default function ContentApproverScriptNewPage() {
                 className={cn(
                   "border-b-2 px-4 py-3 text-sm font-medium transition-colors",
                   tab === key
-                    ? "border-primary text-primary"
+                    ? "border-primary text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -199,46 +217,51 @@ export default function ContentApproverScriptNewPage() {
               </p>
             </CardContent>
           </Card>
+        ) : searchFilteredScripts.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+              <Search className="size-12 text-muted-foreground" />
+              <p className="mt-4 font-medium">No scripts match your search</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Try a different search term or clear the search.
+              </p>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => { setSearchQuery(""); setPage(1) }}
+              >
+                Clear search
+              </Button>
+            </CardContent>
+          </Card>
         ) : (
-          <ul className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             {displayedScripts.map((script) => (
-              <li key={script.id}>
-                <Card className="overflow-hidden shadow-sm transition-shadow hover:shadow-md">
-                  <CardContent className="flex flex-col gap-4 p-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <Link
-                        href={`/content-approver-script-new/${script.id}`}
-                        className="min-w-0 flex-1 font-semibold leading-tight hover:underline"
-                      >
-                        {script.title || "Untitled script"}
-                      </Link>
-                      <Badge
-                        variant="outline"
-                        className={cn("shrink-0 uppercase", getScriptDisplayInfo(script).className)}
-                      >
-                        {getScriptDisplayInfo(script).label}
-                      </Badge>
-                    </div>
-                    <p className="line-clamp-2 text-sm text-muted-foreground">
-                      {script.insight || "No insight"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Ready to lock · {formatDate(script.updatedAt)}
-                    </p>
-                    <ScriptTatBar script={script} />
-                    <Button variant="outline" asChild className="w-fit text-blue-600 hover:bg-blue-50 hover:text-blue-700 focus-visible:ring-blue-500/30 dark:text-blue-500 dark:hover:bg-blue-950/50 dark:hover:text-blue-400">
-                      <Link href={`/content-approver-script-new/${script.id}`}>
-                        Review & lock
-                      </Link>
-                    </Button>
-                  </CardContent>
-                </Card>
-              </li>
+              <ScriptListingCard
+                key={script.id}
+                script={script}
+                detailHref={`/content-approver-script-new/${script.id}`}
+                authorSubtitle="Content Creator"
+                onCardClick={() => router.push(`/content-approver-script-new/${script.id}`)}
+                actions={
+                  <Button
+                    asChild
+                    size="sm"
+                    className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Link href={`/content-approver-script-new/${script.id}`}>
+                      <Lock className="size-4 shrink-0" />
+                      Final Approve
+                    </Link>
+                  </Button>
+                }
+              />
             ))}
-          </ul>
+          </div>
         )}
 
-        {!loading && scripts.length > 0 && (
+        {!loading && searchFilteredScripts.length > 0 && (
           <ScriptListPagination
             page={page}
             totalPages={paginationTotalPages}

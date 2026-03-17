@@ -10,6 +10,7 @@ import type {
   ListScriptsParams,
   ListScriptsResponse,
   ScriptQueueResponse,
+  ScriptStatsResponse,
   SingleScriptResponse,
 } from "@/types/script"
 
@@ -53,6 +54,14 @@ export async function getScriptQueue(
 ): Promise<ScriptQueueResponse> {
   checkToken(token)
   return apiRequest<ScriptQueueResponse>("/api/scripts/queue", { token })
+}
+
+/** GET /api/scripts/stats — dashboard counts (pendingReview, overdueCount, reviewedToday). */
+export async function getScriptStats(
+  token: string | null
+): Promise<ScriptStatsResponse> {
+  checkToken(token)
+  return apiRequest<ScriptStatsResponse>("/api/scripts/stats", { token })
 }
 
 export async function getScript(

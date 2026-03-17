@@ -88,3 +88,12 @@ export interface SingleScriptResponse {
   success?: boolean
   script: Script
 }
+
+/** GET /api/scripts/stats — dashboard counts for review queue. */
+export interface ScriptStatsResponse {
+  success: boolean
+  pendingReview: number
+  overdueCount: number
+  reviewedToday: number
+  tatConfig?: { limitHours: number; repeatCycleHours: number }
+}

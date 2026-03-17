@@ -27,7 +27,6 @@ import {
 import { toast } from "sonner"
 import { useAuthStore } from "@/store"
 import {
-  getScript,
   getScriptQueue,
   updateScript,
   submitScript,
@@ -101,24 +100,40 @@ export default function MedicalAffairsScriptDetailPage() {
       editInsight !== (script.insight ?? "") ||
       editContent !== (script.content ?? ""))
 
+  function refetchScript() {
+    if (!token || !id) return
+    getScriptQueue(token)
+      .then((queueRes) => {
+        const s = [...(queueRes.available ?? []), ...(queueRes.myReviews ?? [])].find(
+          (q) => q.id === id
+        )
+        if (s) {
+          setScript(s)
+          setEditTitle(s.title ?? "")
+          setEditInsight(s.insight ?? "")
+          setEditContent(s.content ?? "")
+        }
+      })
+      .catch(() => {})
+  }
+
   useEffect(() => {
     if (!token || !id) return
     let cancelled = false
     setLoading(true)
-    Promise.all([getScript(token, id), getScriptQueue(token)])
-      .then(([scriptRes, queueRes]) => {
+    setError(null)
+    getScriptQueue(token)
+      .then((queueRes) => {
         if (cancelled) return
-        const s = scriptRes.script
-        if (!s) return
-        const inQueue = [...(queueRes.available ?? []), ...(queueRes.myReviews ?? [])].find(
+        const s = [...(queueRes.available ?? []), ...(queueRes.myReviews ?? [])].find(
           (q) => q.id === id
         )
-        const scriptWithTat = {
-          ...s,
-          ...(inQueue?.tat && { tat: inQueue.tat }),
-          ...(inQueue?.latestRejection != null && { latestRejection: inQueue.latestRejection }),
+        if (!s) {
+          setError("Script not found in your queue.")
+          setScript(null)
+          return
         }
-        setScript(scriptWithTat)
+        setScript(s)
         setEditTitle(s.title ?? "")
         setEditInsight(s.insight ?? "")
         setEditContent(s.content ?? "")
@@ -146,12 +161,12 @@ export default function MedicalAffairsScriptDetailPage() {
     setError(null)
     setSaving(true)
     try {
-      const res = await updateScript(token, id, {
+      await updateScript(token, id, {
         title: editTitle.trim() || undefined,
         insight: editInsight.trim() || undefined,
         content: editContent,
       })
-      if (res.script) setScript(res.script)
+      refetchScript()
       toast.success("Changes saved", { description: "Draft updated." })
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save"
@@ -173,13 +188,11 @@ export default function MedicalAffairsScriptDetailPage() {
     setSubmitting(true)
     setError(null)
     try {
-      const res = await submitScript(token, id)
-      if (res.script) {
-        setScript(res.script)
-        setSubmitDialogOpen(false)
-        toast.success("Sent to Content/Brand", { description: "Script is now in review. TAT 24 hours." })
-        router.replace(`/medical-affairs-scripts/${id}`)
-      }
+      await submitScript(token, id)
+      refetchScript()
+      setSubmitDialogOpen(false)
+      toast.success("Sent to Content/Brand", { description: "Script is now in review. TAT 24 hours." })
+      router.replace(`/medical-affairs-scripts/${id}`)
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to submit"
       setError(message)
@@ -194,16 +207,13 @@ export default function MedicalAffairsScriptDetailPage() {
     setError(null)
     setApproving(true)
     try {
-      const res = await approveScript(token, id, {
+      await approveScript(token, id, {
         comments: approveComments.trim() || undefined,
       })
-      if (res.script) {
-        setScript(res.script)
-        setApproveDialogOpen(false)
-        setApproveComments("")
-        toast.success("Revision approved", { description: "Script moved to Content/Brand approval." })
-        router.push("/medical-affairs-scripts")
-      }
+      setApproveDialogOpen(false)
+      setApproveComments("")
+      toast.success("Revision approved", { description: "Script moved to Content/Brand approval." })
+      router.push("/medical-affairs-scripts")
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to approve"
       setError(message)
@@ -223,14 +233,11 @@ export default function MedicalAffairsScriptDetailPage() {
     setError(null)
     setRejecting(true)
     try {
-      const res = await rejectScript(token, id, { comments })
-      if (res.script) {
-        setScript(res.script)
-        setRejectDialogOpen(false)
-        setRejectComments("")
-        toast.warning("Sent back to Agency", { description: "Feedback sent. Agency can revise and resubmit." })
-        router.push("/medical-affairs-scripts")
-      }
+      await rejectScript(token, id, { comments })
+      setRejectDialogOpen(false)
+      setRejectComments("")
+      toast.warning("Sent back to Agency", { description: "Feedback sent. Agency can revise and resubmit." })
+      router.push("/medical-affairs-scripts")
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to reject"
       setError(message)
@@ -446,6 +453,7 @@ export default function MedicalAffairsScriptDetailPage() {
               onClick={handleConfirmSubmit}
               disabled={submitting || hasUnsavedChanges}
               title={hasUnsavedChanges ? "Save your changes first" : undefined}
+              className="bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white border-0 hover:opacity-90"
             >
               {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
               Submit

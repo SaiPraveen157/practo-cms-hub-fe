@@ -5,15 +5,16 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { useAuthStore } from "@/store"
-import { getScriptQueue, getMyReviews } from "@/lib/scripts-api"
-import { getScriptDisplayInfo } from "@/lib/script-status-styles"
-import type { Script, ScriptStatus } from "@/types/script"
+import { getScriptQueue, getMyReviews, getScriptStats } from "@/lib/scripts-api"
+import { filterScriptsBySearch } from "@/lib/script-search"
 import { ScriptListSkeleton } from "@/components/loading/script-list-skeleton"
-import { ScriptTatBar } from "@/components/script-tat-bar"
+import { ScriptListingCard } from "@/components/script-listing-card"
 import { ScriptListPagination } from "@/components/ui/pagination"
-import { FileText } from "lucide-react"
+import { ScriptStatsCards } from "@/components/script-stats-cards"
+import { CheckCircle, FileText, Search, XCircle } from "lucide-react"
+import type { Script, ScriptStatus, ScriptStatsResponse } from "@/types/script"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 10
@@ -30,18 +31,6 @@ const STATUS_LABELS: Record<ScriptStatus, string> = {
   LOCKED: "Locked",
 }
 
-function formatDate(s: string) {
-  try {
-    return new Date(s).toLocaleDateString(undefined, {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    })
-  } catch {
-    return s
-  }
-}
-
 export default function ContentBrandReviewerPage() {
   const router = useRouter()
   const token = useAuthStore((s) => s.token)
@@ -53,21 +42,27 @@ export default function ContentBrandReviewerPage() {
   const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [stats, setStats] = useState<ScriptStatsResponse | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
 
   const isContentBrand = user?.role === "CONTENT_BRAND"
 
   const isAllTab = tab === "all"
+  const searchFilteredScripts = useMemo(
+    () => filterScriptsBySearch(scripts, searchQuery),
+    [scripts, searchQuery]
+  )
   const displayedScripts = useMemo(() => {
     if (isAllTab) {
       const start = (page - 1) * PAGE_SIZE
-      return scripts.slice(start, start + PAGE_SIZE)
+      return searchFilteredScripts.slice(start, start + PAGE_SIZE)
     }
-    return scripts
-  }, [isAllTab, scripts, page])
+    return searchFilteredScripts
+  }, [isAllTab, searchFilteredScripts, page])
 
-  const paginationTotal = isAllTab ? scripts.length : total
+  const paginationTotal = isAllTab ? searchFilteredScripts.length : total
   const paginationTotalPages = isAllTab
-    ? Math.max(1, Math.ceil(scripts.length / PAGE_SIZE))
+    ? Math.max(1, Math.ceil(searchFilteredScripts.length / PAGE_SIZE))
     : totalPages
 
   useEffect(() => {
@@ -119,6 +114,11 @@ export default function ContentBrandReviewerPage() {
     }
   }, [token, tab, isAllTab ? 1 : page])
 
+  useEffect(() => {
+    if (!token) return
+    getScriptStats(token).then(setStats).catch(() => setStats(null))
+  }, [token])
+
   if (!isContentBrand) {
     return (
       <div className="p-6 md:p-8">
@@ -136,15 +136,33 @@ export default function ContentBrandReviewerPage() {
 
   return (
     <div className="p-6 md:p-8">
-      <div className="mx-auto max-w-4xl space-y-6">
+      <div className="mx-auto max-w-6xl space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Content/Brand Review</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Content/Brand Review</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Review scripts from Medical Affairs; final-approve scripts that passed Medical Affairs. TAT 24 hours.
           </p>
         </div>
 
-        <div className="border-b">
+        <ScriptStatsCards stats={stats} />
+
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search by title..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                setPage(1)
+              }}
+              className="h-10 pl-9"
+            />
+          </div>
+        </div>
+
+        <div className="border-b border-border">
           <nav className="flex gap-1" role="tablist" aria-label="Script list tabs">
             {(
               [
@@ -162,7 +180,7 @@ export default function ContentBrandReviewerPage() {
                 className={cn(
                   "border-b-2 px-4 py-3 text-sm font-medium transition-colors",
                   tab === key
-                    ? "border-primary text-primary"
+                    ? "border-primary text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -201,49 +219,64 @@ export default function ContentBrandReviewerPage() {
               </p>
             </CardContent>
           </Card>
+        ) : searchFilteredScripts.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+              <Search className="size-12 text-muted-foreground" />
+              <p className="mt-4 font-medium">No scripts match your search</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Try a different search term or clear the search.
+              </p>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => { setSearchQuery(""); setPage(1) }}
+              >
+                Clear search
+              </Button>
+            </CardContent>
+          </Card>
         ) : (
           <>
-          <ul className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             {displayedScripts.map((script) => (
-              <li key={script.id}>
-                <Card className="overflow-hidden shadow-sm transition-shadow hover:shadow-md">
-                  <CardContent className="flex flex-col gap-4 p-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <Link
-                        href={`/content-brand-reviewer/${script.id}`}
-                        className="min-w-0 flex-1 font-semibold leading-tight hover:underline"
-                      >
-                        {script.title || "Untitled script"}
-                      </Link>
-                      <Badge
-                        variant="outline"
-                        className={cn("shrink-0 uppercase", getScriptDisplayInfo(script).className)}
-                      >
-                        {getScriptDisplayInfo(script).label}
-                      </Badge>
-                    </div>
-                    <p className="line-clamp-2 text-sm text-muted-foreground">
-                      {script.insight || "No insight"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {script.status === "CONTENT_BRAND_APPROVAL"
-                        ? "Awaiting final approval"
-                        : "Submitted for review"}
-                      {" · "}
-                      {formatDate(script.updatedAt)}
-                    </p>
-                    <ScriptTatBar script={script} />
-                    <Button asChild variant="outline" className="w-fit text-blue-600 hover:bg-blue-50 hover:text-blue-700 focus-visible:ring-blue-500/30 dark:text-blue-500 dark:hover:bg-blue-950/50 dark:hover:text-blue-400">
+              <ScriptListingCard
+                key={script.id}
+                script={script}
+                detailHref={`/content-brand-reviewer/${script.id}`}
+                authorSubtitle="Content Creator"
+                onCardClick={() => router.push(`/content-brand-reviewer/${script.id}`)}
+                actions={
+                  <>
+                    <Button
+                      asChild
+                      size="sm"
+                      className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Link href={`/content-brand-reviewer/${script.id}`}>
-                        {script.status === "CONTENT_BRAND_APPROVAL" ? "Final approve" : "Review script"}
+                        <CheckCircle className="size-4 shrink-0" />
+                        {script.status === "CONTENT_BRAND_APPROVAL" ? "Approve" : "Review"}
                       </Link>
                     </Button>
-                  </CardContent>
-                </Card>
-              </li>
+                    <Button
+                      asChild
+                      size="sm"
+                      variant="destructive"
+                      className="gap-1.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Link href={`/content-brand-reviewer/${script.id}`}>
+                        <XCircle className="size-4 shrink-0" />
+                        Reject
+                      </Link>
+                    </Button>
+                  </>
+                }
+              />
             ))}
-          </ul>
-          {!loading && displayedScripts.length > 0 && (
+          </div>
+          {!loading && searchFilteredScripts.length > 0 && (
             <ScriptListPagination
               page={page}
               totalPages={paginationTotalPages}

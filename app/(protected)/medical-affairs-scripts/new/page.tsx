@@ -144,7 +144,11 @@ export default function NewMedicalAffairsScriptPage() {
               </div>
 
               <div className="flex flex-wrap gap-3">
-                <Button type="submit" disabled={loading}>
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  className="bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white border-0 hover:opacity-90"
+                >
                   {loading && <Loader2 className="mr-2 size-4 animate-spin" />}
                   Create draft
                 </Button>
