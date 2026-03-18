@@ -14,7 +14,7 @@ import { ScriptListSkeleton } from "@/components/loading/script-list-skeleton"
 import { ScriptListingCard } from "@/components/script-listing-card"
 import { ScriptListPagination } from "@/components/ui/pagination"
 import { ScriptStatsCards } from "@/components/script-stats-cards"
-import { FileText, Lock, Search } from "lucide-react"
+import { FileText, Lock, Search, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 10
@@ -244,17 +244,31 @@ export default function ContentApproverScriptNewPage() {
                 authorSubtitle="Content Creator"
                 onCardClick={() => router.push(`/content-approver-script-new/${script.id}`)}
                 actions={
-                  <Button
-                    asChild
-                    size="sm"
-                    className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Link href={`/content-approver-script-new/${script.id}`}>
-                      <Lock className="size-4 shrink-0" />
-                      Final Approve
-                    </Link>
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      asChild
+                      size="sm"
+                      className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Link href={`/content-approver-script-new/${script.id}`}>
+                        <Lock className="size-4 shrink-0" />
+                        Final Approve
+                      </Link>
+                    </Button>
+                    <Button
+                      asChild
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-500 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Link href={`/content-approver-script-new/${script.id}`}>
+                        <XCircle className="size-4 shrink-0" />
+                        Reject
+                      </Link>
+                    </Button>
+                  </div>
                 }
               />
             ))}

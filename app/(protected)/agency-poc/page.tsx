@@ -14,9 +14,12 @@ import { ScriptListSkeleton } from "@/components/loading/script-list-skeleton"
 import { ScriptListingCard } from "@/components/script-listing-card"
 import { ScriptListPagination } from "@/components/ui/pagination"
 import { ScriptStatsCards } from "@/components/script-stats-cards"
-import { FileText, Search, Send } from "lucide-react"
+import { FileText, Search, Send, Upload } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 10
+
+type TabKey = "all" | "locked"
 
 const STATUS_LABELS: Record<ScriptStatus, string> = {
   DRAFT: "Draft",
@@ -40,12 +43,18 @@ export default function AgencyPocPage() {
   const [error, setError] = useState<string | null>(null)
   const [stats, setStats] = useState<ScriptStatsResponse | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [tab, setTab] = useState<TabKey>("all")
 
   const isAgencyPoc = user?.role === "AGENCY_POC"
 
+  const tabFilteredScripts = useMemo(() => {
+    if (tab === "locked") return scripts.filter((s) => s.status === "LOCKED")
+    return scripts
+  }, [scripts, tab])
+
   const searchFilteredScripts = useMemo(
-    () => filterScriptsBySearch(scripts, searchQuery),
-    [scripts, searchQuery]
+    () => filterScriptsBySearch(tabFilteredScripts, searchQuery),
+    [tabFilteredScripts, searchQuery]
   )
   const displayedScripts = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE
@@ -150,6 +159,36 @@ export default function AgencyPocPage() {
           </div>
         </div>
 
+        <div className="border-b border-border">
+          <nav className="flex gap-1" role="tablist" aria-label="Script list tabs">
+            {(
+              [
+                { key: "all" as TabKey, label: "All" },
+                { key: "locked" as TabKey, label: "Locked" },
+              ] as const
+            ).map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={tab === key}
+                onClick={() => {
+                  setTab(key)
+                  setPage(1)
+                }}
+                className={cn(
+                  "border-b-2 px-4 py-3 text-sm font-medium transition-colors",
+                  tab === key
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        </div>
+
         {error && (
           <Card className="border-destructive/50 bg-destructive/10">
             <CardContent className="pt-6">
@@ -167,6 +206,20 @@ export default function AgencyPocPage() {
               <p className="mt-4 font-medium">No scripts in production</p>
               <p className="mt-1 text-sm text-muted-foreground">
                 Scripts approved by Content/Brand will appear here.
+              </p>
+            </CardContent>
+          </Card>
+        ) : tabFilteredScripts.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+              <FileText className="size-12 text-muted-foreground" />
+              <p className="mt-4 font-medium">
+                {tab === "locked" ? "No locked scripts" : "No scripts"}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {tab === "locked"
+                  ? "Locked scripts enter the video phase. Upload First Line Up from Videos."
+                  : "Scripts approved by Content/Brand will appear here."}
               </p>
             </CardContent>
           </Card>
@@ -200,17 +253,31 @@ export default function AgencyPocPage() {
                 authorSubtitle="Agency POC"
                 onCardClick={() => router.push(`/agency-poc/${script.id}`)}
                 actions={
-                  <Button
-                    asChild
-                    size="sm"
-                    className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Link href={`/agency-poc/${script.id}`}>
-                      <Send className="size-4 shrink-0" />
-                      Edit & submit revision
-                    </Link>
-                  </Button>
+                  script.status === "LOCKED" ? (
+                    <Button
+                      asChild
+                      size="sm"
+                      className="gap-1.5 border-0 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Link href={`/agency-poc/${script.id}/upload`}>
+                        <Upload className="size-4 shrink-0" />
+                        Upload video
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button
+                      asChild
+                      size="sm"
+                      className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Link href={`/agency-poc/${script.id}`}>
+                        <Send className="size-4 shrink-0" />
+                        Edit & submit revision
+                      </Link>
+                    </Button>
+                  )
                 }
               />
             ))}

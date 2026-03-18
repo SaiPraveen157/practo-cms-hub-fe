@@ -38,14 +38,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
             }
           },
           "response": []
@@ -77,14 +71,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
             }
           },
           "response": []
@@ -116,14 +104,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
             }
           },
           "response": []
@@ -155,14 +137,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
             }
           },
           "response": []
@@ -194,14 +170,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
             }
           },
           "response": []
@@ -213,14 +183,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/auth/me",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "me"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me"]
             }
           },
           "response": []
@@ -241,14 +205,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/change-password",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "change-password"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "change-password"]
             }
           },
           "response": []
@@ -269,14 +227,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/forgot-password",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "forgot-password"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "forgot-password"]
             }
           },
           "response": {
@@ -300,14 +252,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/reset-password",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "reset-password"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "reset-password"]
             }
           },
           "response": []
@@ -324,13 +270,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/users?page=1&limit=20",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "users"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users"],
               "query": [
                 {
                   "key": "page",
@@ -369,14 +310,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/users/USER_ID_HERE",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "users",
-                "USER_ID_HERE"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "USER_ID_HERE"]
             }
           },
           "response": []
@@ -397,13 +332,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/users",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "users"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users"]
             }
           },
           "response": []
@@ -424,14 +354,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/users/update-role",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "users",
-                "update-role"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "update-role"]
             }
           },
           "response": []
@@ -452,14 +376,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/users/toggle-status",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "users",
-                "toggle-status"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "toggle-status"]
             }
           },
           "response": []
@@ -480,14 +398,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/users/update-status",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "users",
-                "update-status"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "update-status"]
             }
           },
           "response": []
@@ -508,14 +420,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/users/force-move-workflow",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "users",
-                "force-move-workflow"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "force-move-workflow"]
             }
           },
           "response": []
@@ -552,13 +458,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/scripts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts"]
             }
           },
           "response": []
@@ -570,13 +471,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/scripts?page=1&limit=20",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts"],
               "query": [
                 {
                   "key": "page",
@@ -610,14 +506,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/scripts/{{scriptId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "{{scriptId}}"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "{{scriptId}}"]
             }
           },
           "response": []
@@ -638,14 +528,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/scripts/{{scriptId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "{{scriptId}}"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "{{scriptId}}"]
             }
           },
           "response": []
@@ -657,14 +541,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/scripts/stats",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "stats"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "stats"]
             }
           },
           "response": []
@@ -676,14 +554,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/scripts/queue",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "queue"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "queue"]
             }
           },
           "response": []
@@ -695,14 +567,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/scripts/my-reviews?decision=APPROVED&page=1&limit=20",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "my-reviews"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "my-reviews"],
               "query": [
                 {
                   "key": "decision",
@@ -729,14 +595,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/scripts/my-reviews?decision=REJECTED&page=1&limit=20",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "my-reviews"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "my-reviews"],
               "query": [
                 {
                   "key": "decision",
@@ -762,15 +622,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/reviews",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "{{scriptId}}",
-                "reviews"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "{{scriptId}}", "reviews"]
             }
           },
           "response": []
@@ -782,15 +635,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/comments",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "{{scriptId}}",
-                "comments"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "{{scriptId}}", "comments"]
             }
           },
           "response": []
@@ -811,15 +657,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/comments",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "{{scriptId}}",
-                "comments"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "{{scriptId}}", "comments"]
             }
           },
           "response": []
@@ -845,15 +684,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/submit",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "{{scriptId}}",
-                "submit"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "{{scriptId}}", "submit"]
             }
           },
           "response": []
@@ -874,15 +706,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/reject",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "{{scriptId}}",
-                "reject"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "{{scriptId}}", "reject"]
             }
           },
           "response": []
@@ -903,15 +728,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/approve",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "{{scriptId}}",
-                "approve"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "{{scriptId}}", "approve"]
             }
           },
           "response": []
@@ -932,15 +750,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/submit-revision",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "{{scriptId}}",
-                "submit-revision"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "{{scriptId}}", "submit-revision"]
             }
           },
           "response": []
@@ -961,15 +772,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/reject",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "{{scriptId}}",
-                "reject"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "{{scriptId}}", "reject"]
             }
           },
           "response": []
@@ -990,15 +794,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/approve",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "{{scriptId}}",
-                "approve"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "{{scriptId}}", "approve"]
             }
           },
           "response": []
@@ -1019,15 +816,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/approve",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "{{scriptId}}",
-                "approve"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "{{scriptId}}", "approve"]
             }
           },
           "response": []
@@ -1048,15 +838,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/lock",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "{{scriptId}}",
-                "lock"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "{{scriptId}}", "lock"]
             }
           },
           "response": []
@@ -1077,15 +860,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/scripts/{{scriptId}}/unlock",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "{{scriptId}}",
-                "unlock"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "{{scriptId}}", "unlock"]
             }
           },
           "response": []
@@ -1102,14 +878,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/scripts/medical-affairs-emails",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "medical-affairs-emails"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "medical-affairs-emails"]
             }
           },
           "response": []
@@ -1130,14 +900,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/scripts/medical-affairs-emails",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "scripts",
-                "medical-affairs-emails"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "scripts", "medical-affairs-emails"]
             }
           },
           "response": []
@@ -1149,9 +913,7 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/scripts/medical-affairs-emails/EMAIL_RECORD_ID_HERE",
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "host": ["{{baseUrl}}"],
               "path": [
                 "api",
                 "scripts",
@@ -1174,14 +936,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/videos/stats",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "videos",
-                "stats"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "videos", "stats"]
             },
             "description": "Returns counts per phase.\n\nResponse:\n- firstLineUp: { awaitingUpload, pending, overdue, approved }\n- firstCut:    { awaitingUpload, pending, overdue, approved }\n- tatConfig:   { limitHours: 24, repeatCycleHours: 6 }\n\nAccess: All roles"
           },
@@ -1194,14 +950,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/videos/queue",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "videos",
-                "queue"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "videos", "queue"]
             },
             "description": "Returns videos waiting for my action + videos I already reviewed.\n\nResponse: { available: [...], myReviews: [...], total }\n\nWhat each role sees:\n- Agency POC      → AGENCY_UPLOAD_PENDING + APPROVED videos\n- Medical Affairs → MEDICAL_REVIEW videos\n- Content/Brand   → CONTENT_BRAND_REVIEW videos\n- Super Admin     → all statuses\n\nEach video includes a TAT field (or null if not in review stage).\nAccess: Agency, Medical Affairs, Content/Brand, Super Admin"
           },
@@ -1214,14 +964,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/videos/my-reviews?decision=APPROVED&page=1&limit=20",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "videos",
-                "my-reviews"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "videos", "my-reviews"],
               "query": [
                 {
                   "key": "decision",
@@ -1249,14 +993,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/videos/my-reviews?decision=REJECTED&page=1&limit=20",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "videos",
-                "my-reviews"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "videos", "my-reviews"],
               "query": [
                 {
                   "key": "decision",
@@ -1307,18 +1045,18 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/videos/upload-url",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "videos",
-                "upload-url"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "videos", "upload-url"]
             },
             "description": "Step 1 of upload. Get presigned S3 URL.\n\nAccess: Agency POC, Super Admin\n\nResponse:\n- uploadUrl: PUT this URL with file binary\n- fileUrl: use this in Step C (POST /api/videos)\n- key: S3 object key"
           },
-          "response": []
+          "response": {
+            "success": true,
+            "uploadUrl": "https://gathering-popularity-rfc-action.trycloudflare.com/practo-hub-videos-v2/videos/c682dd95-f663-4ce5-be07-7b5a0261f56f/1773728974408_first-line-up-v1.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=minioadmin%2F20260317%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260317T062934Z&X-Amz-Expires=3600&X-Amz-Signature=1d7d2e51ee697cd30f888c0a927a8e91dd45ff78ed50899cee9f6e40ee572e42&X-Amz-SignedHeaders=host&x-id=PutObject",
+            "key": "videos/c682dd95-f663-4ce5-be07-7b5a0261f56f/1773728974408_first-line-up-v1.mp4",
+            "fileUrl": "https://gathering-popularity-rfc-action.trycloudflare.com/practo-hub-videos-v2/videos/c682dd95-f663-4ce5-be07-7b5a0261f56f/1773728974408_first-line-up-v1.mp4",
+            "expiresIn": 3600
+          }
         },
         {
           "name": "Step B — Upload File to S3 (PUT to uploadUrl)",
@@ -1339,9 +1077,7 @@
             },
             "url": {
               "raw": "PASTE_UPLOAD_URL_HERE",
-              "host": [
-                "PASTE_UPLOAD_URL_HERE"
-              ]
+              "host": ["PASTE_UPLOAD_URL_HERE"]
             },
             "description": "PUT the raw file binary to the presigned URL from Step A.\n\n⚠️ NO Authorization header — this goes directly to S3/MinIO, not to our API.\n⚠️ Content-Type must exactly match what you sent in Step A.\n\nIn Postman:\n- Select Body → binary\n- Choose your file\n- Set Content-Type header to match (e.g. video/mp4)\n\nOn success → HTTP 200 (no body) → proceed to Step C"
           },
@@ -1374,17 +1110,44 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/videos",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "videos"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "videos"]
             },
             "description": "Step 2 of upload. Register the video after S3 upload succeeds.\n\nAccess: Agency POC, Super Admin\n\nResponse 201:\n{ success: true, message: 'Video submitted for review', video: { ...VideoObject, status: 'MEDICAL_REVIEW' } }"
           },
-          "response": []
+          "response": {
+            "success": true,
+            "message": "Video submitted for review",
+            "video": {
+              "id": "ba6c0518-99a5-4cfe-89d4-d40f7f82dc5b",
+              "scriptId": "b04812da-0b87-4fb4-9e48-f0c3e669913a",
+              "phase": "FIRST_LINE_UP",
+              "status": "MEDICAL_REVIEW",
+              "stage": "VIDEO_REVIEW_STAGE",
+              "version": 1,
+              "fileUrl": "https://gathering-popularity-rfc-action.trycloudflare.com/practo-hub-videos-v2/videos/c682dd95-f663-4ce5-be07-7b5a0261f56f/1773726532519_first-line-up-v1.mp4",
+              "fileName": "first-line-up-v1.mp4",
+              "fileType": "video/mp4",
+              "fileSize": 52428800,
+              "uploadedById": "c682dd95-f663-4ce5-be07-7b5a0261f56f",
+              "assignedReviewerId": null,
+              "assignedAt": "2026-03-17T05:54:59.533Z",
+              "createdAt": "2026-03-17T05:54:59.534Z",
+              "updatedAt": "2026-03-17T05:54:59.534Z",
+              "script": {
+                "id": "b04812da-0b87-4fb4-9e48-f0c3e669913a",
+                "title": "Understanding Common Cold Symptoms",
+                "status": "LOCKED"
+              },
+              "uploadedBy": {
+                "id": "c682dd95-f663-4ce5-be07-7b5a0261f56f",
+                "firstName": "Agency",
+                "lastName": "POC"
+              },
+              "reviews": [],
+              "fileCategory": "video"
+            }
+          }
         },
         {
           "name": "Step C (alt) — Submit Video — FIRST_CUT",
@@ -1409,17 +1172,12 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"scriptId\": \"{{scriptId}}\",\n  \"phase\": \"FIRST_CUT\",\n  \"fileUrl\": \"PASTE_FILE_URL_FROM_STEP_A_HERE\",\n  \"fileName\": \"first-cut-final.mp4\",\n  \"fileType\": \"video/mp4\",\n  \"fileSize\": 78643200\n}\n\n// Only possible after FIRST_LINE_UP is APPROVED\n// Backend updates the AGENCY_UPLOAD_PENDING placeholder that was auto-created"
+              "raw": "{\n  \"scriptId\": \"{{scriptId}}\",\n  \"phase\": \"FIRST_CUT\",\n  \"videoId\": \"{{videoId}}\",\n  \"fileUrl\": \"PASTE_FILE_URL_FROM_STEP_A_HERE\",\n  \"fileName\": \"first-cut-final.mp4\",\n  \"fileType\": \"video/mp4\",\n  \"fileSize\": 78643200\n}\n\n// videoId: UUID of the AGENCY_UPLOAD_PENDING row from queue (required after Content/Brand reject — newVersion.id)\n// Omit videoId only for first First Cut placeholder if backend resolves by scriptId+phase alone\n// Only possible after FIRST_LINE_UP is APPROVED"
             },
             "url": {
               "raw": "{{baseUrl}}/api/videos",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "videos"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "videos"]
             }
           },
           "response": []
@@ -1436,14 +1194,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/videos/{{videoId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "videos",
-                "{{videoId}}"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "videos", "{{videoId}}"]
             },
             "description": "Full video object with reviews[], tat field, script info.\n\nfileCategory field guide:\n- 'video'  → use <video> tag\n- 'pdf'    → use PDF viewer / iframe\n- 'image'  → use <img> tag\n- 'other'  → show download link\n- null     → no file yet (AGENCY_UPLOAD_PENDING) — show 'Awaiting upload'\n\nAccess: All roles"
           },
@@ -1465,19 +1217,62 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/videos/{{videoId}}/approve",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "videos",
-                "{{videoId}}",
-                "approve"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "videos", "{{videoId}}", "approve"]
             },
             "description": "Access: Medical Affairs (at MEDICAL_REVIEW stage), Super Admin\n\nError:\n{ message: 'Role AGENCY_POC cannot approve at stage MEDICAL_REVIEW' }\n{ message: 'Cannot approve video in status: APPROVED' }"
           },
-          "response": []
+          "response": {
+            "success": true,
+            "message": "Video approved",
+            "video": {
+              "id": "ba6c0518-99a5-4cfe-89d4-d40f7f82dc5b",
+              "scriptId": "b04812da-0b87-4fb4-9e48-f0c3e669913a",
+              "phase": "FIRST_LINE_UP",
+              "status": "CONTENT_BRAND_REVIEW",
+              "stage": "VIDEO_REVIEW_STAGE",
+              "version": 1,
+              "fileUrl": "https://gathering-popularity-rfc-action.trycloudflare.com/practo-hub-videos-v2/videos/c682dd95-f663-4ce5-be07-7b5a0261f56f/1773726532519_first-line-up-v1.mp4",
+              "fileName": "first-line-up-v1.mp4",
+              "fileType": "video/mp4",
+              "fileSize": 52428800,
+              "uploadedById": "c682dd95-f663-4ce5-be07-7b5a0261f56f",
+              "assignedReviewerId": null,
+              "assignedAt": "2026-03-17T06:04:25.698Z",
+              "createdAt": "2026-03-17T05:54:59.534Z",
+              "updatedAt": "2026-03-17T06:04:25.698Z",
+              "script": {
+                "id": "b04812da-0b87-4fb4-9e48-f0c3e669913a",
+                "title": "Understanding Common Cold Symptoms",
+                "status": "LOCKED"
+              },
+              "uploadedBy": {
+                "id": "c682dd95-f663-4ce5-be07-7b5a0261f56f",
+                "firstName": "Agency",
+                "lastName": "POC"
+              },
+              "reviews": [
+                {
+                  "id": "4523804c-70b1-4d7b-99b2-d07565002a6b",
+                  "videoId": "ba6c0518-99a5-4cfe-89d4-d40f7f82dc5b",
+                  "reviewerId": "792e4244-1693-4cd7-add4-59cf15f8e6e3",
+                  "reviewerType": "MEDICAL_AFFAIRS",
+                  "decision": "APPROVED",
+                  "comments": "Medically accurate. Looks good.",
+                  "stageAtReview": "MEDICAL_REVIEW",
+                  "reviewedAt": "2026-03-17T06:04:25.696Z",
+                  "createdAt": "2026-03-17T06:04:25.697Z",
+                  "reviewer": {
+                    "id": "792e4244-1693-4cd7-add4-59cf15f8e6e3",
+                    "firstName": "Medical",
+                    "lastName": "Affairs",
+                    "role": "MEDICAL_AFFAIRS"
+                  }
+                }
+              ],
+              "fileCategory": "video"
+            }
+          }
         },
         {
           "name": "Step D (alt) — Reject at MEDICAL_REVIEW  [Medical Affairs → new AGENCY_UPLOAD_PENDING]",
@@ -1495,19 +1290,87 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/videos/{{videoId}}/reject",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "videos",
-                "{{videoId}}",
-                "reject"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "videos", "{{videoId}}", "reject"]
             },
             "description": "Access: Medical Affairs (at MEDICAL_REVIEW stage), Super Admin\n\nResponse:\n{ rejectedVideo: {...}, newVersion: { fileUrl: null, fileCategory: null, status: 'AGENCY_UPLOAD_PENDING' } }"
           },
-          "response": []
+          "response": {
+            "success": true,
+            "message": "Video rejected — new version created for Agency to re-upload",
+            "rejectedVideo": {
+              "id": "ba6c0518-99a5-4cfe-89d4-d40f7f82dc5b",
+              "scriptId": "b04812da-0b87-4fb4-9e48-f0c3e669913a",
+              "phase": "FIRST_LINE_UP",
+              "status": "MEDICAL_REVIEW",
+              "stage": "VIDEO_REVIEW_STAGE",
+              "version": 1,
+              "fileUrl": "https://example-minio/.../first-line-up-v1.mp4",
+              "fileName": "first-line-up-v1.mp4",
+              "fileType": "video/mp4",
+              "fileSize": 52428800,
+              "uploadedById": "c682dd95-f663-4ce5-be07-7b5a0261f56f",
+              "assignedReviewerId": null,
+              "assignedAt": "2026-03-17T05:54:59.534Z",
+              "createdAt": "2026-03-17T05:54:59.534Z",
+              "updatedAt": "2026-03-17T05:54:59.534Z",
+              "script": {
+                "id": "b04812da-0b87-4fb4-9e48-f0c3e669913a",
+                "title": "Understanding Common Cold Symptoms",
+                "status": "LOCKED"
+              },
+              "uploadedBy": {
+                "id": "c682dd95-f663-4ce5-be07-7b5a0261f56f",
+                "firstName": "Agency",
+                "lastName": "POC"
+              },
+              "reviews": [
+                {
+                  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "videoId": "ba6c0518-99a5-4cfe-89d4-d40f7f82dc5b",
+                  "reviewerId": "792e4244-1693-4cd7-add4-59cf15f8e6e3",
+                  "reviewerType": "MEDICAL_AFFAIRS",
+                  "decision": "REJECTED",
+                  "comments": "Audio sync issue at 00:45 — please fix and re-upload.",
+                  "stageAtReview": "MEDICAL_REVIEW",
+                  "reviewedAt": "2026-03-17T07:00:00.000Z",
+                  "createdAt": "2026-03-17T07:00:00.000Z",
+                  "reviewer": {
+                    "id": "792e4244-1693-4cd7-add4-59cf15f8e6e3",
+                    "firstName": "Medical",
+                    "lastName": "Affairs",
+                    "role": "MEDICAL_AFFAIRS"
+                  }
+                }
+              ],
+              "fileCategory": "video"
+            },
+            "newVersion": {
+              "id": "9582ced9-59ca-4003-a66c-4f1b0562310a",
+              "scriptId": "b04812da-0b87-4fb4-9e48-f0c3e669913a",
+              "phase": "FIRST_LINE_UP",
+              "status": "AGENCY_UPLOAD_PENDING",
+              "stage": "VIDEO_REVIEW_STAGE",
+              "version": 2,
+              "fileUrl": null,
+              "fileName": null,
+              "fileType": null,
+              "fileSize": null,
+              "uploadedById": null,
+              "assignedReviewerId": null,
+              "assignedAt": null,
+              "createdAt": "2026-03-17T07:02:09.699Z",
+              "updatedAt": "2026-03-17T07:02:09.699Z",
+              "script": {
+                "id": "b04812da-0b87-4fb4-9e48-f0c3e669913a",
+                "title": "Understanding Common Cold Symptoms",
+                "status": "LOCKED"
+              },
+              "uploadedBy": null,
+              "reviews": [],
+              "fileCategory": null
+            }
+          }
         },
         {
           "name": "Step E — Approve at CONTENT_BRAND_REVIEW  [Content/Brand → APPROVED]",
@@ -1525,19 +1388,75 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/videos/{{videoId}}/approve",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "videos",
-                "{{videoId}}",
-                "approve"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "videos", "{{videoId}}", "approve"]
             },
             "description": "Access: Content/Brand (at CONTENT_BRAND_REVIEW stage), Super Admin"
           },
-          "response": []
+          "response": {
+            "success": true,
+            "message": "Video approved",
+            "video": {
+              "id": "ba6c0518-99a5-4cfe-89d4-d40f7f82dc5b",
+              "scriptId": "b04812da-0b87-4fb4-9e48-f0c3e669913a",
+              "phase": "FIRST_LINE_UP",
+              "status": "APPROVED",
+              "stage": "VIDEO_REVIEW_STAGE",
+              "version": 1,
+              "fileUrl": "https://example-minio/.../first-line-up-v1.mp4",
+              "fileName": "first-line-up-v1.mp4",
+              "fileType": "video/mp4",
+              "fileSize": 52428800,
+              "uploadedById": "c682dd95-f663-4ce5-be07-7b5a0261f56f",
+              "assignedReviewerId": null,
+              "assignedAt": "2026-03-17T06:12:01.767Z",
+              "createdAt": "2026-03-17T05:54:59.534Z",
+              "updatedAt": "2026-03-17T06:12:01.768Z",
+              "script": {
+                "id": "b04812da-0b87-4fb4-9e48-f0c3e669913a",
+                "title": "Understanding Common Cold Symptoms",
+                "status": "LOCKED"
+              },
+              "uploadedBy": {
+                "id": "c682dd95-f663-4ce5-be07-7b5a0261f56f",
+                "firstName": "Agency",
+                "lastName": "POC"
+              },
+              "reviews": [
+                {
+                  "id": "58cb3bbc-3baf-4d19-9efa-1b3f75f4ac94",
+                  "videoId": "ba6c0518-99a5-4cfe-89d4-d40f7f82dc5b",
+                  "reviewerId": "b8dc617c-a364-4650-ba56-c38c24d25bd8",
+                  "reviewerType": "CONTENT_BRAND",
+                  "decision": "APPROVED",
+                  "comments": "Brand approved. Visuals and messaging are on point.",
+                  "stageAtReview": "CONTENT_BRAND_REVIEW",
+                  "reviewedAt": "2026-03-17T06:12:01.764Z",
+                  "createdAt": "2026-03-17T06:12:01.765Z",
+                  "reviewer": {
+                    "id": "b8dc617c-a364-4650-ba56-c38c24d25bd8",
+                    "firstName": "Content",
+                    "lastName": "Brand",
+                    "role": "CONTENT_BRAND"
+                  }
+                },
+                {
+                  "id": "4523804c-70b1-4d7b-99b2-d07565002a6b",
+                  "videoId": "ba6c0518-99a5-4cfe-89d4-d40f7f82dc5b",
+                  "reviewerType": "MEDICAL_AFFAIRS",
+                  "decision": "APPROVED",
+                  "comments": "Medically accurate. Looks good.",
+                  "stageAtReview": "MEDICAL_REVIEW",
+                  "reviewer": {
+                    "firstName": "Medical",
+                    "lastName": "Affairs",
+                    "role": "MEDICAL_AFFAIRS"
+                  }
+                }
+              ],
+              "fileCategory": "video"
+            }
+          }
         },
         {
           "name": "Step E (alt) — Reject at CONTENT_BRAND_REVIEW  [Content/Brand → new AGENCY_UPLOAD_PENDING]",
@@ -1555,19 +1474,83 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/videos/{{videoId}}/reject",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "videos",
-                "{{videoId}}",
-                "reject"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "videos", "{{videoId}}", "reject"]
             },
             "description": "Access: Content/Brand (at CONTENT_BRAND_REVIEW stage), Super Admin\n\nError:\n{ message: 'Role CONTENT_BRAND cannot reject at stage MEDICAL_REVIEW' }"
           },
-          "response": []
+          "response": {
+            "success": true,
+            "message": "Video rejected — new version created for Agency to re-upload",
+            "rejectedVideo": {
+              "id": "086bcc2b-0323-4057-9ddd-24656640ce34",
+              "scriptId": "b04812da-0b87-4fb4-9e48-f0c3e669913a",
+              "phase": "FIRST_CUT",
+              "status": "CONTENT_BRAND_REVIEW",
+              "stage": "VIDEO_REVIEW_STAGE",
+              "version": 1,
+              "fileUrl": "https://example-minio/.../first-cut-v1.mp4",
+              "fileName": "first-cut-v1.mp4",
+              "fileType": "video/mp4",
+              "fileSize": 5242880,
+              "uploadedById": "c682dd95-f663-4ce5-be07-7b5a0261f56f",
+              "assignedReviewerId": null,
+              "assignedAt": "2026-03-17T06:57:23.369Z",
+              "createdAt": "2026-03-17T06:12:01.774Z",
+              "updatedAt": "2026-03-17T06:57:23.370Z",
+              "script": {
+                "id": "b04812da-0b87-4fb4-9e48-f0c3e669913a",
+                "title": "Understanding Common Cold Symptoms",
+                "status": "LOCKED"
+              },
+              "uploadedBy": {
+                "id": "c682dd95-f663-4ce5-be07-7b5a0261f56f",
+                "firstName": "Agency",
+                "lastName": "POC"
+              },
+              "reviews": [
+                {
+                  "id": "44b4ff54-7a56-459c-9d60-ea7a2578abad",
+                  "videoId": "086bcc2b-0323-4057-9ddd-24656640ce34",
+                  "reviewerType": "MEDICAL_AFFAIRS",
+                  "decision": "APPROVED",
+                  "comments": "Medically accurate. Looks good.",
+                  "stageAtReview": "MEDICAL_REVIEW",
+                  "reviewer": {
+                    "firstName": "Medical",
+                    "lastName": "Affairs",
+                    "role": "MEDICAL_AFFAIRS"
+                  }
+                }
+              ],
+              "fileCategory": "video"
+            },
+            "newVersion": {
+              "id": "9582ced9-59ca-4003-a66c-4f1b0562310a",
+              "scriptId": "b04812da-0b87-4fb4-9e48-f0c3e669913a",
+              "phase": "FIRST_CUT",
+              "status": "AGENCY_UPLOAD_PENDING",
+              "stage": "VIDEO_REVIEW_STAGE",
+              "version": 2,
+              "fileUrl": null,
+              "fileName": null,
+              "fileType": null,
+              "fileSize": null,
+              "uploadedById": null,
+              "assignedReviewerId": null,
+              "assignedAt": null,
+              "createdAt": "2026-03-17T07:02:09.699Z",
+              "updatedAt": "2026-03-17T07:02:09.699Z",
+              "script": {
+                "id": "b04812da-0b87-4fb4-9e48-f0c3e669913a",
+                "title": "Understanding Common Cold Symptoms",
+                "status": "LOCKED"
+              },
+              "uploadedBy": null,
+              "reviews": [],
+              "fileCategory": null
+            }
+          }
         }
       ]
     },
@@ -1581,15 +1564,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/videos/{{videoId}}/comments",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "videos",
-                "{{videoId}}",
-                "comments"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "videos", "{{videoId}}", "comments"]
             },
             "description": "Returns all comments oldest first.\n\nAccess: All roles"
           },
@@ -1611,15 +1587,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/videos/{{videoId}}/comments",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "videos",
-                "{{videoId}}",
-                "comments"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "videos", "{{videoId}}", "comments"]
             },
             "description": "Access: All roles\n\nResponse 201:\n{ success: true, comment: { id, content, createdAt, author: { id, firstName, lastName, role } } }"
           },
@@ -1637,13 +1606,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/notifications",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "notifications"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications"]
             }
           },
           "response": []
@@ -1655,14 +1619,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/notifications/unread-count",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "notifications",
-                "unread-count"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "unread-count"]
             }
           },
           "response": []
@@ -1674,15 +1632,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/notifications/NOTIFICATION_ID_HERE/read",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "notifications",
-                "NOTIFICATION_ID_HERE",
-                "read"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "NOTIFICATION_ID_HERE", "read"]
             }
           },
           "response": []
@@ -1694,14 +1645,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/notifications/read-all",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "notifications",
-                "read-all"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "read-all"]
             }
           },
           "response": []
@@ -1718,13 +1663,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/audit-logs",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "audit-logs"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "audit-logs"],
               "query": [
                 {
                   "key": "entityType",
@@ -1758,15 +1698,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/audit-logs/script/{{scriptId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "audit-logs",
-                "script",
-                "{{scriptId}}"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "audit-logs", "script", "{{scriptId}}"]
             }
           },
           "response": []
@@ -1778,15 +1711,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/audit-logs/user/USER_ID_HERE",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "audit-logs",
-                "user",
-                "USER_ID_HERE"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "audit-logs", "user", "USER_ID_HERE"]
             }
           },
           "response": []
@@ -1803,12 +1729,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/health",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "health"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
             }
           },
           "response": []
@@ -1820,12 +1742,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                ""
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": [""]
             }
           },
           "response": []

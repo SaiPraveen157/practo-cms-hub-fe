@@ -104,9 +104,10 @@ export default function MedicalAffairsScriptDetailPage() {
     if (!token || !id) return
     getScriptQueue(token)
       .then((queueRes) => {
-        const s = [...(queueRes.available ?? []), ...(queueRes.myReviews ?? [])].find(
-          (q) => q.id === id
-        )
+        const s = [
+          ...(queueRes.available ?? []),
+          ...(queueRes.myReviews ?? []),
+        ].find((q) => q.id === id)
         if (s) {
           setScript(s)
           setEditTitle(s.title ?? "")
@@ -125,9 +126,10 @@ export default function MedicalAffairsScriptDetailPage() {
     getScriptQueue(token)
       .then((queueRes) => {
         if (cancelled) return
-        const s = [...(queueRes.available ?? []), ...(queueRes.myReviews ?? [])].find(
-          (q) => q.id === id
-        )
+        const s = [
+          ...(queueRes.available ?? []),
+          ...(queueRes.myReviews ?? []),
+        ].find((q) => q.id === id)
         if (!s) {
           setError("Script not found in your queue.")
           setScript(null)
@@ -191,7 +193,9 @@ export default function MedicalAffairsScriptDetailPage() {
       await submitScript(token, id)
       refetchScript()
       setSubmitDialogOpen(false)
-      toast.success("Sent to Content/Brand", { description: "Script is now in review. TAT 24 hours." })
+      toast.success("Sent to Content/Brand", {
+        description: "Script is now in review. TAT 24 hours.",
+      })
       router.replace(`/medical-affairs-scripts/${id}`)
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to submit"
@@ -212,7 +216,9 @@ export default function MedicalAffairsScriptDetailPage() {
       })
       setApproveDialogOpen(false)
       setApproveComments("")
-      toast.success("Revision approved", { description: "Script moved to Content/Brand approval." })
+      toast.success("Revision approved", {
+        description: "Script moved to Content/Brand approval.",
+      })
       router.push("/medical-affairs-scripts")
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to approve"
@@ -236,7 +242,9 @@ export default function MedicalAffairsScriptDetailPage() {
       await rejectScript(token, id, { comments })
       setRejectDialogOpen(false)
       setRejectComments("")
-      toast.warning("Sent back to Agency", { description: "Feedback sent. Agency can revise and resubmit." })
+      toast.warning("Sent back to Agency", {
+        description: "Feedback sent. Agency can revise and resubmit.",
+      })
       router.push("/medical-affairs-scripts")
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to reject"
@@ -281,7 +289,10 @@ export default function MedicalAffairsScriptDetailPage() {
             <div className="mt-1 flex items-center gap-2">
               <Badge
                 variant="outline"
-                className={cn("uppercase", getScriptDisplayInfo(script).className)}
+                className={cn(
+                  "uppercase",
+                  getScriptDisplayInfo(script).className
+                )}
               >
                 {getScriptDisplayInfo(script).label}
               </Badge>
@@ -356,7 +367,8 @@ export default function MedicalAffairsScriptDetailPage() {
               onClick={() => {
                 if (hasUnsavedChanges) {
                   toast.error("Please save your changes before submitting.", {
-                    description: "Click Save changes, then submit to Content/Brand.",
+                    description:
+                      "Click Save changes, then submit to Content/Brand.",
                   })
                   return
                 }
@@ -453,7 +465,7 @@ export default function MedicalAffairsScriptDetailPage() {
               onClick={handleConfirmSubmit}
               disabled={submitting || hasUnsavedChanges}
               title={hasUnsavedChanges ? "Save your changes first" : undefined}
-              className="bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white border-0 hover:opacity-90"
+              className="border-0 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
             >
               {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
               Submit
