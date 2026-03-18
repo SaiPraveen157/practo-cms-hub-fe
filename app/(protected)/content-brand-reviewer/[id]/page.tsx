@@ -4,7 +4,13 @@ import { useEffect, useState } from "react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
@@ -80,9 +86,10 @@ export default function ContentBrandReviewerScriptPage() {
     getScriptQueue(token)
       .then((queueRes) => {
         if (cancelled) return
-        const s = [...(queueRes.available ?? []), ...(queueRes.myReviews ?? [])].find(
-          (q) => q.id === id
-        )
+        const s = [
+          ...(queueRes.available ?? []),
+          ...(queueRes.myReviews ?? []),
+        ].find((q) => q.id === id)
         if (!s) {
           setError("Script not found in your queue.")
           setScript(null)
@@ -91,7 +98,8 @@ export default function ContentBrandReviewerScriptPage() {
         setScript(s)
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load script")
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : "Failed to load script")
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -111,9 +119,14 @@ export default function ContentBrandReviewerScriptPage() {
       })
       setApproveDialogOpen(false)
       setApproveComments("")
-      toast.success(canFinalApprove ? "Final approval sent" : "Script approved", {
-        description: canFinalApprove ? "Moved to Content Approver for lock." : "Moved to Agency Production.",
-      })
+      toast.success(
+        canFinalApprove ? "Final approval sent" : "Script approved",
+        {
+          description: canFinalApprove
+            ? "Moved to Content Approver for lock."
+            : "Moved to Agency Production.",
+        }
+      )
       router.push("/content-brand-reviewer")
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to approve"
@@ -137,7 +150,9 @@ export default function ContentBrandReviewerScriptPage() {
       await rejectScript(token, id, { comments })
       setRejectDialogOpen(false)
       setRejectComments("")
-      toast.warning("Sent back for changes", { description: "Medical Affairs will be notified. TAT 24 hours." })
+      toast.warning("Sent back for changes", {
+        description: "Medical Affairs will be notified. TAT 24 hours.",
+      })
       router.push("/content-brand-reviewer")
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to reject"
@@ -151,7 +166,9 @@ export default function ContentBrandReviewerScriptPage() {
   if (!isContentBrand) {
     return (
       <div className="p-6 md:p-8">
-        <p className="text-muted-foreground">Only Content/Brand can review scripts here.</p>
+        <p className="text-muted-foreground">
+          Only Content/Brand can review scripts here.
+        </p>
         <Button variant="link" asChild className="mt-2 pl-0">
           <Link href="/content-brand-reviewer">Back to review queue</Link>
         </Button>
@@ -180,7 +197,10 @@ export default function ContentBrandReviewerScriptPage() {
             <div className="mt-1 flex items-center gap-2">
               <Badge
                 variant="outline"
-                className={cn("uppercase", getScriptDisplayInfo(script).className)}
+                className={cn(
+                  "uppercase",
+                  getScriptDisplayInfo(script).className
+                )}
               >
                 {getScriptDisplayInfo(script).label}
               </Badge>
@@ -203,7 +223,8 @@ export default function ContentBrandReviewerScriptPage() {
           <Card className="border-muted">
             <CardContent className="pt-6">
               <p className="text-sm text-muted-foreground">
-                This script is not in a stage you can act on. It may be in Review, Final Approval, or another stage.
+                This script is not in a stage you can act on. It may be in
+                Review, Final Approval, or another stage.
               </p>
               <Button asChild variant="link" className="mt-2 pl-0">
                 <Link href="/content-brand-reviewer">Back to review queue</Link>
@@ -224,14 +245,20 @@ export default function ContentBrandReviewerScriptPage() {
           <CardContent className="space-y-4">
             {script.insight && (
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Insight</p>
-                <p className="mt-1 whitespace-pre-wrap text-sm">{script.insight}</p>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Insight
+                </p>
+                <p className="mt-1 text-sm whitespace-pre-wrap">
+                  {script.insight}
+                </p>
               </div>
             )}
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Script</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                Script
+              </p>
               <div
-                className="mt-1 rounded-lg bg-muted/50 p-4 text-sm leading-relaxed [&_p]:mb-2 [&_ul]:list-disc [&_ol]:list-decimal [&_a]:text-primary [&_a]:underline"
+                className="mt-1 rounded-lg bg-muted/50 p-4 text-sm leading-relaxed [&_a]:text-primary [&_a]:underline [&_ol]:list-decimal [&_p]:mb-2 [&_ul]:list-disc"
                 dangerouslySetInnerHTML={{ __html: script.content ?? "" }}
               />
             </div>
@@ -256,7 +283,8 @@ export default function ContentBrandReviewerScriptPage() {
               onClick={() => setApproveDialogOpen(true)}
             >
               <CheckCircle className="mr-2 size-4" />
-              {canFinalApprove ? "Final approve" : "Approve"}
+              {/* {canFinalApprove ? "Final approve" : "Approve"} */}
+              Approve
             </Button>
           </div>
         )}
@@ -266,19 +294,20 @@ export default function ContentBrandReviewerScriptPage() {
 
       {/* Approve dialog */}
       <Dialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
-        <DialogContent className="sm:max-w-lg gap-6 p-6 sm:p-8" showCloseButton>
+        <DialogContent className="gap-6 p-6 sm:max-w-lg sm:p-8" showCloseButton>
           <DialogHeader className="gap-3 space-y-1">
             <DialogTitle className="text-lg font-semibold tracking-tight">
-              {canFinalApprove ? "Final approve" : "Approve script"}
+              {/* {canFinalApprove ? "Final approve" : "Approve script"} */}
+              Approve
             </DialogTitle>
-            <DialogDescription className="text-sm leading-relaxed max-w-[42ch]">
+            <DialogDescription className="max-w-[42ch] text-sm leading-relaxed">
               {canFinalApprove
                 ? "The script will move to Content Approver Review. Content Approver can then lock it for production. You can add optional comments."
                 : "The script will move to Agency Production. Medical Affairs will no longer edit this version. You can add optional comments for the record."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="approve-comments">Comments (required)</Label>
+            <Label htmlFor="approve-comments">Comments (optional)</Label>
             <Textarea
               id="approve-comments"
               value={approveComments}
@@ -288,7 +317,7 @@ export default function ContentBrandReviewerScriptPage() {
               className="resize-y"
             />
           </div>
-          <DialogFooter className="gap-3 -mx-6 -mb-6 px-6 pb-6 sm:flex-row sm:justify-end">
+          <DialogFooter className="-mx-6 -mb-6 gap-3 px-6 pb-6 sm:flex-row sm:justify-end">
             <Button
               variant="outline"
               onClick={() => setApproveDialogOpen(false)}
@@ -311,13 +340,15 @@ export default function ContentBrandReviewerScriptPage() {
 
       {/* Reject dialog */}
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
-        <DialogContent className="sm:max-w-lg gap-6 p-6 sm:p-8" showCloseButton>
+        <DialogContent className="gap-6 p-6 sm:max-w-lg sm:p-8" showCloseButton>
           <DialogHeader className="gap-3 space-y-1">
             <DialogTitle className="text-lg font-semibold tracking-tight">
               Send back for changes
             </DialogTitle>
-            <DialogDescription className="text-sm leading-relaxed max-w-[42ch]">
-              The script will return to Draft. Medical Affairs will be notified and can revise and resubmit. Please provide feedback so they know what to change. TAT 24 hours.
+            <DialogDescription className="max-w-[42ch] text-sm leading-relaxed">
+              The script will return to Draft. Medical Affairs will be notified
+              and can revise and resubmit. Please provide feedback so they know
+              what to change. TAT 24 hours.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -332,7 +363,7 @@ export default function ContentBrandReviewerScriptPage() {
               required
             />
           </div>
-          <DialogFooter className="gap-3 -mx-6 -mb-6 px-6 pb-6 sm:flex-row sm:justify-end">
+          <DialogFooter className="-mx-6 -mb-6 gap-3 px-6 pb-6 sm:flex-row sm:justify-end">
             <Button
               variant="outline"
               onClick={() => setRejectDialogOpen(false)}

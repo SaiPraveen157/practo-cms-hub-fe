@@ -169,7 +169,9 @@ export default function NotificationsPage() {
             </Card>
           ) : (
             <ul className="space-y-3">
-              {notifications.map((n) => {
+              {[...notifications]
+                .sort((a, b) => Number(a.isRead) - Number(b.isRead))
+                .map((n) => {
                 const isMarking = markingId === n.id
                 return (
                   <li key={n.id}>

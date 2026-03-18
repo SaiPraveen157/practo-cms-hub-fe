@@ -301,7 +301,7 @@ export default function AgencyPocScriptPage() {
             </form>
             <div className="flex flex-wrap gap-2 border-t pt-6">
               <Button
-              className='bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700'
+                className="bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
                 onClick={() => {
                   if (hasUnsavedChanges) {
                     toast.error("Please save your changes before submitting.", {
@@ -315,8 +315,8 @@ export default function AgencyPocScriptPage() {
                   hasUnsavedChanges ? "Save your changes first" : undefined
                 }
               >
-                <Send className="mr-2 size-4" />
                 Submit revision to Medical Affairs
+                <Send className="mr-2 size-4" />
               </Button>
             </div>
           </>

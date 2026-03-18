@@ -82,7 +82,10 @@ export async function getMyReviews(
   sp.set("decision", params.decision)
   if (params.page != null) sp.set("page", String(params.page))
   if (params.limit != null) sp.set("limit", String(params.limit))
-  return apiRequest<ListScriptsResponse>(`/api/scripts/my-reviews?${sp.toString()}`, { token })
+  return apiRequest<ListScriptsResponse>(
+    `/api/scripts/my-reviews?${sp.toString()}`,
+    { token }
+  )
 }
 
 export async function updateScript(
@@ -110,14 +113,14 @@ export async function submitScript(
   })
 }
 
-/** Phase 2: Content/Brand approve → CONTENT_BRAND_REVIEW to AGENCY_PRODUCTION */
+/** Phase 2: Content/Brand approve → CONTENT_BRAND_REVIEW to AGENCY_PRODUCTION. Comments are optional. */
 export async function approveScript(
   token: string | null,
   id: string,
-  body: { comments?: string } = {}
+  body: { comments?: string | null } = {}
 ): Promise<SingleScriptResponse> {
   checkToken(token)
-  const comments = body.comments?.trim()
+  const comments = body?.comments != null ? String(body.comments).trim() : ""
   const requestBody = comments ? { comments } : {}
   return apiRequest<SingleScriptResponse>(`/api/scripts/${id}/approve`, {
     method: "POST",
@@ -147,11 +150,14 @@ export async function submitRevision(
   body: { content: string }
 ): Promise<SingleScriptResponse> {
   checkToken(token)
-  return apiRequest<SingleScriptResponse>(`/api/scripts/${id}/submit-revision`, {
-    method: "POST",
-    body,
-    token,
-  })
+  return apiRequest<SingleScriptResponse>(
+    `/api/scripts/${id}/submit-revision`,
+    {
+      method: "POST",
+      body,
+      token,
+    }
+  )
 }
 
 /** Phase 3: Content Approver lock → CONTENT_APPROVER_REVIEW to LOCKED */
