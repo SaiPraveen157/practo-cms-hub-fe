@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -27,7 +27,14 @@ import {
 import { useAuthStore } from "@/store"
 import { toast } from "sonner"
 import { getScriptQueue, updateScript, submitRevision } from "@/lib/scripts-api"
-import type { Script, ScriptStatus } from "@/types/script"
+import type { Script, ScriptFeedbackSticker, ScriptStatus } from "@/types/script"
+import {
+  canonicalStickersJsonFromArray,
+  canonicalStickersJsonFromRecord,
+  recordFromStickerArray,
+  scriptCommentsListFromScript,
+} from "@/lib/feedback-sticker-sync"
+import { useScriptCommentsRemoteSync } from "@/hooks/use-script-comments-remote-sync"
 import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import { ScriptDetailSkeleton } from "@/components/loading/script-detail-skeleton"
 import { ScriptRejectionFeedback } from "@/components/script-rejection-feedback"
@@ -75,15 +82,48 @@ export default function AgencyPocScriptPage() {
   const [editTitle, setEditTitle] = useState("")
   const [editInsight, setEditInsight] = useState("")
   const [editContent, setEditContent] = useState("")
+  const [feedbackStickers, setFeedbackStickers] = useState<
+    Record<string, ScriptFeedbackSticker>
+  >({})
 
   const isAgencyPoc = user?.role === "AGENCY_POC"
   const canEdit = script?.status === "AGENCY_PRODUCTION"
+
+  const onCommentsMergedFromApi = useCallback((list: ScriptFeedbackSticker[]) => {
+    setFeedbackStickers(recordFromStickerArray(list))
+  }, [])
+
+  const { notifyStickersChanged, syncBaseline } = useScriptCommentsRemoteSync({
+    token,
+    scriptId: id,
+    fetchEnabled: Boolean(token && id),
+    pushEnabled: Boolean(token && id && canEdit),
+    onMergeFromServer: onCommentsMergedFromApi,
+  })
+
+  const handleFeedbackStickersChange = useCallback(
+    (next: Record<string, ScriptFeedbackSticker>) => {
+      setFeedbackStickers(next)
+      notifyStickersChanged(next)
+    },
+    [notifyStickersChanged]
+  )
+
+  const serverStickersKey = useMemo(
+    () => canonicalStickersJsonFromArray(scriptCommentsListFromScript(script)),
+    [script?.comments, script?.feedbackStickers]
+  )
+  const editStickersKey = useMemo(
+    () => canonicalStickersJsonFromRecord(feedbackStickers),
+    [feedbackStickers]
+  )
 
   const hasUnsavedChanges =
     !!script &&
     (editTitle !== (script.title ?? "") ||
       editInsight !== (script.insight ?? "") ||
-      editContent !== (script.content ?? ""))
+      editContent !== (script.content ?? "") ||
+      serverStickersKey !== editStickersKey)
 
   function refetchScript() {
     if (!token || !id) return
@@ -98,6 +138,9 @@ export default function AgencyPocScriptPage() {
           setEditTitle(s.title ?? "")
           setEditInsight(s.insight ?? "")
           setEditContent(s.content ?? "")
+          const stickerMap = recordFromStickerArray(scriptCommentsListFromScript(s))
+          setFeedbackStickers(stickerMap)
+          syncBaseline(stickerMap)
         }
       })
       .catch(() => {})
@@ -124,6 +167,9 @@ export default function AgencyPocScriptPage() {
         setEditTitle(s.title ?? "")
         setEditInsight(s.insight ?? "")
         setEditContent(s.content ?? "")
+        const stickerMap = recordFromStickerArray(scriptCommentsListFromScript(s))
+        setFeedbackStickers(stickerMap)
+        syncBaseline(stickerMap)
       })
       .catch((err) => {
         if (!cancelled)
@@ -135,7 +181,7 @@ export default function AgencyPocScriptPage() {
     return () => {
       cancelled = true
     }
-  }, [token, id])
+  }, [token, id, syncBaseline])
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -143,10 +189,13 @@ export default function AgencyPocScriptPage() {
     setError(null)
     setSaving(true)
     try {
+      const commentList = Object.values(feedbackStickers)
       await updateScript(token, id, {
         title: editTitle.trim() || undefined,
         insight: editInsight.trim() || undefined,
         content: editContent,
+        comments: commentList,
+        feedbackStickers: commentList,
       })
       refetchScript()
       toast.success("Changes saved", {
@@ -286,6 +335,10 @@ export default function AgencyPocScriptPage() {
                       onChange={setEditContent}
                       placeholder="Enter the full script content..."
                       minHeight="280px"
+                      feedbackStickers={feedbackStickers}
+                      onFeedbackStickersChange={handleFeedbackStickersChange}
+                      feedbackStickerToolbar
+                      feedbackStickerAuthorId={user?.id ?? null}
                     />
                   </div>
                   <Button
@@ -340,13 +393,18 @@ export default function AgencyPocScriptPage() {
                   </p>
                 </div>
               )}
-              <div>
+              <div className="space-y-2">
                 <p className="text-sm font-medium text-muted-foreground">
                   Script
                 </p>
-                <div
-                  className="mt-1 rounded-lg bg-muted/50 p-4 text-sm leading-relaxed [&_a]:text-primary [&_a]:underline [&_ol]:list-decimal [&_p]:mb-2 [&_ul]:list-disc"
-                  dangerouslySetInnerHTML={{ __html: script.content ?? "" }}
+                <ScriptRichTextEditor
+                  key={`${script.id}-view-${script.updatedAt}`}
+                  initialContent={script.content ?? ""}
+                  disabled
+                  minHeight="200px"
+                  className="mt-1 rounded-lg bg-muted/50"
+                  feedbackStickers={feedbackStickers}
+                  feedbackCommentsSidebar
                 />
               </div>
             </CardContent>
