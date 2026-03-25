@@ -8,7 +8,13 @@ import { Input } from "@/components/ui/input"
 import { useAuthStore } from "@/store"
 import { getVideoQueue, getVideoStats } from "@/lib/videos-api"
 import type { Video, VideoPhase, VideoStatus } from "@/types/video"
-import { ArrowRight, Clock, Loader2, Search, Video as VideoIcon } from "lucide-react"
+import {
+  ArrowRight,
+  Clock,
+  Loader2,
+  Search,
+  Video as VideoIcon,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -63,7 +69,9 @@ export default function ContentApproverVideosPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
-  const [stats, setStats] = useState<Awaited<ReturnType<typeof getVideoStats>> | null>(null)
+  const [stats, setStats] = useState<Awaited<
+    ReturnType<typeof getVideoStats>
+  > | null>(null)
 
   const isContentApprover = user?.role === "CONTENT_APPROVER"
 
@@ -89,7 +97,9 @@ export default function ContentApproverVideosPage() {
 
   useEffect(() => {
     if (!token || !isContentApprover) return
-    getVideoStats(token).then(setStats).catch(() => setStats(null))
+    getVideoStats(token)
+      .then(setStats)
+      .catch(() => setStats(null))
   }, [token, isContentApprover])
 
   const filteredVideos = searchQuery.trim()
@@ -108,8 +118,14 @@ export default function ContentApproverVideosPage() {
       <div className="p-6 md:p-8">
         <Card>
           <CardContent className="pt-6">
-            <p className="text-muted-foreground">Only Content Approver can access this page.</p>
-            <Button variant="outline" className="mt-4" onClick={() => router.back()}>
+            <p className="text-muted-foreground">
+              Only Content Approver can access this page.
+            </p>
+            <Button
+              variant="outline"
+              className="mt-4"
+              onClick={() => router.back()}
+            >
               Go back
             </Button>
           </CardContent>
@@ -126,7 +142,8 @@ export default function ContentApproverVideosPage() {
             Content Approver — Videos
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            View video workflow status. Videos are reviewed by Medical Affairs and Content/Brand.
+            View video workflow status. Videos are reviewed by Medical Affairs
+            and Content/Brand.
           </p>
         </div>
 
@@ -136,14 +153,22 @@ export default function ContentApproverVideosPage() {
               <>
                 <Card>
                   <CardContent className="pt-4">
-                    <p className="text-sm text-muted-foreground">First Line Up — Pending</p>
-                    <p className="text-2xl font-semibold">{stats.firstLineUp.pending}</p>
+                    <p className="text-sm text-muted-foreground">
+                      First Line Up — Pending
+                    </p>
+                    <p className="text-2xl font-semibold">
+                      {stats.firstLineUp.pending}
+                    </p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4">
-                    <p className="text-sm text-muted-foreground">First Line Up — Approved</p>
-                    <p className="text-2xl font-semibold">{stats.firstLineUp.approved}</p>
+                    <p className="text-sm text-muted-foreground">
+                      First Line Up — Approved
+                    </p>
+                    <p className="text-2xl font-semibold">
+                      {stats.firstLineUp.approved}
+                    </p>
                   </CardContent>
                 </Card>
               </>
@@ -152,14 +177,22 @@ export default function ContentApproverVideosPage() {
               <>
                 <Card>
                   <CardContent className="pt-4">
-                    <p className="text-sm text-muted-foreground">First Cut — Pending</p>
-                    <p className="text-2xl font-semibold">{stats.firstCut.pending}</p>
+                    <p className="text-sm text-muted-foreground">
+                      First Cut — Pending
+                    </p>
+                    <p className="text-2xl font-semibold">
+                      {stats.firstCut.pending}
+                    </p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4">
-                    <p className="text-sm text-muted-foreground">First Cut — Approved</p>
-                    <p className="text-2xl font-semibold">{stats.firstCut.approved}</p>
+                    <p className="text-sm text-muted-foreground">
+                      First Cut — Approved
+                    </p>
+                    <p className="text-2xl font-semibold">
+                      {stats.firstCut.approved}
+                    </p>
                   </CardContent>
                 </Card>
               </>
@@ -168,7 +201,7 @@ export default function ContentApproverVideosPage() {
         )}
 
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="search"
             placeholder="Search by script title or file name..."
@@ -182,7 +215,12 @@ export default function ContentApproverVideosPage() {
           <Card className="border-destructive/50 bg-destructive/10">
             <CardContent className="pt-6">
               <p className="text-sm text-destructive">{error}</p>
-              <Button variant="outline" size="sm" className="mt-2" onClick={fetchQueue}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2"
+                onClick={fetchQueue}
+              >
                 Retry
               </Button>
             </CardContent>
@@ -198,7 +236,9 @@ export default function ContentApproverVideosPage() {
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
               <VideoIcon className="size-12 text-muted-foreground" />
               <p className="mt-4 font-medium">
-                {searchQuery.trim() ? "No videos match your search" : "No videos"}
+                {searchQuery.trim()
+                  ? "No videos match your search"
+                  : "No videos"}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 Video queue items will appear here.
@@ -235,25 +275,29 @@ export default function ContentApproverVideosPage() {
                       {PHASE_LABELS[video.phase]} · v{video.version}
                     </span>
                   </div>
-                  <h3 className="min-w-0 text-lg font-semibold leading-tight text-foreground">
+                  <h3 className="min-w-0 text-lg leading-tight font-semibold text-foreground">
                     {video.script?.title ?? "Untitled script"}
                   </h3>
                   <div className="text-sm text-muted-foreground">
                     {video.fileUrl ? (
                       <span>{video.fileName ?? "File attached"}</span>
                     ) : (
-                      <span className="text-amber-600 dark:text-amber-400">Awaiting upload</span>
+                      <span className="text-amber-600 dark:text-amber-400">
+                        Awaiting upload
+                      </span>
                     )}
                     {video.uploadedBy && (
                       <span className="ml-2">
-                        · {video.uploadedBy.firstName} {video.uploadedBy.lastName}
+                        · {video.uploadedBy.firstName}{" "}
+                        {video.uploadedBy.lastName}
                       </span>
                     )}
                   </div>
                   {video.tat && (
                     <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Clock className="size-3.5" />
-                      TAT {video.tat.limitHours}h · Due {formatDate(video.tat.dueAt)}
+                      TAT {video.tat.limitHours}h · Due{" "}
+                      {formatDate(video.tat.dueAt)}
                     </p>
                   )}
                   <div className="mt-auto flex flex-wrap gap-2">

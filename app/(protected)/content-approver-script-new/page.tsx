@@ -58,9 +58,10 @@ export default function ContentApproverScriptNewPage() {
   }, [tab, page, searchFilteredScripts])
 
   const paginationTotal = tab === "all" ? searchFilteredScripts.length : total
-  const paginationTotalPages = tab === "all"
-    ? Math.max(1, Math.ceil(searchFilteredScripts.length / PAGE_SIZE))
-    : totalPages
+  const paginationTotalPages =
+    tab === "all"
+      ? Math.max(1, Math.ceil(searchFilteredScripts.length / PAGE_SIZE))
+      : totalPages
 
   useEffect(() => {
     if (!token) return
@@ -75,14 +76,22 @@ export default function ContentApproverScriptNewPage() {
       getScriptQueue(token)
         .then((res) => {
           if (!cancelled) {
-            const combined = [...(res.available ?? []), ...(res.myReviews ?? [])]
+            const combined = [
+              ...(res.available ?? []),
+              ...(res.myReviews ?? []),
+            ]
             setScripts(combined)
             setTotal(res.total ?? combined.length)
-            setTotalPages(Math.max(1, Math.ceil((res.total ?? combined.length) / PAGE_SIZE)))
+            setTotalPages(
+              Math.max(1, Math.ceil((res.total ?? combined.length) / PAGE_SIZE))
+            )
           }
         })
         .catch((err) => {
-          if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load scripts")
+          if (!cancelled)
+            setError(
+              err instanceof Error ? err.message : "Failed to load scripts"
+            )
         })
         .finally(() => {
           if (!cancelled) setLoading(false)
@@ -101,7 +110,10 @@ export default function ContentApproverScriptNewPage() {
           }
         })
         .catch((err) => {
-          if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load scripts")
+          if (!cancelled)
+            setError(
+              err instanceof Error ? err.message : "Failed to load scripts"
+            )
         })
         .finally(() => {
           if (!cancelled) setLoading(false)
@@ -114,7 +126,9 @@ export default function ContentApproverScriptNewPage() {
 
   useEffect(() => {
     if (!token) return
-    getScriptStats(token).then(setStats).catch(() => setStats(null))
+    getScriptStats(token)
+      .then(setStats)
+      .catch(() => setStats(null))
   }, [token])
 
   if (!isContentApprover) {
@@ -122,8 +136,14 @@ export default function ContentApproverScriptNewPage() {
       <div className="p-6 md:p-8">
         <Card>
           <CardContent className="pt-6">
-            <p className="text-muted-foreground">Only Content Approver can access this queue.</p>
-            <Button variant="outline" className="mt-4" onClick={() => router.back()}>
+            <p className="text-muted-foreground">
+              Only Content Approver can access this queue.
+            </p>
+            <Button
+              variant="outline"
+              className="mt-4"
+              onClick={() => router.back()}
+            >
               Go back
             </Button>
           </CardContent>
@@ -136,9 +156,12 @@ export default function ContentApproverScriptNewPage() {
     <div className="p-6 md:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Script Approvals</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            Script Approvals
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Final approval authority — Review all content before moving to production.
+            Final approval authority — Review all content before moving to
+            production.
           </p>
         </div>
 
@@ -146,7 +169,7 @@ export default function ContentApproverScriptNewPage() {
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="search"
               placeholder="Search by title..."
@@ -161,7 +184,11 @@ export default function ContentApproverScriptNewPage() {
         </div>
 
         <div className="border-b border-border">
-          <nav className="flex gap-1" role="tablist" aria-label="Script list tabs">
+          <nav
+            className="flex gap-1"
+            role="tablist"
+            aria-label="Script list tabs"
+          >
             {(
               [
                 { key: "all" as TabKey, label: "All" },
@@ -174,7 +201,10 @@ export default function ContentApproverScriptNewPage() {
                 type="button"
                 role="tab"
                 aria-selected={tab === key}
-                onClick={() => { setTab(key); setPage(1) }}
+                onClick={() => {
+                  setTab(key)
+                  setPage(1)
+                }}
                 className={cn(
                   "border-b-2 px-4 py-3 text-sm font-medium transition-colors",
                   tab === key
@@ -212,8 +242,7 @@ export default function ContentApproverScriptNewPage() {
                   "Scripts that have passed Content/Brand final approval will appear here."}
                 {tab === "approved" &&
                   "Scripts you locked (approved) will appear here."}
-                {tab === "rejected" &&
-                  "Scripts you rejected will appear here."}
+                {tab === "rejected" && "Scripts you rejected will appear here."}
               </p>
             </CardContent>
           </Card>
@@ -228,7 +257,10 @@ export default function ContentApproverScriptNewPage() {
               <Button
                 variant="outline"
                 className="mt-4"
-                onClick={() => { setSearchQuery(""); setPage(1) }}
+                onClick={() => {
+                  setSearchQuery("")
+                  setPage(1)
+                }}
               >
                 Clear search
               </Button>
@@ -242,7 +274,9 @@ export default function ContentApproverScriptNewPage() {
                 script={script}
                 detailHref={`/content-approver-script-new/${script.id}`}
                 authorSubtitle="Content Creator"
-                onCardClick={() => router.push(`/content-approver-script-new/${script.id}`)}
+                onCardClick={() =>
+                  router.push(`/content-approver-script-new/${script.id}`)
+                }
                 actions={
                   <div className="flex flex-wrap gap-2">
                     <Button
