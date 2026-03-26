@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useAuthStore } from "@/store"
+import { getPackageQueue } from "@/lib/packages-api"
 import { getScriptQueue, getScriptStats } from "@/lib/scripts-api"
 import { filterScriptsBySearch } from "@/lib/script-search"
 import type { Script, ScriptStatus, ScriptStatsResponse } from "@/types/script"
@@ -44,6 +45,10 @@ export default function AgencyPocPage() {
   const [stats, setStats] = useState<ScriptStatsResponse | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [tab, setTab] = useState<TabKey>("all")
+  /** scriptId → package id from agency package queue (for locked script actions). */
+  const [finalPackageIdByScriptId, setFinalPackageIdByScriptId] = useState<
+    Map<string, string>
+  >(() => new Map())
 
   const isAgencyPoc = user?.role === "AGENCY_POC"
 
@@ -94,6 +99,29 @@ export default function AgencyPocPage() {
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    getPackageQueue(token)
+      .then((packageRes) => {
+        if (cancelled) return
+        const m = new Map<string, string>()
+        for (const p of [
+          ...(packageRes.available ?? []),
+          ...(packageRes.myReviews ?? []),
+        ]) {
+          if (p.scriptId && p.id) m.set(p.scriptId, p.id)
+        }
+        setFinalPackageIdByScriptId(m)
+      })
+      .catch(() => {
+        if (!cancelled) setFinalPackageIdByScriptId(new Map())
       })
     return () => {
       cancelled = true
@@ -249,51 +277,63 @@ export default function AgencyPocPage() {
           </Card>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
-            {displayedScripts.map((script) => (
-              <ScriptListingCard
-                key={script.id}
-                script={script}
-                detailHref={`/agency-poc/${script.id}`}
-                authorSubtitle="Agency POC"
-                onCardClick={() => router.push(`/agency-poc/${script.id}`)}
-                actions={
-                  script.status === "LOCKED" ? (
-                    <div className="flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
+            {displayedScripts.map((script) => {
+              const finalPackageId = finalPackageIdByScriptId.get(script.id)
+              return (
+                <ScriptListingCard
+                  key={script.id}
+                  script={script}
+                  detailHref={`/agency-poc/${script.id}`}
+                  authorSubtitle="Agency POC"
+                  onCardClick={() => router.push(`/agency-poc/${script.id}`)}
+                  actions={
+                    script.status === "LOCKED" ? (
+                      <div
+                        className="flex flex-wrap gap-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {finalPackageId ? (
+                          <Button
+                            asChild
+                            size="sm"
+                            variant="outline"
+                            className="gap-1.5"
+                          >
+                            <Link href={`/agency-poc-packages/${finalPackageId}`}>
+                              <Package className="size-4 shrink-0" />
+                              Final package
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button
+                            asChild
+                            size="sm"
+                            className="gap-1.5 border-0 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
+                          >
+                            <Link href={`/agency-poc/${script.id}/upload`}>
+                              <Upload className="size-4 shrink-0" />
+                              Upload video
+                            </Link>
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
                       <Button
                         asChild
                         size="sm"
-                        className="gap-1.5 border-0 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
+                        className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        <Link href={`/agency-poc/${script.id}/upload`}>
-                          <Upload className="size-4 shrink-0" />
-                          Upload video
+                        <Link href={`/agency-poc/${script.id}`}>
+                          <Send className="size-4 shrink-0" />
+                          Edit & submit revision
                         </Link>
                       </Button>
-                      <Button asChild size="sm" variant="outline" className="gap-1.5">
-                        <Link
-                          href={`/agency-poc-packages/new?scriptId=${encodeURIComponent(script.id)}`}
-                        >
-                          <Package className="size-4 shrink-0" />
-                          Final package
-                        </Link>
-                      </Button>
-                    </div>
-                  ) : (
-                    <Button
-                      asChild
-                      size="sm"
-                      className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Link href={`/agency-poc/${script.id}`}>
-                        <Send className="size-4 shrink-0" />
-                        Edit & submit revision
-                      </Link>
-                    </Button>
-                  )
-                }
-              />
-            ))}
+                    )
+                  }
+                />
+              )
+            })}
           </div>
         )}
 

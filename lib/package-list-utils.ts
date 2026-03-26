@@ -83,6 +83,15 @@ export function agencyPackageNeedsRevision(p: FinalPackage): boolean {
   return false
 }
 
+/**
+ * Agency may open the Phase 6 submit wizard (`/new?scriptId`) after withdraw
+ * (status DRAFT) or when reviewers rejected work (full package or a track).
+ */
+export function agencyPackageNeedsSubmitWizard(p: FinalPackage): boolean {
+  if (p.status === "DRAFT") return true
+  return agencyPackageNeedsRevision(p)
+}
+
 export function dedupePackages(list: FinalPackage[]): FinalPackage[] {
   const map = new Map<string, FinalPackage>()
   for (const p of list) map.set(p.id, p)

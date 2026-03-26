@@ -168,7 +168,14 @@ export default function AgencySubmitPackagePage() {
       try {
         const existing = await getPackageByScriptId(token, scriptId)
         const p = existing?.package
-        if (p && p.status !== "REJECTED") {
+        /** Block wizard only while package is in review or done — not DRAFT (withdrawn) or REJECTED. */
+        const packageBlocksSubmitWizard =
+          p &&
+          (p.status === "MEDICAL_REVIEW" ||
+            p.status === "BRAND_REVIEW" ||
+            p.status === "APPROVER_REVIEW" ||
+            p.status === "APPROVED")
+        if (packageBlocksSubmitWizard) {
           redirecting = true
           toast.info("This script already has a final package.", {
             description: "Open it from your list to continue.",
@@ -547,10 +554,9 @@ export default function AgencySubmitPackagePage() {
     }
   }
 
-  function handleFormSubmit(e: React.FormEvent) {
+  /** Block native form submit (e.g. Enter in inputs). Submit only via the explicit footer button. */
+  function preventImplicitFormSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (wizardStep !== WIZARD_STEP_COUNT - 1) return
-    void performSubmit()
   }
 
   if (!isAgency) {
@@ -618,7 +624,7 @@ export default function AgencySubmitPackagePage() {
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gradient-to-b from-muted/30 to-background">
       <form
-        onSubmit={handleFormSubmit}
+        onSubmit={preventImplicitFormSubmit}
         className="flex min-h-0 flex-1 flex-col"
       >
         <div
@@ -882,6 +888,7 @@ export default function AgencySubmitPackagePage() {
           onContinue={() =>
             setWizardStep((s) => Math.min(WIZARD_STEP_COUNT - 1, s + 1))
           }
+          onConfirmSubmit={() => void performSubmit()}
         />
       </form>
     </div>
@@ -974,6 +981,7 @@ function WizardFooter({
   submitting,
   onBack,
   onContinue,
+  onConfirmSubmit,
 }: {
   wizardStep: number
   stepCount: number
@@ -982,6 +990,7 @@ function WizardFooter({
   submitting: boolean
   onBack: () => void
   onContinue: () => void
+  onConfirmSubmit: () => void
 }) {
   const isLast = wizardStep === stepCount - 1
   return (
@@ -1027,11 +1036,12 @@ function WizardFooter({
           </Button>
         ) : (
           <Button
-            type="submit"
+            type="button"
             size="lg"
             disabled={!allReady || submitting}
             className="w-full border-0 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90 sm:ml-auto sm:w-auto"
             title={!allReady ? "Complete all steps first" : undefined}
+            onClick={onConfirmSubmit}
           >
             {submitting ? (
               <>
