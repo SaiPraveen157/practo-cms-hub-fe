@@ -26,6 +26,10 @@ export const ROUTES = {
   CONTENT_APPROVER_SCRIPTS: "/content-approver-scripts",
   CONTENT_APPROVER_SCRIPTS_NEW: "/content-approver-script-new",
   CONTENT_APPROVER_VIDEOS: "/content-approver-videos",
+  AGENCY_POC_PACKAGES: "/agency-poc-packages",
+  MEDICAL_AFFAIRS_PACKAGES: "/medical-affairs-packages",
+  CONTENT_BRAND_PACKAGES: "/content-brand-packages",
+  CONTENT_APPROVER_PACKAGES: "/content-approver-packages",
   PUBLISHER: "/publisher",
   // DOCTOR_PROFILE: "/doctor-profile",
   CONTENT_LIBRARY: "/content-library",
@@ -36,7 +40,24 @@ export type RouteKey = keyof typeof ROUTES
 /** Sidebar label and icon for each route. Only entries used in sidebar need to be set. */
 export const ROUTE_META: Record<
   RouteKey,
-  { label: string; icon: "layout-dashboard" | "file-text" | "users" | "clipboard-list" | "shield-check" | "history" | "upload" | "bell" | "folder-open" | "video" | "book-open" | "user" | "settings" }
+  {
+    label: string
+    icon:
+      | "layout-dashboard"
+      | "file-text"
+      | "users"
+      | "clipboard-list"
+      | "shield-check"
+      | "history"
+      | "upload"
+      | "bell"
+      | "folder-open"
+      | "video"
+      | "package"
+      | "book-open"
+      | "user"
+      | "settings"
+  }
 > = {
   LOGIN: { label: "Login", icon: "layout-dashboard" },
   FORGET_PASSWORD: { label: "Forgot Password", icon: "layout-dashboard" },
@@ -63,6 +84,10 @@ export const ROUTE_META: Record<
   CONTENT_APPROVER_SCRIPTS: { label: "Content Approver Scripts", icon: "shield-check" },
   CONTENT_APPROVER_SCRIPTS_NEW: { label: "Scripts", icon: "file-text" },
   CONTENT_APPROVER_VIDEOS: { label: "Videos", icon: "video" },
+  AGENCY_POC_PACKAGES: { label: "Final packages", icon: "package" },
+  MEDICAL_AFFAIRS_PACKAGES: { label: "Final packages", icon: "package" },
+  CONTENT_BRAND_PACKAGES: { label: "Final packages", icon: "package" },
+  CONTENT_APPROVER_PACKAGES: { label: "Final packages", icon: "package" },
   PUBLISHER: { label: "Publisher", icon: "layout-dashboard" },
   // DOCTOR_PROFILE: { label: "Doctor Profile", icon: "user" },
   CONTENT_LIBRARY: { label: "Content Library", icon: "folder-open" },

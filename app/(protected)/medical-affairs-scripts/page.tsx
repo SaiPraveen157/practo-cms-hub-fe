@@ -4,7 +4,13 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -89,7 +95,10 @@ export default function MedicalAffairsScriptsPage() {
   }, [tab, page, searchFilteredScripts])
 
   const queuePaginationTotal = searchFilteredScripts.length
-  const queueTotalPages = Math.max(1, Math.ceil(queuePaginationTotal / PAGE_SIZE))
+  const queueTotalPages = Math.max(
+    1,
+    Math.ceil(queuePaginationTotal / PAGE_SIZE)
+  )
   const paginationTotal = tab === "all" ? queuePaginationTotal : total
   const paginationTotalPages = tab === "all" ? queueTotalPages : totalPages
 
@@ -108,15 +117,22 @@ export default function MedicalAffairsScriptsPage() {
       getScriptQueue(token)
         .then((res) => {
           if (!cancelled) {
-            const combined = [...(res.available ?? []), ...(res.myReviews ?? [])]
+            const combined = [
+              ...(res.available ?? []),
+              ...(res.myReviews ?? []),
+            ]
             setScripts(combined)
             setTotal(res.total ?? combined.length)
-            setTotalPages(Math.max(1, Math.ceil((res.total ?? combined.length) / PAGE_SIZE)))
+            setTotalPages(
+              Math.max(1, Math.ceil((res.total ?? combined.length) / PAGE_SIZE))
+            )
           }
         })
         .catch((err) => {
           if (!cancelled)
-            setError(err instanceof Error ? err.message : "Failed to load scripts")
+            setError(
+              err instanceof Error ? err.message : "Failed to load scripts"
+            )
         })
         .finally(() => {
           if (!cancelled) setLoading(false)
@@ -136,7 +152,9 @@ export default function MedicalAffairsScriptsPage() {
         })
         .catch((err) => {
           if (!cancelled)
-            setError(err instanceof Error ? err.message : "Failed to load scripts")
+            setError(
+              err instanceof Error ? err.message : "Failed to load scripts"
+            )
         })
         .finally(() => {
           if (!cancelled) setLoading(false)
@@ -149,7 +167,9 @@ export default function MedicalAffairsScriptsPage() {
 
   useEffect(() => {
     if (!token) return
-    getScriptStats(token).then(setStats).catch(() => setStats(null))
+    getScriptStats(token)
+      .then(setStats)
+      .catch(() => setStats(null))
   }, [token])
 
   if (!isMedicalAffairs) {
@@ -182,10 +202,14 @@ export default function MedicalAffairsScriptsPage() {
               Medical Affairs Scripts
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Create scripts and send them to Content/Brand for review. TAT 24 hours.
+              Create scripts and send them to Content/Brand for review. TAT 24
+              hours.
             </p>
           </div>
-          <Button asChild className="shrink-0 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white border-0 hover:opacity-90">
+          <Button
+            asChild
+            className="shrink-0 border-0 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
+          >
             <Link href="/medical-affairs-scripts/new">
               <PlusCircle className="mr-2 size-4" />
               Create script
@@ -197,7 +221,7 @@ export default function MedicalAffairsScriptsPage() {
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="search"
               placeholder="Search by title..."
@@ -230,7 +254,10 @@ export default function MedicalAffairsScriptsPage() {
                   setPage(1)
                 }}
               >
-                <SelectTrigger className="h-10 w-[140px]" aria-label="Filter by status">
+                <SelectTrigger
+                  className="h-10 w-[140px]"
+                  aria-label="Filter by status"
+                >
                   <Filter className="mr-1.5 size-4 shrink-0" />
                   <SelectValue>
                     {statusFilter ? STATUS_LABELS[statusFilter] : "Filter"}
@@ -250,7 +277,11 @@ export default function MedicalAffairsScriptsPage() {
         </div>
 
         <div className="border-b border-border">
-          <nav className="flex gap-1" role="tablist" aria-label="Script list tabs">
+          <nav
+            className="flex gap-1"
+            role="tablist"
+            aria-label="Script list tabs"
+          >
             {(
               [
                 { key: "all" as TabKey, label: "All" },
@@ -263,7 +294,10 @@ export default function MedicalAffairsScriptsPage() {
                 type="button"
                 role="tab"
                 aria-selected={tab === key}
-                onClick={() => { setTab(key); setPage(1) }}
+                onClick={() => {
+                  setTab(key)
+                  setPage(1)
+                }}
                 className={cn(
                   "border-b-2 px-4 py-3 text-sm font-medium transition-colors",
                   tab === key
@@ -305,7 +339,10 @@ export default function MedicalAffairsScriptsPage() {
                   "Scripts you reject in Medical Review will appear here."}
               </p>
               {tab === "all" && (
-                <Button asChild className="mt-4 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white border-0 hover:opacity-90">
+                <Button
+                  asChild
+                  className="mt-4 border-0 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
+                >
                   <Link href="/medical-affairs-scripts/new">Create script</Link>
                 </Button>
               )}
@@ -322,7 +359,10 @@ export default function MedicalAffairsScriptsPage() {
               <Button
                 variant="outline"
                 className="mt-4"
-                onClick={() => { setSearchQuery(""); setPage(1) }}
+                onClick={() => {
+                  setSearchQuery("")
+                  setPage(1)
+                }}
               >
                 Clear search
               </Button>
@@ -336,7 +376,9 @@ export default function MedicalAffairsScriptsPage() {
                 script={script}
                 detailHref={`/medical-affairs-scripts/${script.id}`}
                 authorSubtitle="Medical Affairs"
-                onCardClick={() => router.push(`/medical-affairs-scripts/${script.id}`)}
+                onCardClick={() =>
+                  router.push(`/medical-affairs-scripts/${script.id}`)
+                }
                 actions={
                   script.status === "DRAFT" ? (
                     <Button
@@ -345,7 +387,9 @@ export default function MedicalAffairsScriptsPage() {
                       className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <Link href={`/medical-affairs-scripts/${script.id}?submit=1`}>
+                      <Link
+                        href={`/medical-affairs-scripts/${script.id}?submit=1`}
+                      >
                         Send to Content/Brand
                         <ArrowRight className="size-4 shrink-0" />
                       </Link>

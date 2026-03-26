@@ -2,7 +2,13 @@
 
 import { useAuthStore } from "@/store"
 import { ROLE_LABELS } from "@/lib/role-routes"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 
 export default function AdminHomePage() {
   const user = useAuthStore((s) => s.user)
@@ -22,11 +28,13 @@ export default function AdminHomePage() {
           <CardHeader>
             <CardTitle>Overview</CardTitle>
             <CardDescription>
-              Manage users, view all scripts across statuses, and unlock scripts in emergencies.
+              Manage users, view all scripts across statuses, and unlock scripts
+              in emergencies.
             </CardDescription>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            From here you can access user management, audit logs, and full script visibility.
+            From here you can access user management, audit logs, and full
+            script visibility.
           </CardContent>
         </Card>
       </div>

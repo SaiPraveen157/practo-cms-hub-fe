@@ -51,7 +51,9 @@ export default function ContentBrandVideosPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
-  const [stats, setStats] = useState<Awaited<ReturnType<typeof getVideoStats>> | null>(null)
+  const [stats, setStats] = useState<Awaited<
+    ReturnType<typeof getVideoStats>
+  > | null>(null)
 
   const isContentBrand = user?.role === "CONTENT_BRAND"
 
@@ -77,7 +79,9 @@ export default function ContentBrandVideosPage() {
 
   useEffect(() => {
     if (!token || !isContentBrand) return
-    getVideoStats(token).then(setStats).catch(() => setStats(null))
+    getVideoStats(token)
+      .then(setStats)
+      .catch(() => setStats(null))
   }, [token, isContentBrand])
 
   const filteredVideos = searchQuery.trim()
@@ -96,8 +100,14 @@ export default function ContentBrandVideosPage() {
       <div className="p-6 md:p-8">
         <Card>
           <CardContent className="pt-6">
-            <p className="text-muted-foreground">Only Content/Brand can access this page.</p>
-            <Button variant="outline" className="mt-4" onClick={() => router.back()}>
+            <p className="text-muted-foreground">
+              Only Content/Brand can access this page.
+            </p>
+            <Button
+              variant="outline"
+              className="mt-4"
+              onClick={() => router.back()}
+            >
               Go back
             </Button>
           </CardContent>
@@ -114,9 +124,10 @@ export default function ContentBrandVideosPage() {
             Content/Brand — Videos
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            <strong>Phase 4</strong> — Approve First Line Up after Medical (approve only).{" "}
-            <strong>Phase 5</strong> — Review First Cut: approve or request changes; loop until both
-            Medical and Brand sign off. TAT 24 hours.
+            <strong>Phase 4</strong> — Approve First Line Up after Medical
+            (approve only). <strong>Phase 5</strong> — Review First Cut: approve
+            or request changes; loop until both Medical and Brand sign off. TAT
+            24 hours.
           </p>
         </div>
 
@@ -126,14 +137,22 @@ export default function ContentBrandVideosPage() {
               <>
                 <Card>
                   <CardContent className="pt-4">
-                    <p className="text-sm text-muted-foreground">First Line Up — Pending</p>
-                    <p className="text-2xl font-semibold">{stats.firstLineUp.pending}</p>
+                    <p className="text-sm text-muted-foreground">
+                      First Line Up — Pending
+                    </p>
+                    <p className="text-2xl font-semibold">
+                      {stats.firstLineUp.pending}
+                    </p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4">
-                    <p className="text-sm text-muted-foreground">First Line Up — Approved</p>
-                    <p className="text-2xl font-semibold">{stats.firstLineUp.approved}</p>
+                    <p className="text-sm text-muted-foreground">
+                      First Line Up — Approved
+                    </p>
+                    <p className="text-2xl font-semibold">
+                      {stats.firstLineUp.approved}
+                    </p>
                   </CardContent>
                 </Card>
               </>
@@ -142,14 +161,22 @@ export default function ContentBrandVideosPage() {
               <>
                 <Card>
                   <CardContent className="pt-4">
-                    <p className="text-sm text-muted-foreground">First Cut — Pending</p>
-                    <p className="text-2xl font-semibold">{stats.firstCut.pending}</p>
+                    <p className="text-sm text-muted-foreground">
+                      First Cut — Pending
+                    </p>
+                    <p className="text-2xl font-semibold">
+                      {stats.firstCut.pending}
+                    </p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4">
-                    <p className="text-sm text-muted-foreground">First Cut — Approved</p>
-                    <p className="text-2xl font-semibold">{stats.firstCut.approved}</p>
+                    <p className="text-sm text-muted-foreground">
+                      First Cut — Approved
+                    </p>
+                    <p className="text-2xl font-semibold">
+                      {stats.firstCut.approved}
+                    </p>
                   </CardContent>
                 </Card>
               </>
@@ -158,7 +185,7 @@ export default function ContentBrandVideosPage() {
         )}
 
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="search"
             placeholder="Search by script title or file name..."
@@ -172,7 +199,12 @@ export default function ContentBrandVideosPage() {
           <Card className="border-destructive/50 bg-destructive/10">
             <CardContent className="pt-6">
               <p className="text-sm text-destructive">{error}</p>
-              <Button variant="outline" size="sm" className="mt-2" onClick={fetchQueue}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2"
+                onClick={fetchQueue}
+              >
                 Retry
               </Button>
             </CardContent>
@@ -188,7 +220,9 @@ export default function ContentBrandVideosPage() {
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
               <VideoIcon className="size-12 text-muted-foreground" />
               <p className="mt-4 font-medium">
-                {searchQuery.trim() ? "No videos match your search" : "No videos in your queue"}
+                {searchQuery.trim()
+                  ? "No videos match your search"
+                  : "No videos in your queue"}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 Videos awaiting your approval will appear here.
@@ -201,69 +235,72 @@ export default function ContentBrandVideosPage() {
               const limitH = stats?.tatConfig?.limitHours ?? 24
               const repeatH = stats?.tatConfig?.repeatCycleHours ?? 6
               return (
-              <Card
-                key={video.id}
-                className="flex cursor-pointer flex-col overflow-hidden rounded-xl shadow-sm ring-1 ring-border/50 transition-shadow hover:shadow-md"
-                onClick={() => router.push(`${LIST_PATH}/${video.id}`)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault()
-                    router.push(`${LIST_PATH}/${video.id}`)
-                  }
-                }}
-              >
-                <CardContent className="flex flex-1 flex-col gap-4 p-5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className={cn(
-                        "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium uppercase",
-                        getStatusPillClass(video.status)
-                      )}
-                    >
-                      {STATUS_LABELS[video.status]}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {PHASE_LABELS[video.phase]} · v{video.version}
-                    </span>
-                  </div>
-                  <h3 className="min-w-0 text-lg font-semibold leading-tight text-foreground">
-                    {video.script?.title ?? "Untitled script"}
-                  </h3>
-                  <div className="text-sm text-muted-foreground">
-                    {video.fileUrl ? (
-                      <span>{video.fileName ?? "File attached"}</span>
-                    ) : (
-                      <span className="text-amber-600 dark:text-amber-400">Awaiting upload</span>
-                    )}
-                    {video.uploadedBy && (
-                      <span className="ml-2">
-                        · {video.uploadedBy.firstName} {video.uploadedBy.lastName}
+                <Card
+                  key={video.id}
+                  className="flex cursor-pointer flex-col overflow-hidden rounded-xl shadow-sm ring-1 ring-border/50 transition-shadow hover:shadow-md"
+                  onClick={() => router.push(`${LIST_PATH}/${video.id}`)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault()
+                      router.push(`${LIST_PATH}/${video.id}`)
+                    }
+                  }}
+                >
+                  <CardContent className="flex flex-1 flex-col gap-4 p-5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={cn(
+                          "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium uppercase",
+                          getStatusPillClass(video.status)
+                        )}
+                      >
+                        {STATUS_LABELS[video.status]}
                       </span>
-                    )}
-                  </div>
-                  <VideoTatBar
-                    className="pt-1"
-                    tat={resolveVideoTat(video, limitH)}
-                    repeatCycleHours={repeatH}
-                  />
-                  <div className="mt-auto flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        router.push(`${LIST_PATH}/${video.id}`)
-                      }}
-                    >
-                      <ArrowRight className="size-4" />
-                      View
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+                      <span className="text-xs text-muted-foreground">
+                        {PHASE_LABELS[video.phase]} · v{video.version}
+                      </span>
+                    </div>
+                    <h3 className="min-w-0 text-lg leading-tight font-semibold text-foreground">
+                      {video.script?.title ?? "Untitled script"}
+                    </h3>
+                    <div className="text-sm text-muted-foreground">
+                      {video.fileUrl ? (
+                        <span>{video.fileName ?? "File attached"}</span>
+                      ) : (
+                        <span className="text-amber-600 dark:text-amber-400">
+                          Awaiting upload
+                        </span>
+                      )}
+                      {video.uploadedBy && (
+                        <span className="ml-2">
+                          · {video.uploadedBy.firstName}{" "}
+                          {video.uploadedBy.lastName}
+                        </span>
+                      )}
+                    </div>
+                    <VideoTatBar
+                      className="pt-1"
+                      tat={resolveVideoTat(video, limitH)}
+                      repeatCycleHours={repeatH}
+                    />
+                    <div className="mt-auto flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          router.push(`${LIST_PATH}/${video.id}`)
+                        }}
+                      >
+                        <ArrowRight className="size-4" />
+                        View
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
               )
             })}
           </div>

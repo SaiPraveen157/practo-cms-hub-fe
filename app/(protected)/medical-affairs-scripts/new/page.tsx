@@ -4,7 +4,13 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -47,14 +53,17 @@ export default function NewMedicalAffairsScriptPage() {
         content,
       })
       const id = res.script?.id
-      toast.success("Script created", { description: "Saved as draft. You can edit and submit when ready." })
+      toast.success("Script created", {
+        description: "Saved as draft. You can edit and submit when ready.",
+      })
       if (id) {
         router.push(`/medical-affairs-scripts/${id}`)
       } else {
         router.push("/medical-affairs-scripts")
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to create script"
+      const message =
+        err instanceof Error ? err.message : "Failed to create script"
       setError(message)
       toast.error("Could not create script", { description: message })
     } finally {
@@ -65,7 +74,9 @@ export default function NewMedicalAffairsScriptPage() {
   if (!isMedicalAffairs) {
     return (
       <div className="p-6 md:p-8">
-        <p className="text-muted-foreground">Only Medical Affairs can create scripts.</p>
+        <p className="text-muted-foreground">
+          Only Medical Affairs can create scripts.
+        </p>
         <Button variant="link" asChild className="mt-2 pl-0">
           <Link href="/medical-affairs-scripts">Back to scripts</Link>
         </Button>
@@ -84,9 +95,12 @@ export default function NewMedicalAffairsScriptPage() {
             </Link>
           </Button>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Create script</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Create script
+            </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Title/Topic, insight, and script in English. No doctor&apos;s notes required.
+              Title/Topic, insight, and script in English. No doctor&apos;s
+              notes required.
             </p>
           </div>
         </div>
@@ -96,7 +110,8 @@ export default function NewMedicalAffairsScriptPage() {
             <CardHeader>
               <CardTitle>New script</CardTitle>
               <CardDescription>
-                This script will be saved as a draft. You can edit and submit to Content/Brand when ready.
+                This script will be saved as a draft. You can edit and submit to
+                Content/Brand when ready.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -126,7 +141,7 @@ export default function NewMedicalAffairsScriptPage() {
                   onChange={(e) => setInsight(e.target.value)}
                   placeholder="e.g. Patients often misunderstand insulin resistance. This script should clarify the basics in simple language."
                   rows={3}
-                  className="resize-y min-h-[80px]"
+                  className="min-h-[80px] resize-y"
                   required
                 />
               </div>
@@ -147,7 +162,7 @@ export default function NewMedicalAffairsScriptPage() {
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white border-0 hover:opacity-90"
+                  className="border-0 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
                 >
                   {loading && <Loader2 className="mr-2 size-4 animate-spin" />}
                   Create draft

@@ -46,7 +46,8 @@ export default function NotificationsPage() {
       const list = await getNotifications(token)
       setNotifications(list)
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Failed to load notifications"
+      const message =
+        e instanceof Error ? e.message : "Failed to load notifications"
       setError(message)
       toast.error("Error", { description: message })
     } finally {
@@ -68,7 +69,9 @@ export default function NotificationsPage() {
       await markNotificationRead(token, n.id)
       setNotifications((prev) =>
         prev.map((item) =>
-          item.id === n.id ? { ...item, isRead: true, readAt: new Date().toISOString() } : item
+          item.id === n.id
+            ? { ...item, isRead: true, readAt: new Date().toISOString() }
+            : item
         )
       )
       if (typeof window !== "undefined") {
@@ -90,7 +93,9 @@ export default function NotificationsPage() {
       await markAllNotificationsRead(token)
       setNotifications((prev) =>
         prev.map((item) =>
-          item.isRead ? item : { ...item, isRead: true, readAt: new Date().toISOString() }
+          item.isRead
+            ? item
+            : { ...item, isRead: true, readAt: new Date().toISOString() }
         )
       )
       toast.success("All notifications marked as read")
@@ -98,7 +103,8 @@ export default function NotificationsPage() {
         window.dispatchEvent(new CustomEvent("notifications-updated"))
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Failed to mark all as read"
+      const message =
+        e instanceof Error ? e.message : "Failed to mark all as read"
       toast.error("Error", { description: message })
     } finally {
       setMarkingAll(false)
@@ -118,7 +124,12 @@ export default function NotificationsPage() {
         <Card className="border-destructive/50 bg-destructive/5">
           <CardContent className="py-4">
             <p className="text-sm text-destructive">{error}</p>
-            <Button variant="outline" size="sm" className="mt-2" onClick={fetchNotifications}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={fetchNotifications}
+            >
               Retry
             </Button>
           </CardContent>
@@ -133,7 +144,8 @@ export default function NotificationsPage() {
               <div>
                 <h2 className="font-semibold">All Notifications</h2>
                 <p className="text-sm text-muted-foreground">
-                  You have {unreadCount} unread notification{unreadCount !== 1 ? "s" : ""}
+                  You have {unreadCount} unread notification
+                  {unreadCount !== 1 ? "s" : ""}
                 </p>
               </div>
               {unreadCount > 0 && (
@@ -172,66 +184,66 @@ export default function NotificationsPage() {
               {[...notifications]
                 .sort((a, b) => Number(a.isRead) - Number(b.isRead))
                 .map((n) => {
-                const isMarking = markingId === n.id
-                return (
-                  <li key={n.id}>
-                    <Card
-                      className={cn(
-                        "cursor-pointer transition-colors hover:shadow-md",
-                        !n.isRead &&
-                          "bg-blue-50 ring-1 ring-blue-200/80 dark:bg-blue-950/40 dark:ring-blue-800/50"
-                      )}
-                      onClick={() => handleMarkAsRead(n)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault()
-                          handleMarkAsRead(n)
-                        }
-                      }}
-                    >
-                      <CardContent className="flex flex-col gap-1 py-4">
-                        <div className="flex items-start gap-2">
-                          {!n.isRead && (
-                            <span
-                              className="mt-1.5 size-2 shrink-0 rounded-full bg-blue-500"
-                              aria-hidden
-                            />
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <p className="font-semibold leading-tight">
-                                {n.title}
+                  const isMarking = markingId === n.id
+                  return (
+                    <li key={n.id}>
+                      <Card
+                        className={cn(
+                          "cursor-pointer transition-colors hover:shadow-md",
+                          !n.isRead &&
+                            "bg-blue-50 ring-1 ring-blue-200/80 dark:bg-blue-950/40 dark:ring-blue-800/50"
+                        )}
+                        onClick={() => handleMarkAsRead(n)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault()
+                            handleMarkAsRead(n)
+                          }
+                        }}
+                      >
+                        <CardContent className="flex flex-col gap-1 py-4">
+                          <div className="flex items-start gap-2">
+                            {!n.isRead && (
+                              <span
+                                className="mt-1.5 size-2 shrink-0 rounded-full bg-blue-500"
+                                aria-hidden
+                              />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="leading-tight font-semibold">
+                                  {n.title}
+                                </p>
+                                {!n.isRead && (
+                                  <Badge
+                                    variant="secondary"
+                                    className="shrink-0 bg-blue-100 text-xs text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
+                                  >
+                                    NEW
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                {n.message}
                               </p>
-                              {!n.isRead && (
-                                <Badge
-                                  variant="secondary"
-                                  className="shrink-0 bg-blue-100 text-blue-700 text-xs dark:bg-blue-900/50 dark:text-blue-300"
-                                >
-                                  NEW
-                                </Badge>
-                              )}
+                              <p className="mt-2 text-xs text-muted-foreground">
+                                {formatDateTime(n.createdAt)}
+                                {isMarking && (
+                                  <span className="ml-2 inline-flex items-center gap-1">
+                                    <Loader2 className="size-3 animate-spin" />
+                                    Marking…
+                                  </span>
+                                )}
+                              </p>
                             </div>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              {n.message}
-                            </p>
-                            <p className="mt-2 text-xs text-muted-foreground">
-                              {formatDateTime(n.createdAt)}
-                              {isMarking && (
-                                <span className="ml-2 inline-flex items-center gap-1">
-                                  <Loader2 className="size-3 animate-spin" />
-                                  Marking…
-                                </span>
-                              )}
-                            </p>
                           </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </li>
-                )
-              })}
+                        </CardContent>
+                      </Card>
+                    </li>
+                  )
+                })}
             </ul>
           )}
         </>

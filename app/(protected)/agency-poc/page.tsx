@@ -14,7 +14,7 @@ import { ScriptListSkeleton } from "@/components/loading/script-list-skeleton"
 import { ScriptListingCard } from "@/components/script-listing-card"
 import { ScriptListPagination } from "@/components/ui/pagination"
 import { ScriptStatsCards } from "@/components/script-stats-cards"
-import { FileText, Search, Send, Upload } from "lucide-react"
+import { FileText, Package, Search, Send, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 10
@@ -160,7 +160,11 @@ export default function AgencyPocPage() {
         </div>
 
         <div className="border-b border-border">
-          <nav className="flex gap-1" role="tablist" aria-label="Script list tabs">
+          <nav
+            className="flex gap-1"
+            role="tablist"
+            aria-label="Script list tabs"
+          >
             {(
               [
                 { key: "all" as TabKey, label: "All" },
@@ -254,17 +258,26 @@ export default function AgencyPocPage() {
                 onCardClick={() => router.push(`/agency-poc/${script.id}`)}
                 actions={
                   script.status === "LOCKED" ? (
-                    <Button
-                      asChild
-                      size="sm"
-                      className="gap-1.5 border-0 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Link href={`/agency-poc/${script.id}/upload`}>
-                        <Upload className="size-4 shrink-0" />
-                        Upload video
-                      </Link>
-                    </Button>
+                    <div className="flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        asChild
+                        size="sm"
+                        className="gap-1.5 border-0 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
+                      >
+                        <Link href={`/agency-poc/${script.id}/upload`}>
+                          <Upload className="size-4 shrink-0" />
+                          Upload video
+                        </Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline" className="gap-1.5">
+                        <Link
+                          href={`/agency-poc-packages/new?scriptId=${encodeURIComponent(script.id)}`}
+                        >
+                          <Package className="size-4 shrink-0" />
+                          Final package
+                        </Link>
+                      </Button>
+                    </div>
                   ) : (
                     <Button
                       asChild

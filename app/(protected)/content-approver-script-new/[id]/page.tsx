@@ -4,7 +4,13 @@ import { useEffect, useState } from "react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
@@ -77,9 +83,10 @@ export default function ContentApproverScriptDetailPage() {
     getScriptQueue(token)
       .then((queueRes) => {
         if (cancelled) return
-        const s = [...(queueRes.available ?? []), ...(queueRes.myReviews ?? [])].find(
-          (q) => q.id === id
-        )
+        const s = [
+          ...(queueRes.available ?? []),
+          ...(queueRes.myReviews ?? []),
+        ].find((q) => q.id === id)
         if (!s) {
           setError("Script not found in your queue.")
           setScript(null)
@@ -88,7 +95,8 @@ export default function ContentApproverScriptDetailPage() {
         setScript(s)
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load script")
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : "Failed to load script")
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -105,7 +113,9 @@ export default function ContentApproverScriptDetailPage() {
     try {
       await lockScript(token, id)
       setLockDialogOpen(false)
-      toast.success("Script locked", { description: "Ready to send to Agency for production." })
+      toast.success("Script locked", {
+        description: "Ready to send to Agency for production.",
+      })
       router.push("/content-approver-script-new")
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to lock"
@@ -120,7 +130,9 @@ export default function ContentApproverScriptDetailPage() {
     if (!token || !id) return
     const comments = rejectComments.trim()
     if (!comments) {
-      toast.error("Feedback required", { description: "Please provide feedback so Agency knows what to change." })
+      toast.error("Feedback required", {
+        description: "Please provide feedback so Agency knows what to change.",
+      })
       return
     }
     setError(null)
@@ -130,7 +142,8 @@ export default function ContentApproverScriptDetailPage() {
       setRejectDialogOpen(false)
       setRejectComments("")
       toast.warning("Sent back to Agency", {
-        description: "Script returned to Agency. They can revise and resubmit; the loop continues until approved.",
+        description:
+          "Script returned to Agency. They can revise and resubmit; the loop continues until approved.",
       })
       router.push("/content-approver-script-new")
     } catch (err) {
@@ -145,7 +158,9 @@ export default function ContentApproverScriptDetailPage() {
   if (!isContentApprover) {
     return (
       <div className="p-6 md:p-8">
-        <p className="text-muted-foreground">Only Content Approver can approve or reject scripts here.</p>
+        <p className="text-muted-foreground">
+          Only Content Approver can approve or reject scripts here.
+        </p>
         <Button variant="link" asChild className="mt-2 pl-0">
           <Link href="/content-approver-script-new">Back to queue</Link>
         </Button>
@@ -174,7 +189,10 @@ export default function ContentApproverScriptDetailPage() {
             <div className="mt-1 flex items-center gap-2">
               <Badge
                 variant="outline"
-                className={cn("uppercase", getScriptDisplayInfo(script).className)}
+                className={cn(
+                  "uppercase",
+                  getScriptDisplayInfo(script).className
+                )}
               >
                 {getScriptDisplayInfo(script).label}
               </Badge>
@@ -197,7 +215,9 @@ export default function ContentApproverScriptDetailPage() {
           <Card className="border-muted">
             <CardContent className="pt-6">
               <p className="text-sm text-muted-foreground">
-                This script is not in Content Approver Review. Only scripts that have passed Content/Brand final approval can be approved (locked) or sent back to Agency.
+                This script is not in Content Approver Review. Only scripts that
+                have passed Content/Brand final approval can be approved
+                (locked) or sent back to Agency.
               </p>
               <Button asChild variant="link" className="mt-2 pl-0">
                 <Link href="/content-approver-script-new">Back to queue</Link>
@@ -210,20 +230,28 @@ export default function ContentApproverScriptDetailPage() {
           <CardHeader>
             <CardTitle>Script content</CardTitle>
             <CardDescription>
-              Final review. Approve (lock) to send to Agency for production, or send back to Agency with feedback; they can revise and resubmit until approved.
+              Final review. Approve (lock) to send to Agency for production, or
+              send back to Agency with feedback; they can revise and resubmit
+              until approved.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {script.insight && (
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Insight</p>
-                <p className="mt-1 whitespace-pre-wrap text-sm">{script.insight}</p>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Insight
+                </p>
+                <p className="mt-1 text-sm whitespace-pre-wrap">
+                  {script.insight}
+                </p>
               </div>
             )}
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Script</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                Script
+              </p>
               <div
-                className="mt-1 rounded-lg bg-muted/50 p-4 text-sm leading-relaxed [&_p]:mb-2 [&_ul]:list-disc [&_ol]:list-decimal [&_a]:text-primary [&_a]:underline"
+                className="mt-1 rounded-lg bg-muted/50 p-4 text-sm leading-relaxed [&_a]:text-primary [&_a]:underline [&_ol]:list-decimal [&_p]:mb-2 [&_ul]:list-disc"
                 dangerouslySetInnerHTML={{ __html: script.content ?? "" }}
               />
             </div>
@@ -255,16 +283,17 @@ export default function ContentApproverScriptDetailPage() {
       </div>
 
       <Dialog open={lockDialogOpen} onOpenChange={setLockDialogOpen}>
-        <DialogContent className="sm:max-w-lg gap-6 p-6 sm:p-8" showCloseButton>
+        <DialogContent className="gap-6 p-6 sm:max-w-lg sm:p-8" showCloseButton>
           <DialogHeader className="gap-3 space-y-1">
             <DialogTitle className="text-lg font-semibold tracking-tight">
               Lock script
             </DialogTitle>
-            <DialogDescription className="text-sm leading-relaxed max-w-[42ch]">
-              The script will move to Locked. It can then be sent to Agency for production. This is the final step in the script workflow.
+            <DialogDescription className="max-w-[42ch] text-sm leading-relaxed">
+              The script will move to Locked. It can then be sent to Agency for
+              production. This is the final step in the script workflow.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-3 -mx-6 -mb-6 px-6 pb-6 sm:flex-row sm:justify-end">
+          <DialogFooter className="-mx-6 -mb-6 gap-3 px-6 pb-6 sm:flex-row sm:justify-end">
             <Button
               variant="outline"
               onClick={() => setLockDialogOpen(false)}
@@ -286,13 +315,16 @@ export default function ContentApproverScriptDetailPage() {
       </Dialog>
 
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
-        <DialogContent className="sm:max-w-lg gap-6 p-6 sm:p-8" showCloseButton>
+        <DialogContent className="gap-6 p-6 sm:max-w-lg sm:p-8" showCloseButton>
           <DialogHeader className="gap-3 space-y-1">
             <DialogTitle className="text-lg font-semibold tracking-tight">
               Send back to Agency
             </DialogTitle>
-            <DialogDescription className="text-sm leading-relaxed max-w-[42ch]">
-              The script will return to Agency Production. Agency can revise and resubmit; the script will go through Medical Affairs and Content/Brand again until approved. Please provide feedback so Agency knows what to change. TAT 24 hours.
+            <DialogDescription className="max-w-[42ch] text-sm leading-relaxed">
+              The script will return to Agency Production. Agency can revise and
+              resubmit; the script will go through Medical Affairs and
+              Content/Brand again until approved. Please provide feedback so
+              Agency knows what to change. TAT 24 hours.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -307,7 +339,7 @@ export default function ContentApproverScriptDetailPage() {
               required
             />
           </div>
-          <DialogFooter className="gap-3 -mx-6 -mb-6 px-6 pb-6 sm:flex-row sm:justify-end">
+          <DialogFooter className="-mx-6 -mb-6 gap-3 px-6 pb-6 sm:flex-row sm:justify-end">
             <Button
               variant="outline"
               onClick={() => setRejectDialogOpen(false)}

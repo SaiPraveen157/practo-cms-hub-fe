@@ -83,7 +83,9 @@ export default function AgencyPocUploadPage() {
           return
         }
         if (s.status !== "LOCKED") {
-          setError("Only locked scripts can have videos uploaded. This script is not locked.")
+          setError(
+            "Only locked scripts can have videos uploaded. This script is not locked."
+          )
           setScript(s)
           return
         }
@@ -215,8 +217,8 @@ export default function AgencyPocUploadPage() {
               Upload video — First Line Up
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Upload media for this locked script, then send to Medical Affairs for
-              review. TAT 24 hours.
+              Upload media for this locked script, then send to Medical Affairs
+              for review. TAT 24 hours.
             </p>
           </div>
         </div>
@@ -237,16 +239,24 @@ export default function AgencyPocUploadPage() {
           <CardContent className="space-y-4">
             <div>
               <p className="text-sm font-medium text-muted-foreground">Title</p>
-              <p className="mt-1 font-medium">{script.title || "Untitled script"}</p>
+              <p className="mt-1 font-medium">
+                {script.title || "Untitled script"}
+              </p>
             </div>
             {script.insight && (
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Insight</p>
-                <p className="mt-1 whitespace-pre-wrap text-sm">{script.insight}</p>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Insight
+                </p>
+                <p className="mt-1 text-sm whitespace-pre-wrap">
+                  {script.insight}
+                </p>
               </div>
             )}
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Script</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                Script
+              </p>
               <div
                 className="mt-1 rounded-lg bg-muted/50 p-4 text-sm leading-relaxed [&_a]:text-primary [&_a]:underline [&_ol]:list-decimal [&_p]:mb-2 [&_ul]:list-disc"
                 dangerouslySetInnerHTML={{ __html: script.content ?? "" }}

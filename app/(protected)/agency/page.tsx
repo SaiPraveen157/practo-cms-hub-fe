@@ -3,7 +3,13 @@
 import Link from "next/link"
 import { useAuthStore } from "@/store"
 import { ROLE_LABELS } from "@/lib/role-routes"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { FileText } from "lucide-react"
 
@@ -25,14 +31,21 @@ export default function AgencyHomePage() {
           <CardHeader>
             <CardTitle>Overview</CardTitle>
             <CardDescription>
-              Refine approved scripts and submit revisions for Medical Affairs review. TAT 24 hours.
+              Refine approved scripts and submit revisions for Medical Affairs
+              review. TAT 24 hours.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              You see scripts in Agency Production. Edit and submit your revision; Medical Affairs will review and can approve or send back with feedback. Once locked by Content Approver, the script is ready for production.
+              You see scripts in Agency Production. Edit and submit your
+              revision; Medical Affairs will review and can approve or send back
+              with feedback. Once locked by Content Approver, the script is
+              ready for production.
             </p>
-            <Button asChild className="bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white border-0 hover:opacity-90">
+            <Button
+              asChild
+              className="border-0 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
+            >
               <Link href="/agency-poc">
                 <FileText className="mr-2 size-4" />
                 Open production queue

@@ -274,7 +274,7 @@ export default function MedicalAffairsScriptDetailPage() {
 
   return (
     <div className="p-6 md:p-8">
-      <div className="mx-auto max-w-3xl space-y-6">
+      <div className="mx-auto max-w-4xl space-y-6">
         <div className="space-y-4">
           <Button variant="ghost" size="sm" className="-ml-2" asChild>
             <Link href="/medical-affairs-scripts">
@@ -312,7 +312,7 @@ export default function MedicalAffairsScriptDetailPage() {
         )}
 
         {isDraft ? (
-          <form onSubmit={handleSave}>
+          <form onSubmit={handleSave} className=''>
             <Card>
               <CardHeader>
                 <CardTitle>Edit script</CardTitle>
@@ -465,7 +465,7 @@ export default function MedicalAffairsScriptDetailPage() {
               onClick={handleConfirmSubmit}
               disabled={submitting || hasUnsavedChanges}
               title={hasUnsavedChanges ? "Save your changes first" : undefined}
-              className="border-0 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
+              className="border-0 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
             >
               {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
               Submit
