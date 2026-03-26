@@ -75,12 +75,15 @@ type PerVideoMeta = {
   title: string
   description: string
   tags: string[]
+  /** Text still in the tag field; comma-separated segments count as tags without clicking Add. */
+  tagDraft?: string
 }
 
 const EMPTY_VIDEO_META: PerVideoMeta = {
   title: "",
   description: "",
   tags: [],
+  tagDraft: "",
 }
 
 function mergePackageTags(...groups: string[][]): string[] {
@@ -96,8 +99,35 @@ function mergePackageTags(...groups: string[][]): string[] {
   return out
 }
 
+function parseCommaSeparatedTagPieces(input: string): string[] {
+  return input
+    .split(/[,]+/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+}
+
+function mergeUniqueTagStrings(existing: string[], pieces: string[]): string[] {
+  const next = [...existing]
+  for (const p of pieces) {
+    const lower = p.toLowerCase()
+    if (next.some((x) => x.toLowerCase() === lower)) continue
+    next.push(p)
+  }
+  return next
+}
+
+/** Committed tags plus any comma-separated (or single) text still in the draft field. */
+function effectiveTagsFromMeta(m: PerVideoMeta): string[] {
+  const pieces = parseCommaSeparatedTagPieces(m.tagDraft ?? "")
+  return mergeUniqueTagStrings(m.tags, pieces)
+}
+
 function isVideoMetaComplete(m: PerVideoMeta): boolean {
-  return Boolean(m.title.trim() && m.description.trim() && m.tags.length > 0)
+  return Boolean(
+    m.title.trim() &&
+    m.description.trim() &&
+    effectiveTagsFromMeta(m).length > 0
+  )
 }
 
 type ShortVideoSlot = {
@@ -329,10 +359,10 @@ export default function AgencySubmitPackagePage() {
   const mergedPackageTags = useMemo(
     () =>
       mergePackageTags(
-        longVideoMeta.tags,
-        ...shortSlots.map((s) => s.meta.tags)
+        effectiveTagsFromMeta(longVideoMeta),
+        ...shortSlots.map((s) => effectiveTagsFromMeta(s.meta))
       ),
-    [longVideoMeta.tags, shortSlots]
+    [longVideoMeta, shortSlots]
   )
 
   function setShortThumbnailForSlot(slotId: string, file: File | null) {
@@ -437,7 +467,9 @@ export default function AgencySubmitPackagePage() {
       return
     }
     if (shortSlots.length < 1) {
-      toast.error("Add at least one short-form video (API requires long + short)")
+      toast.error(
+        "Add at least one short-form video (API requires long + short)"
+      )
       return
     }
     const incomplete = shortSlots.some(
@@ -498,7 +530,7 @@ export default function AgencySubmitPackagePage() {
           order: 1,
           title: packageName,
           description: longVideoMeta.description.trim(),
-          tags: longVideoMeta.tags,
+          tags: effectiveTagsFromMeta(longVideoMeta),
           thumbnails: [
             {
               fileUrl: longThumb.fileUrl,
@@ -517,7 +549,7 @@ export default function AgencySubmitPackagePage() {
           order: i + 2,
           title: slot.meta.title.trim(),
           description: slot.meta.description.trim(),
-          tags: slot.meta.tags,
+          tags: effectiveTagsFromMeta(slot.meta),
           thumbnails: [
             {
               fileUrl: shortThumbs[i]!.fileUrl,
@@ -714,7 +746,7 @@ export default function AgencySubmitPackagePage() {
             {wizardStep === 2 && (
               <div className="w-full space-y-10 py-4">
                 <StepIntro
-                  title="Short-form videos (required)"
+                  title="Short-form videos (optional)"
                   body={`Add between 1 and ${MAX_SHORT_VIDEOS} short cuts (e.g. reels). Each needs its own title, description, tags, and file. Upload order is sent to the API as \`order\` (2…).`}
                 />
 
@@ -924,7 +956,7 @@ function PackageWizardChrome({
       </div>
       <div className="mb-8 h-2 overflow-hidden rounded-full bg-muted">
         <div
-          className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
+          className="h-full rounded-full bg-green-500 transition-all duration-500 ease-out"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -942,7 +974,7 @@ function PackageWizardChrome({
               className={cn(
                 "rounded-full px-3 py-2 text-left text-sm transition-colors sm:text-center",
                 active &&
-                  "bg-primary text-primary-foreground shadow-sm sm:min-w-34",
+                  "bg-primary bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-primary-foreground text-white shadow-sm hover:opacity-90 sm:min-w-34",
                 done &&
                   "cursor-pointer bg-primary/12 text-primary hover:bg-primary/18",
                 !active &&
@@ -1026,7 +1058,7 @@ function WizardFooter({
           <Button
             type="button"
             size="lg"
-            className="w-full gap-2 sm:ml-auto sm:w-auto"
+            className="w-full gap-2 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90 sm:ml-auto sm:w-auto"
             disabled={!canProceed}
             onClick={onContinue}
             title={!canProceed ? "Complete this step to continue" : undefined}
@@ -1039,7 +1071,7 @@ function WizardFooter({
             type="button"
             size="lg"
             disabled={!allReady || submitting}
-            className="w-full border-0 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90 sm:ml-auto sm:w-auto"
+            className="w-full border-0 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90 sm:ml-auto sm:w-auto"
             title={!allReady ? "Complete all steps first" : undefined}
             onClick={onConfirmSubmit}
           >
@@ -1230,9 +1262,10 @@ function ReviewSummaryCard({
       <CardHeader className="border-b border-border bg-muted/30 px-5 py-7 sm:px-8 sm:py-8">
         <CardTitle className="text-lg">Package summary</CardTitle>
         <CardDescription className="mt-2 max-w-prose">
-          Long-form title becomes the package <code className="text-xs">name</code>
-          ; each video is submitted with its own title, description, tags, and
-          thumbnail(s). Previews below are local until you submit.
+          Long-form title becomes the package{" "}
+          <code className="text-xs">name</code>; each video is submitted with
+          its own title, description, tags, and thumbnail(s). Previews below are
+          local until you submit.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-12 bg-muted/5 px-5 py-8 sm:px-8 sm:py-10">
@@ -1332,6 +1365,7 @@ function ReviewVideoRow({
   file: File | null
   ok: boolean
 }) {
+  const reviewTags = effectiveTagsFromMeta(meta)
   return (
     <li
       className={cn(
@@ -1366,8 +1400,8 @@ function ReviewVideoRow({
             <span className="text-xs font-medium text-muted-foreground">
               Tags
             </span>
-            {meta.tags.length ? (
-              meta.tags.map((t, i) => (
+            {reviewTags.length ? (
+              reviewTags.map((t, i) => (
                 <Badge
                   key={`${t}-${i}`}
                   variant="outline"
@@ -1433,37 +1467,36 @@ function ReviewCheck({
 
 function VideoTagsPicker({
   idPrefix,
-  tags,
-  onChangeTags,
+  meta,
+  onMetaChange,
   spacious,
 }: {
   idPrefix: string
-  tags: string[]
-  onChangeTags: (next: string[]) => void
+  meta: PerVideoMeta
+  onMetaChange: Dispatch<SetStateAction<PerVideoMeta>>
   spacious?: boolean
 }) {
-  const [draft, setDraft] = useState("")
   const inputId = `${idPrefix}-tag-draft`
+  const draft = meta.tagDraft ?? ""
 
   function commitDraft() {
-    const pieces = draft
-      .split(/[,]+/)
-      .map((t) => t.trim())
-      .filter(Boolean)
+    const pieces = parseCommaSeparatedTagPieces(draft)
     if (pieces.length === 0) return
-    const next = [...tags]
-    for (const p of pieces) {
-      const lower = p.toLowerCase()
-      if (next.some((x) => x.toLowerCase() === lower)) continue
-      next.push(p)
-    }
-    onChangeTags(next)
-    setDraft("")
+    onMetaChange((m) => ({
+      ...m,
+      tags: mergeUniqueTagStrings(m.tags, pieces),
+      tagDraft: "",
+    }))
   }
 
   function removeTag(index: number) {
-    onChangeTags(tags.filter((_, i) => i !== index))
+    onMetaChange((m) => ({
+      ...m,
+      tags: m.tags.filter((_, i) => i !== index),
+    }))
   }
+
+  const hasEffectiveTags = effectiveTagsFromMeta(meta).length > 0
 
   return (
     <div className="space-y-3">
@@ -1474,7 +1507,10 @@ function VideoTagsPicker({
         <Input
           id={inputId}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) =>
+            onMetaChange((m) => ({ ...m, tagDraft: e.target.value }))
+          }
+          onBlur={() => commitDraft()}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault()
@@ -1486,16 +1522,16 @@ function VideoTagsPicker({
         />
         <Button
           type="button"
-          variant="secondary"
+          variant="outline"
           className={cn("shrink-0 sm:w-28", spacious && "h-12")}
           onClick={commitDraft}
         >
           Add
         </Button>
       </div>
-      {tags.length > 0 ? (
+      {meta.tags.length > 0 ? (
         <ul className="flex flex-wrap gap-2" aria-label="Selected tags">
-          {tags.map((tag, i) => (
+          {meta.tags.map((tag, i) => (
             <li key={`${tag}-${i}`}>
               <Badge
                 variant="secondary"
@@ -1514,13 +1550,19 @@ function VideoTagsPicker({
             </li>
           ))}
         </ul>
-      ) : (
+      ) : !hasEffectiveTags ? (
         <p className="text-sm text-muted-foreground">
           No tags yet. Add at least one for this video.
         </p>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Tags typed above count toward this video (comma-separated). Use Add,
+          Enter, or leave the field to move them into the list below.
+        </p>
       )}
       <p className="text-xs text-muted-foreground">
-        Press Enter or click Add. Commas add multiple tags at once. Duplicate
+        Comma-separated values count as separate tags even before Add. Press
+        Enter, click Add, or leave the field to commit to the list. Duplicate
         tags (ignoring case) are skipped. All videos&apos; tags merge on the
         package for search.
       </p>
@@ -1634,8 +1676,8 @@ function VideoDeliverableCard({
           </div>
           <VideoTagsPicker
             idPrefix={idPrefix}
-            tags={meta.tags}
-            onChangeTags={(tags) => onMetaChange((m) => ({ ...m, tags }))}
+            meta={meta}
+            onMetaChange={onMetaChange}
             spacious={spacious}
           />
         </div>
@@ -1735,17 +1777,6 @@ function ScriptContextCard({
             </dt>
             <dd className="mt-0.5 text-foreground">
               {formatPackageDate(script.updatedAt)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs font-medium text-muted-foreground">
-              Script ID
-            </dt>
-            <dd
-              className="mt-0.5 truncate font-mono text-xs text-foreground"
-              title={scriptId}
-            >
-              {scriptId}
             </dd>
           </div>
           <div>

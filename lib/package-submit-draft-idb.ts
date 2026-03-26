@@ -7,6 +7,8 @@ export type DraftVideoMeta = {
   title: string
   description: string
   tags: string[]
+  /** Uncommitted text in the tag field (comma-separated counts toward tags). */
+  tagDraft?: string
 }
 
 export type DraftShortSlot = {
@@ -241,10 +243,13 @@ export function packageSubmitDraftHasUsefulState(
     Boolean(d.longVideoMeta.title.trim()) ||
     Boolean(d.longVideoMeta.description.trim()) ||
     d.longVideoMeta.tags.length > 0 ||
+    Boolean(d.longVideoMeta.tagDraft?.trim()) ||
     d.longFile != null ||
     d.shortSlots.length > 0 ||
     d.longThumbnailFile != null ||
     Object.keys(d.shortThumbnailBySlotId).length > 0 ||
-    d.shortSlots.some((s) => s.file != null)
+    d.shortSlots.some(
+      (s) => s.file != null || Boolean(s.meta.tagDraft?.trim())
+    )
   )
 }
