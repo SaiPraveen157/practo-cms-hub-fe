@@ -11,10 +11,16 @@ import { ScriptListPagination } from "@/components/ui/pagination"
 import { PackageListTabNav } from "@/components/packages/package-list-tab-nav"
 import { useAuthStore } from "@/store"
 import type { UserRole } from "@/types/auth"
-import { getPackageQueue, getPackageStats } from "@/lib/packages-api"
+import { buildSubmitPackageBodyFromPackage } from "@/lib/build-submit-package-body"
+import {
+  clearPackageSubmitDraft,
+  userMessageForClearDraftFailure,
+} from "@/lib/package-submit-draft-idb"
+import { getPackageQueue, getPackageStats, submitPackage } from "@/lib/packages-api"
 import { getScriptQueue } from "@/lib/scripts-api"
 import { filterScriptsBySearch } from "@/lib/script-search"
 import {
+  agencyPackageNeedsSubmitWizard,
   dedupePackages,
   filterPackagesBySearch,
   splitAgencyPackagesByTab,
@@ -29,6 +35,7 @@ import {
 import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import { ArrowRight, Loader2, Package, Search, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { toast } from "sonner"
 
 const PAGE_SIZE = 10
 
@@ -49,6 +56,7 @@ export default function AgencyPocPackagesPage() {
   const [stats, setStats] = useState<Awaited<
     ReturnType<typeof getPackageStats>
   > | null>(null)
+  const [submittingDraftId, setSubmittingDraftId] = useState<string | null>(null)
 
   const role = user?.role as UserRole | undefined
   const isAgency = role === "AGENCY_POC" || role === "SUPER_ADMIN"
@@ -81,6 +89,44 @@ export default function AgencyPocPackagesPage() {
       setLoading(false)
     }
   }, [token, isAgency])
+
+  const handleSubmitDraftFromList = useCallback(
+    async (p: FinalPackage) => {
+      if (!token) return
+      const body = buildSubmitPackageBodyFromPackage(p)
+      if (!body) {
+        toast.error("Cannot submit from saved files", {
+          description:
+            "Open the package for details, or use the full wizard if videos, thumbnails, or tags are incomplete.",
+        })
+        return
+      }
+      setSubmittingDraftId(p.id)
+      try {
+        const res = await submitPackage(token, body)
+        toast.success(res.message ?? "Package submitted", {
+          description: "Medical and Brand parallel review has started.",
+        })
+        const clearResult = await clearPackageSubmitDraft(p.scriptId)
+        if (!clearResult.ok) {
+          const { title, description } = userMessageForClearDraftFailure()
+          toast.info(title, {
+            description,
+            id: "package-draft-clear-failed-list",
+          })
+        }
+        router.push(`/agency-poc-packages/${res.package.id}`)
+        await load()
+      } catch (e) {
+        toast.error("Could not submit package", {
+          description: e instanceof Error ? e.message : "Submit failed",
+        })
+      } finally {
+        setSubmittingDraftId(null)
+      }
+    },
+    [token, router, load]
+  )
 
   useEffect(() => {
     load()
@@ -339,6 +385,20 @@ export default function AgencyPocPackagesPage() {
                   <PackageRowCard
                     pkg={p}
                     href={`/agency-poc-packages/${p.id}`}
+                    draftQuickSubmit={
+                      p.status === "DRAFT"
+                        ? () => {
+                            void handleSubmitDraftFromList(p)
+                          }
+                        : undefined
+                    }
+                    draftSubmitting={submittingDraftId === p.id}
+                    submitWizardHref={
+                      agencyPackageNeedsSubmitWizard(p) &&
+                      p.status !== "DRAFT"
+                        ? `/agency-poc-packages/new?scriptId=${encodeURIComponent(p.scriptId)}`
+                        : undefined
+                    }
                     emphasizeFeedback={tab === "revision"}
                   />
                 </li>
@@ -404,10 +464,18 @@ function Phase6EligibleScriptCard({ script }: { script: Script }) {
 function PackageRowCard({
   pkg,
   href,
+  draftQuickSubmit,
+  draftSubmitting,
+  submitWizardHref,
   emphasizeFeedback,
 }: {
   pkg: FinalPackage
   href: string
+  /** DRAFT: submit with existing server files (POST /api/packages) without opening the wizard. */
+  draftQuickSubmit?: () => void
+  draftSubmitting?: boolean
+  /** Rejection paths: open full wizard. */
+  submitWizardHref?: string
   emphasizeFeedback?: boolean
 }) {
   const status = pkg.status as PackageStatus
@@ -465,12 +533,46 @@ function PackageRowCard({
               {pkg.tat.isOverdue ? " · Overdue" : ""}
             </p>
           )}
-          <Button size="sm" variant="outline" asChild className="shrink-0">
-            <Link href={href} className="gap-1">
-              {status === "REJECTED" ? "Review & resubmit" : "Open"}
-              <ArrowRight className="size-4" />
-            </Link>
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            {draftQuickSubmit ? (
+              <Button
+                type="button"
+                size="sm"
+                className="shrink-0 gap-1"
+                disabled={draftSubmitting}
+                onClick={draftQuickSubmit}
+              >
+                {draftSubmitting ? (
+                  <>
+                    <Loader2 className="size-4 shrink-0 animate-spin" />
+                    Submitting…
+                  </>
+                ) : (
+                  <>
+                    Submit package
+                    <ArrowRight className="size-4 shrink-0" />
+                  </>
+                )}
+              </Button>
+            ) : submitWizardHref ? (
+              <Button size="sm" asChild className="shrink-0">
+                <Link href={submitWizardHref} className="gap-1">
+                  Resubmit package
+                  <ArrowRight className="size-4" />
+                </Link>
+              </Button>
+            ) : null}
+            <Button size="sm" variant="outline" asChild className="shrink-0">
+              <Link href={href} className="gap-1">
+                {status === "REJECTED"
+                  ? "Review & resubmit"
+                  : draftQuickSubmit || submitWizardHref
+                    ? "Details"
+                    : "Open"}
+                <ArrowRight className="size-4" />
+              </Link>
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>

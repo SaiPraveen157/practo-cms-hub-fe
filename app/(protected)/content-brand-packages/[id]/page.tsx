@@ -51,14 +51,13 @@ import {
 import { PackageTatCard } from "@/components/packages/package-tat-card"
 import { PackageInlineVideoCard } from "@/components/packages/package-inline-video-card"
 import { PackageListTabNav } from "@/components/packages/package-list-tab-nav"
+import { TrackStatusCallout } from "@/components/packages/track-status-callout"
 import {
   ArrowLeft,
   Calendar,
   Check,
   CheckCircle,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   Clapperboard,
   ExternalLink,
   FileText,
@@ -67,14 +66,12 @@ import {
   Info,
   Loader2,
   Smartphone,
-  Sparkles,
   User,
   XCircle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import {
-  agencyCopyForVideoReviewStep,
   parseAgencyDeliverableBlockBody,
   videoDeliverableBlocksFromPackage,
 } from "@/lib/package-composed-description"
@@ -151,10 +148,6 @@ export default function ContentBrandPackageDetailPage() {
   /** Active deliverable in the reject dialog (pill tabs). */
   const [rejectDeliverableTabIndex, setRejectDeliverableTabIndex] = useState(0)
   const [busy, setBusy] = useState(false)
-  /** Brand video review: one video player at a time. */
-  const [videoReviewIndex, setVideoReviewIndex] = useState(0)
-  /** Which video deliverable is shown in the metadata review card. */
-  const [metadataDeliverableIndex, setMetadataDeliverableIndex] = useState(0)
   /** Videos first, then metadata — matches agency package detail tab order. */
   const [brandPackageWorkTab, setBrandPackageWorkTab] = useState<
     "videos" | "metadata"
@@ -261,6 +254,69 @@ export default function ContentBrandPackageDetailPage() {
     [pkg]
   )
 
+  /** Per deliverable: copy + preview thumb for stacked metadata sections. */
+  const metadataRows = useMemo(() => {
+    if (!pkg || sortedVideoAssets.length === 0) return []
+    return sortedVideoAssets.map((v, i) => {
+      const block =
+        videoDeliverableBlocks.length > 1
+          ? videoDeliverableBlocks[i]
+          : videoDeliverableBlocks[0]
+      const parsed = block
+        ? parseAgencyDeliverableBlockBody(block.body)
+        : { title: "", description: "", tags: [] as string[] }
+      const metadataVideoTitle =
+        v.title?.trim() ||
+        parsed.title.trim() ||
+        (videoDeliverableBlocks.length <= 1
+          ? (pkg.name ?? pkg.title)
+          : (block?.heading ?? "—"))
+      const metadataVideoDescription =
+        parsed.description.trim() ||
+        (!parsed.title.trim() &&
+        parsed.tags.length === 0 &&
+        block?.body?.trim()
+          ? block.body.trim()
+          : "") ||
+        (videoDeliverableBlocks.length <= 1
+          ? (pkg.description?.trim() ?? "")
+          : "") ||
+        "—"
+      const metadataVideoTags =
+        parsed.tags.length > 0
+          ? parsed.tags
+          : videoDeliverableBlocks.length <= 1
+            ? (pkg.tags ?? [])
+            : []
+      const thumbsForMetadataCtx = thumbnailsForVideo(v)
+      const selectedThumbIdForCtx = thumbnailSelectionByVideoId[v.id]
+      const thumbnailForCurrentDeliverable =
+        selectedThumbIdForCtx && thumbsForMetadataCtx.length
+          ? (thumbsForMetadataCtx.find((t) => t.id === selectedThumbIdForCtx) ??
+            null)
+          : null
+      const readOnlyThumbForDeliverable = !canApproveMetadata
+        ? (thumbsForMetadataCtx.find((t) => t.isSelected) ?? null)
+        : null
+      const previewThumbForDeliverable =
+        thumbnailForCurrentDeliverable ?? readOnlyThumbForDeliverable
+      return {
+        id: v.id,
+        blockHeading: block?.heading,
+        metadataVideoTitle,
+        metadataVideoDescription,
+        metadataVideoTags,
+        previewThumbForDeliverable,
+      }
+    })
+  }, [
+    pkg,
+    sortedVideoAssets,
+    videoDeliverableBlocks,
+    thumbnailSelectionByVideoId,
+    canApproveMetadata,
+  ])
+
   const brandVideoReviewSteps = useMemo(() => {
     const steps: Array<{
       asset: PackageAsset
@@ -285,11 +341,6 @@ export default function ContentBrandPackageDetailPage() {
   }, [longAssets, shortAssets])
 
   useEffect(() => {
-    setVideoReviewIndex(0)
-    setMetadataDeliverableIndex(0)
-  }, [pkg?.id])
-
-  useEffect(() => {
     if (!pkg) return
     const approveMeta =
       pkg.status === "MEDICAL_REVIEW" &&
@@ -303,14 +354,6 @@ export default function ContentBrandPackageDetailPage() {
     else if (approveMeta) setBrandPackageWorkTab("metadata")
     else setBrandPackageWorkTab("videos")
   }, [pkg, canAccess])
-
-  useEffect(() => {
-    setVideoReviewIndex((i) => {
-      const n = brandVideoReviewSteps.length
-      if (n === 0) return 0
-      return Math.min(i, n - 1)
-    })
-  }, [brandVideoReviewSteps.length])
 
   async function handleApproveMetadata() {
     if (!token || !id) return
@@ -459,63 +502,6 @@ export default function ContentBrandPackageDetailPage() {
     status === "MEDICAL_REVIEW" || status === "BRAND_REVIEW"
 
   const canApproveBrandVideos = contentBrandCanSignOffVideos(pkg, canAccess)
-
-  const metadataDeliverableIdx =
-    videoDeliverableBlocks.length > 0
-      ? Math.min(metadataDeliverableIndex, videoDeliverableBlocks.length - 1)
-      : 0
-  const metadataDeliverableBlock =
-    videoDeliverableBlocks[metadataDeliverableIdx]
-  const metadataDeliverableParsed = metadataDeliverableBlock
-    ? parseAgencyDeliverableBlockBody(metadataDeliverableBlock.body)
-    : { title: "", description: "", tags: [] as string[] }
-
-  const metadataVideoTitle =
-    sortedVideoAssets[metadataDeliverableIdx]?.title?.trim() ||
-    metadataDeliverableParsed.title.trim() ||
-    (videoDeliverableBlocks.length <= 1
-      ? (pkg.name ?? pkg.title)
-      : (metadataDeliverableBlock?.heading ?? "—"))
-
-  const metadataVideoDescription =
-    metadataDeliverableParsed.description.trim() ||
-    (!metadataDeliverableParsed.title.trim() &&
-    metadataDeliverableParsed.tags.length === 0 &&
-    metadataDeliverableBlock?.body.trim()
-      ? metadataDeliverableBlock.body.trim()
-      : "") ||
-    (videoDeliverableBlocks.length <= 1
-      ? (pkg.description?.trim() ?? "")
-      : "") ||
-    "—"
-
-  const metadataVideoTags =
-    metadataDeliverableParsed.tags.length > 0
-      ? metadataDeliverableParsed.tags
-      : videoDeliverableBlocks.length <= 1
-        ? (pkg.tags ?? [])
-        : []
-
-  const metadataCtxVideo = sortedVideoAssets[metadataDeliverableIdx]
-  const thumbsForMetadataCtx = metadataCtxVideo
-    ? thumbnailsForVideo(metadataCtxVideo)
-    : []
-  const selectedThumbIdForCtx = metadataCtxVideo
-    ? thumbnailSelectionByVideoId[metadataCtxVideo.id]
-    : undefined
-  const thumbnailForCurrentDeliverable =
-    metadataCtxVideo && selectedThumbIdForCtx
-      ? (thumbsForMetadataCtx.find((t) => t.id === selectedThumbIdForCtx) ??
-        null)
-      : null
-
-  const readOnlyThumbForDeliverable =
-    metadataCtxVideo && !canApproveMetadata
-      ? (thumbsForMetadataCtx.find((t) => t.isSelected) ?? null)
-      : null
-
-  const previewThumbForDeliverable =
-    thumbnailForCurrentDeliverable ?? readOnlyThumbForDeliverable
 
   return (
     <div className="min-h-full bg-linear-to-b from-muted/40 via-background to-background pb-12 md:pb-16">
@@ -704,6 +690,42 @@ export default function ContentBrandPackageDetailPage() {
                 </div>
                 <div className="space-y-6 p-4 sm:p-6">
                   <PackageTatCard pkg={pkg} />
+                  {brandPackageWorkTab === "metadata" &&
+                    pkg.metadataTrackStatus === "APPROVED" && (
+                      <TrackStatusCallout
+                        status="APPROVED"
+                        title="Metadata track (Content / Brand)"
+                      >
+                        <p className="text-foreground">
+                          Metadata is <strong>approved</strong> for this package.
+                          Titles, descriptions, tags, and thumbnail choices are
+                          set for this stage — the deliverable section below is
+                          read-only for reference.
+                        </p>
+                        {status === "MEDICAL_REVIEW" ? (
+                          <p className="mt-3 text-muted-foreground">
+                            Medical Affairs may still be reviewing the video
+                            track. Use the{" "}
+                            <strong className="font-medium text-foreground">
+                              Videos
+                            </strong>{" "}
+                            tab to preview cuts; you&apos;ll sign off on the full
+                            video package when this submission reaches Brand video
+                            review.
+                          </p>
+                        ) : null}
+                        {status === "BRAND_REVIEW" ? (
+                          <p className="mt-3 text-muted-foreground">
+                            Use the{" "}
+                            <strong className="font-medium text-foreground">
+                              Videos
+                            </strong>{" "}
+                            tab to approve or reject the full video package when
+                            you are ready.
+                          </p>
+                        ) : null}
+                      </TrackStatusCallout>
+                    )}
                   {brandPackageWorkTab === "videos" ? (
                     <>
                       {canApproveBrandVideos && (
@@ -723,6 +745,7 @@ export default function ContentBrandPackageDetailPage() {
                               <div className="flex flex-wrap gap-2">
                                 <Button
                                   onClick={() => setVideoApproveOpen(true)}
+                                  className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
                                 >
                                   <CheckCircle className="mr-2 size-4" />
                                   Approve videos
@@ -730,9 +753,10 @@ export default function ContentBrandPackageDetailPage() {
                                 <Button
                                   variant="outline"
                                   onClick={() => openRejectDialog("video")}
+                                  className="gap-1.5 text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-500/30 dark:text-red-500 dark:hover:bg-red-950/50 dark:hover:text-red-400"
                                 >
                                   <XCircle className="mr-2 size-4" />
-                                  Reject
+                                  Reject videos
                                 </Button>
                               </div>
                             </CardContent>
@@ -785,128 +809,23 @@ export default function ContentBrandPackageDetailPage() {
                         )}
 
                       <section className="space-y-4">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
-                            {canApproveBrandVideos
-                              ? "Videos to review"
-                              : "Video cuts (preview)"}
-                          </h2>
-                          {brandVideoReviewSteps.length > 0 ? (
-                            <Badge variant="outline" className="tabular-nums">
-                              Video {videoReviewIndex + 1} of{" "}
-                              {brandVideoReviewSteps.length}
-                            </Badge>
-                          ) : null}
-                        </div>
+                        <h2 className="text-base font-semibold tracking-wide text-muted-foreground uppercase">
+                          {canApproveBrandVideos
+                            ? "Videos to review"
+                            : "Video cuts (preview)"}
+                        </h2>
 
                         {brandVideoReviewSteps.length > 0 ? (
-                          <div className="space-y-4">
-                            <div
-                              className="flex flex-wrap gap-2"
-                              role="tablist"
-                              aria-label="Video review steps"
-                            >
-                              {brandVideoReviewSteps.map((s, i) => (
-                                <button
-                                  key={s.asset.id}
-                                  type="button"
-                                  role="tab"
-                                  aria-selected={i === videoReviewIndex}
-                                  className={cn(
-                                    "max-w-40 truncate rounded-full px-3 py-1 text-xs font-medium transition-colors",
-                                    i === videoReviewIndex
-                                      ? "bg-primary text-primary-foreground"
-                                      : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
-                                  )}
-                                  onClick={() => setVideoReviewIndex(i)}
-                                >
-                                  {s.label}
-                                </button>
-                              ))}
-                            </div>
-                            <PackageInlineVideoCard
-                              key={
-                                brandVideoReviewSteps[videoReviewIndex].asset.id
-                              }
-                              asset={
-                                brandVideoReviewSteps[videoReviewIndex].asset
-                              }
-                              label={
-                                brandVideoReviewSteps[videoReviewIndex].label
-                              }
-                              icon={
-                                brandVideoReviewSteps[videoReviewIndex].icon
-                              }
-                              deliverableAgencyCopy={agencyCopyForVideoReviewStep(
-                                videoDeliverableBlocks,
-                                videoReviewIndex
-                              )}
-                            />
-                            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-                              <p className="text-center text-xs text-muted-foreground sm:text-left">
-                                {canApproveBrandVideos
-                                  ? "Move through each cut before approving the full package."
-                                  : "Preview only — Medical Affairs owns the video track until Brand video review."}
-                              </p>
-                              <div className="flex justify-center gap-2 sm:justify-end">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  disabled={videoReviewIndex === 0}
-                                  onClick={() =>
-                                    setVideoReviewIndex((i) =>
-                                      Math.max(0, i - 1)
-                                    )
-                                  }
-                                >
-                                  <ChevronLeft className="mr-1 size-4" />
-                                  Previous video
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  disabled={
-                                    videoReviewIndex >=
-                                    brandVideoReviewSteps.length - 1
-                                  }
-                                  onClick={() =>
-                                    setVideoReviewIndex((i) =>
-                                      Math.min(
-                                        brandVideoReviewSteps.length - 1,
-                                        i + 1
-                                      )
-                                    )
-                                  }
-                                >
-                                  Next video
-                                  <ChevronRight className="ml-1 size-4" />
-                                </Button>
-                              </div>
-                            </div>
-                            {canApproveBrandVideos ? (
-                              <div className="flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
-                                <p className="text-sm text-muted-foreground">
-                                  Approve sends the package to Content Approver.
-                                  Reject returns the video track to the Agency
-                                  (metadata stays locked per Phase 6 rules).
-                                </p>
-                                <div className="flex flex-wrap gap-2 sm:justify-end">
-                                  <Button
-                                    onClick={() => setVideoApproveOpen(true)}
-                                  >
-                                    <CheckCircle className="mr-2 size-4" />
-                                    Approve videos
-                                  </Button>
-                                  <Button
-                                    variant="outline"
-                                    onClick={() => openRejectDialog("video")}
-                                  >
-                                    <XCircle className="mr-2 size-4" />
-                                    Reject
-                                  </Button>
-                                </div>
-                              </div>
-                            ) : null}
+                          <div className="space-y-10">
+                            {brandVideoReviewSteps.map((s) => (
+                              <PackageInlineVideoCard
+                                key={s.asset.id}
+                                asset={s.asset}
+                                label={s.label}
+                                icon={s.icon}
+                                videoOnly
+                              />
+                            ))}
                           </div>
                         ) : (
                           <Card>
@@ -915,6 +834,13 @@ export default function ContentBrandPackageDetailPage() {
                             </CardContent>
                           </Card>
                         )}
+                        {brandVideoReviewSteps.length > 0 ? (
+                          <p className="text-center text-xs text-muted-foreground sm:text-left">
+                            {canApproveBrandVideos
+                              ? "Review each cut above before approving the full package."
+                              : "Preview only — Medical Affairs owns the video track until Brand video review."}
+                          </p>
+                        ) : null}
                       </section>
                     </>
                   ) : (
@@ -927,11 +853,10 @@ export default function ContentBrandPackageDetailPage() {
                                 Metadata review — action needed
                               </p>
                               <p className="mt-1 text-sm text-muted-foreground">
-                                Switch between deliverables to review each
-                                video&apos;s copy and pairing; then choose one
-                                thumbnail for publication. Approve sends your
-                                choice to the API; Medical may still be
-                                reviewing videos in parallel.
+                                Review each deliverable below, then choose one
+                                thumbnail per video for publication. Approve
+                                sends your choice to the API; Medical may still
+                                be reviewing videos in parallel.
                               </p>
                             </div>
                             <div className="flex flex-wrap gap-2">
@@ -948,374 +873,165 @@ export default function ContentBrandPackageDetailPage() {
                                 className="gap-1.5 text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-500/30 dark:text-red-500 dark:hover:bg-red-950/50 dark:hover:text-red-400"
                               >
                                 <XCircle className="mr-2 size-4" />
-                                Reject
+                                Reject metadata
                               </Button>
                             </div>
                           </CardContent>
                         </Card>
                       )}
 
-                      {!canApproveMetadata &&
-                        status === "MEDICAL_REVIEW" &&
-                        pkg.metadataTrackStatus === "APPROVED" && (
-                          <Card className="border-dashed border-border bg-card/80">
-                            <CardContent className="flex gap-3 py-5">
-                              <Sparkles className="mt-0.5 size-5 shrink-0 text-primary" />
-                              <div>
-                                <p className="font-medium text-foreground">
-                                  Metadata track complete
-                                </p>
-                                <p className="mt-1 text-sm text-muted-foreground">
-                                  You&apos;ve approved title, description, tags,
-                                  and a thumbnail for this version. Medical
-                                  Affairs is still reviewing the video track —
-                                  use the{" "}
-                                  <span className="font-medium text-foreground">
-                                    Videos
-                                  </span>{" "}
-                                  tab to preview cuts. You&apos;ll sign off on
-                                  videos when the package reaches Brand video
-                                  review.
-                                </p>
-                              </div>
+                      <div className="space-y-6">
+                        <div className="rounded-lg border border-border/80 bg-muted/15 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
+                          {canApproveMetadata ? (
+                            <>
+                              Each card is one deliverable. Title, description,
+                              and tags come from the Agency. After reviewing all
+                              cards, pick one thumbnail per video for publication
+                              (see{" "}
+                              <code className="rounded bg-muted px-1 text-xs">
+                                thumbnailId
+                              </code>{" "}
+                              in the approve API).
+                            </>
+                          ) : (
+                            <>
+                              Read-only reference — one card per deliverable.
+                              Thumbnails show the option selected for publication
+                              where the API marks{" "}
+                              <code className="rounded bg-muted px-1 text-xs">
+                                isSelected
+                              </code>
+                              .
+                            </>
+                          )}
+                        </div>
+
+                        {metadataRows.length === 0 ? (
+                          <Card className="border-dashed border-border bg-muted/10">
+                            <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                              No deliverable metadata to show.
                             </CardContent>
                           </Card>
-                        )}
-
-                      {!canApproveMetadata && status === "BRAND_REVIEW" && (
-                        <Card className="border-muted/60 bg-muted/10 shadow-none">
-                          <CardContent className="py-4 text-sm">
-                            <p className="font-medium text-foreground">
-                              Metadata reference
-                            </p>
-                            <p className="mt-1 text-muted-foreground">
-                              Copy and thumbnails below reflect the metadata
-                              track. Use this tab for reference while you review
-                              videos.
-                            </p>
-                          </CardContent>
-                        </Card>
-                      )}
-
-                      <Card className="border-0 shadow-md ring-1 ring-border/60">
-                        <CardHeader className="border-b border-border bg-muted/20">
-                          <div className="flex flex-wrap items-start gap-3">
-                            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                              <FileText className="size-5" />
-                            </div>
-                            <div className="min-w-0 flex-1 space-y-1">
-                              <CardTitle className="text-lg">
-                                Deliverable metadata
-                              </CardTitle>
-                              <CardDescription>
-                                {canApproveMetadata ? (
-                                  <>
-                                    One video at a time: title, description, and
-                                    tags from the Agency for that cut. At the
-                                    bottom, pick one thumbnail for publication (
-                                    <code className="rounded bg-muted px-1 text-xs">
-                                      thumbnailId
-                                    </code>
-                                    ).
-                                  </>
-                                ) : (
-                                  <>
-                                    Read-only reference — same layout as during
-                                    metadata review. Thumbnails show the option
-                                    selected for publication where the API marks{" "}
-                                    <code className="rounded bg-muted px-1 text-xs">
-                                      isSelected
-                                    </code>
-                                    .
-                                  </>
-                                )}
-                              </CardDescription>
-                            </div>
-                          </div>
-                        </CardHeader>
-                        <CardContent className="space-y-0 p-5 sm:p-6">
-                          {videoDeliverableBlocks.length > 1 ? (
-                            <div
-                              className="mb-8 flex flex-wrap gap-2"
-                              role="tablist"
-                              aria-label="Deliverable"
-                            >
-                              {videoDeliverableBlocks.map((b, i) => (
-                                <button
-                                  key={`${b.heading}-${i}`}
-                                  type="button"
-                                  role="tab"
-                                  aria-selected={i === metadataDeliverableIdx}
-                                  className={cn(
-                                    "max-w-full truncate rounded-full px-3 py-1.5 text-left text-xs font-medium transition-colors sm:max-w-xs",
-                                    i === metadataDeliverableIdx
-                                      ? "bg-primary text-primary-foreground"
-                                      : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
-                                  )}
-                                  title={b.heading}
-                                  onClick={() => setMetadataDeliverableIndex(i)}
-                                >
-                                  {b.heading}
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
-
-                          {metadataDeliverableBlock ? (
-                            <Badge
-                              variant="outline"
-                              className="mb-4 font-normal"
-                            >
-                              {metadataDeliverableBlock.heading}
-                            </Badge>
-                          ) : null}
-
-                          <section className="space-y-3">
-                            <div className="flex items-center gap-2">
-                              <FileText className="size-4 text-muted-foreground" />
-                              <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                                Video title
-                              </Label>
-                            </div>
-                            <p className="text-xl leading-snug font-semibold text-foreground sm:text-2xl">
-                              {metadataVideoTitle}
-                            </p>
-                          </section>
-
-                          <section className="mt-10 space-y-3 border-t border-border pt-10">
-                            <div className="flex items-center gap-2">
-                              <FileText className="size-4 text-muted-foreground" />
-                              <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                                Description
-                              </Label>
-                            </div>
-                            <div className="max-h-[min(70vh,28rem)] overflow-y-auto rounded-xl border border-border bg-muted/15 p-4 text-sm leading-relaxed whitespace-pre-wrap text-foreground sm:p-5 sm:text-base">
-                              {metadataVideoDescription}
-                            </div>
-                          </section>
-
-                          <section className="mt-10 space-y-3 border-t border-border pt-10">
-                            <div className="flex items-center gap-2">
-                              <Hash className="size-4 text-muted-foreground" />
-                              <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                                Tags
-                              </Label>
-                            </div>
-                            {metadataVideoTags.length ? (
-                              <div className="flex flex-wrap gap-2">
-                                {metadataVideoTags.map((t) => (
-                                  <Badge
-                                    key={t}
-                                    variant="secondary"
-                                    className="px-3 py-1.5 text-sm font-normal"
-                                  >
-                                    {t}
-                                  </Badge>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-sm text-muted-foreground">
-                                {videoDeliverableBlocks.length > 1
-                                  ? "No tags listed for this deliverable."
-                                  : "No tags on this package."}
-                              </p>
-                            )}
-                          </section>
-
-                          {previewThumbForDeliverable ? (
-                            <section className="mt-10 space-y-3 border-t border-border pt-10">
-                              <div className="flex items-center gap-2">
-                                <ImageIcon className="size-4 text-muted-foreground" />
-                                <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                                  Selected thumbnail for this cut
-                                </Label>
-                              </div>
-                              <p className="text-sm text-muted-foreground">
-                                {canApproveMetadata
-                                  ? "Preview of your current choice (change under Thumbnail selections per video)."
-                                  : "Thumbnail marked for publication for this deliverable (read-only)."}
-                              </p>
-                              <div className="mx-auto max-w-md overflow-hidden rounded-xl border border-border bg-muted/20">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={previewThumbForDeliverable.fileUrl}
-                                  alt=""
-                                  className="aspect-video w-full object-cover"
-                                />
-                              </div>
-                              <p className="truncate font-mono text-[11px] text-muted-foreground">
-                                {previewThumbForDeliverable.fileName}
-                              </p>
-                            </section>
-                          ) : null}
-
-                          <section className="mt-10 space-y-8 border-t border-border pt-10">
-                            <div className="flex items-center gap-2">
-                              <ImageIcon className="size-4 text-muted-foreground" />
-                              <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                                {canApproveMetadata
-                                  ? "Thumbnail selections (API: one per video)"
-                                  : "Thumbnail options (read-only)"}
-                              </Label>
-                            </div>
-                            <p className="text-sm text-muted-foreground">
-                              {canApproveMetadata ? (
-                                <>
-                                  Choose exactly one thumbnail for each video.
-                                  Sent as{" "}
-                                  <code className="rounded bg-muted px-1 text-xs">
-                                    thumbnailSelections
-                                  </code>{" "}
-                                  on approve.
-                                </>
-                              ) : (
-                                <>
-                                  Options uploaded by the Agency. The image
-                                  marked{" "}
-                                  <span className="font-medium text-foreground">
-                                    Selected for publication
-                                  </span>{" "}
-                                  reflects API state (
-                                  <code className="rounded bg-muted px-1 text-xs">
-                                    isSelected
-                                  </code>
-                                  ).
-                                </>
-                              )}
-                            </p>
-                            {(() => {
-                              let shortNum = 0
-                              return sortedVideoAssets.map((v) => {
-                                const opts = thumbnailsForVideo(v)
-                                const vlabel =
-                                  v.type === "LONG_FORM"
-                                    ? "Long-form (main)"
-                                    : `Short-form ${++shortNum}`
-                                const picked = thumbnailSelectionByVideoId[v.id]
-                                const pickedAsset = opts.find(
-                                  (t) => t.id === picked
-                                )
-                                return (
-                                  <div key={v.id} className="space-y-3">
-                                    <p className="text-sm font-medium text-foreground">
-                                      {vlabel}
+                        ) : (
+                          metadataRows.map((row) => {
+                            const deliverableLabel =
+                              videoRejectLabelById.get(row.id) ??
+                              row.blockHeading ??
+                              "Deliverable"
+                            return (
+                              <Card
+                                key={row.id}
+                                className="overflow-hidden border-0 shadow-md ring-1 ring-border/60"
+                              >
+                                <CardHeader className="border-b border-border bg-muted/20">
+                                  <div className="flex flex-wrap items-start gap-3">
+                                    <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                                      <FileText className="size-5" />
+                                    </div>
+                                    <div className="min-w-0 flex-1 space-y-1">
+                                      <CardTitle className="text-lg">
+                                        {deliverableLabel}
+                                      </CardTitle>
+                                      {row.blockHeading &&
+                                      row.blockHeading !== deliverableLabel ? (
+                                        <CardDescription>
+                                          {row.blockHeading}
+                                        </CardDescription>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                </CardHeader>
+                                <CardContent className="space-y-6 p-5 sm:p-6">
+                                  <section className="space-y-3">
+                                    <div className="flex items-center gap-2">
+                                      <FileText className="size-4 text-muted-foreground" />
+                                      <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                                        Video title
+                                      </Label>
+                                    </div>
+                                    <p className="text-xl leading-snug font-semibold text-foreground sm:text-2xl">
+                                      {row.metadataVideoTitle}
                                     </p>
-                                    {opts.length ? (
-                                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                        {opts.map((t) => {
-                                          const selectedInteractive =
-                                            picked === t.id
-                                          const selectedReadOnly = Boolean(
-                                            t.isSelected
-                                          )
-                                          const selected = canApproveMetadata
-                                            ? selectedInteractive
-                                            : selectedReadOnly
-                                          const tileClass = cn(
-                                            "group relative rounded-xl border-2 p-2 text-left transition-all outline-none",
-                                            canApproveMetadata &&
-                                              "focus-visible:ring-2 focus-visible:ring-ring",
-                                            selected
-                                              ? "border-primary bg-primary/8 shadow-md ring-2 ring-primary/20"
-                                              : "border-border opacity-95",
-                                            canApproveMetadata &&
-                                              !selected &&
-                                              "hover:border-primary/40 hover:bg-muted/40"
-                                          )
-                                          const inner = (
-                                            <>
-                                              {selected &&
-                                                canApproveMetadata && (
-                                                  <span className="absolute top-3 right-3 flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md">
-                                                    <Check
-                                                      className="size-4"
-                                                      strokeWidth={3}
-                                                    />
-                                                  </span>
-                                                )}
-                                              {selected &&
-                                                !canApproveMetadata && (
-                                                  <span className="absolute top-2 left-2 rounded bg-primary/90 px-2 py-0.5 text-[10px] font-medium text-primary-foreground">
-                                                    Selected for publication
-                                                  </span>
-                                                )}
-                                              <div className="overflow-hidden rounded-lg bg-muted/30">
-                                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                <img
-                                                  src={t.fileUrl}
-                                                  alt=""
-                                                  className={cn(
-                                                    "aspect-video w-full object-cover",
-                                                    canApproveMetadata &&
-                                                      "transition-transform group-hover:scale-[1.02]"
-                                                  )}
-                                                />
-                                              </div>
-                                              <p className="mt-2 truncate px-1 font-mono text-[11px] text-muted-foreground">
-                                                {t.fileName}
-                                              </p>
-                                              {formatPackageFileSize(
-                                                t.fileSize ?? undefined
-                                              ) ? (
-                                                <p className="px-1 text-[10px] text-muted-foreground">
-                                                  {formatPackageFileSize(
-                                                    t.fileSize ?? undefined
-                                                  )}
-                                                </p>
-                                              ) : null}
-                                            </>
-                                          )
-                                          return canApproveMetadata ? (
-                                            <button
-                                              key={t.id}
-                                              type="button"
-                                              onClick={() =>
-                                                setThumbnailSelectionByVideoId(
-                                                  (prev) => ({
-                                                    ...prev,
-                                                    [v.id]: t.id,
-                                                  })
-                                                )
-                                              }
-                                              className={tileClass}
-                                            >
-                                              {inner}
-                                            </button>
-                                          ) : (
-                                            <div
-                                              key={t.id}
-                                              className={tileClass}
-                                            >
-                                              {inner}
-                                            </div>
-                                          )
-                                        })}
+                                  </section>
+
+                                  <section className="space-y-3 border-t border-border pt-6">
+                                    <div className="flex items-center gap-2">
+                                      <FileText className="size-4 text-muted-foreground" />
+                                      <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                                        Description
+                                      </Label>
+                                    </div>
+                                    <div className="max-h-[min(70vh,28rem)] overflow-y-auto rounded-xl border border-border bg-muted/15 p-4 text-sm leading-relaxed whitespace-pre-wrap text-foreground sm:p-5 sm:text-base">
+                                      {row.metadataVideoDescription}
+                                    </div>
+                                  </section>
+
+                                  <section className="space-y-3 border-t border-border pt-6">
+                                    <div className="flex items-center gap-2">
+                                      <Hash className="size-4 text-muted-foreground" />
+                                      <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                                        Tags
+                                      </Label>
+                                    </div>
+                                    {row.metadataVideoTags.length ? (
+                                      <div className="flex flex-wrap gap-2">
+                                        {row.metadataVideoTags.map((t) => (
+                                          <Badge
+                                            key={`${row.id}-tag-${t}`}
+                                            variant="secondary"
+                                            className="px-3 py-1.5 text-sm font-normal"
+                                          >
+                                            {t}
+                                          </Badge>
+                                        ))}
                                       </div>
                                     ) : (
                                       <p className="text-sm text-muted-foreground">
-                                        No thumbnails on this video asset.
+                                        {videoDeliverableBlocks.length > 1
+                                          ? "No tags listed for this deliverable."
+                                          : "No tags on this package."}
                                       </p>
                                     )}
-                                    {pickedAsset && canApproveMetadata ? (
-                                      <p className="text-xs text-muted-foreground">
-                                        Selected:{" "}
-                                        <span className="font-medium text-foreground">
-                                          {pickedAsset.fileName}
-                                        </span>
+                                  </section>
+
+                                  {row.previewThumbForDeliverable ? (
+                                    <section className="space-y-3 border-t border-border pt-6">
+                                      <div className="flex items-center gap-2">
+                                        <ImageIcon className="size-4 text-muted-foreground" />
+                                        <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                                          Selected thumbnail for this cut
+                                        </Label>
+                                      </div>
+                                      <p className="text-sm text-muted-foreground">
+                                        {canApproveMetadata
+                                          ? "Preview of your current choice for this video."
+                                          : "Thumbnail marked for publication for this deliverable (read-only)."}
                                       </p>
-                                    ) : null}
-                                  </div>
-                                )
-                              })
-                            })()}
-                            {sortedVideoAssets.length === 0 ? (
-                              <p className="rounded-lg border border-dashed border-border bg-muted/20 py-8 text-center text-sm text-muted-foreground">
-                                No video assets on this package.
-                              </p>
-                            ) : null}
-                          </section>
-                        </CardContent>
-                      </Card>
+                                      <div className="mx-auto max-w-md overflow-hidden rounded-xl border border-border bg-muted/20">
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img
+                                          src={
+                                            row.previewThumbForDeliverable
+                                              .fileUrl
+                                          }
+                                          alt=""
+                                          className="aspect-video w-full object-cover"
+                                        />
+                                      </div>
+                                      <p className="truncate font-mono text-[11px] text-muted-foreground">
+                                        {
+                                          row.previewThumbForDeliverable
+                                            .fileName
+                                        }
+                                      </p>
+                                    </section>
+                                  ) : null}
+                                </CardContent>
+                              </Card>
+                            )
+                          })
+                        )}
+                      </div>
                     </>
                   )}
                 </div>
@@ -1339,7 +1055,7 @@ export default function ContentBrandPackageDetailPage() {
             </Card>
           )}
 
-        <Card className="shadow-sm">
+        {/* <Card className="shadow-sm">
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-lg font-semibold">
               <Hash className="size-5 text-muted-foreground" />
@@ -1403,7 +1119,7 @@ export default function ContentBrandPackageDetailPage() {
               ) : null}
             </dl>
           </CardContent>
-        </Card>
+        </Card> */}
       </div>
 
       <Dialog open={metaApproveOpen} onOpenChange={setMetaApproveOpen}>
@@ -1633,7 +1349,7 @@ export default function ContentBrandPackageDetailPage() {
                       <CardContent className="pb-4">
                         <div className="space-y-2">
                           <Label htmlFor={`rej-vid-${v.id}`}>
-                            Video feedback (optional)
+                            Video feedback (required)
                           </Label>
                           <Textarea
                             id={`rej-vid-${v.id}`}

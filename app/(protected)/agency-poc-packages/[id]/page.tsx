@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -32,10 +32,16 @@ import {
 } from "@/components/ui/dialog"
 import { useAuthStore } from "@/store"
 import type { UserRole } from "@/types/auth"
+import { buildSubmitPackageBodyFromPackage } from "@/lib/build-submit-package-body"
+import {
+  clearPackageSubmitDraft,
+  userMessageForClearDraftFailure,
+} from "@/lib/package-submit-draft-idb"
 import {
   getPackage,
   resubmitPackageMetadata,
   resubmitPackageVideos,
+  submitPackage,
   uploadPackageThumbnailFile,
   uploadPackageVideoFile,
   withdrawPackage,
@@ -46,16 +52,14 @@ import type {
   PackageAssetFeedback,
   PackageItemFeedbackEntry,
   PackageStatus,
-  PackageTrackStatus,
 } from "@/types/package"
 import {
-  agencyPackageNeedsRevision,
+  agencyPackageNeedsSubmitWizard,
   getLatestDisplayableRejection,
   type PackageRejectionDisplay,
 } from "@/lib/package-list-utils"
 import {
   PACKAGE_STATUS_LABELS,
-  TRACK_STATUS_LABELS,
   assetsOfType,
   canWithdrawPackage,
   formatPackageDate,
@@ -63,20 +67,18 @@ import {
   humanizeItemFeedbackField,
   packageStatusBadgeClass,
   thumbnailsForVideo,
-  trackStatusSurfaceClass,
   videoAssets,
 } from "@/lib/package-ui"
 import { PackageTatCard } from "@/components/packages/package-tat-card"
 import { PackageItemFeedbackHumanizedList } from "@/components/packages/package-item-feedback-humanized"
 import { PackageListTabNav } from "@/components/packages/package-list-tab-nav"
+import { TrackStatusCallout } from "@/components/packages/track-status-callout"
 import {
-  AlertTriangle,
   ArrowLeft,
   BadgeCheck,
   Calendar,
   CheckCircle2,
   Clapperboard,
-  Clock,
   ExternalLink,
   FileVideo,
   Hash,
@@ -243,23 +245,36 @@ function existingThumbnailsPayload(asset: PackageAsset) {
 
 const VIDEO_PREVIEW_SHELL =
   "overflow-hidden rounded-xl border border-border bg-black shadow-md ring-1 ring-border/60"
-const VIDEO_PREVIEW_CLASS = "max-h-[min(60vh,28rem)] w-full object-contain"
+
+/** Intrinsic aspect from the file; width fills column; soft cap for very tall sources. */
+const VIDEO_INLINE_CLASS =
+  "h-auto w-full max-w-full object-contain max-h-[min(85vh,40rem)]"
+
+function submittedVideoShellClass() {
+  return cn(VIDEO_PREVIEW_SHELL, "w-full")
+}
 
 const EMPTY_FILE_LIST: File[] = []
 
-function SubmittedVideoPlayerPaneInner({ asset }: { asset: PackageAsset }) {
+function SubmittedVideoPlayerPaneInner({
+  asset,
+  compact,
+}: {
+  asset: PackageAsset
+  compact?: boolean
+}) {
   const [videoError, setVideoError] = useState(false)
 
   if (asset.fileUrl && !videoError) {
     return (
-      <div className={VIDEO_PREVIEW_SHELL}>
+      <div className={submittedVideoShellClass()}>
         <video
           key={asset.fileUrl}
           src={asset.fileUrl}
           controls
           playsInline
           preload="metadata"
-          className={VIDEO_PREVIEW_CLASS}
+          className={VIDEO_INLINE_CLASS}
           onError={() => setVideoError(true)}
         >
           Your browser cannot play this video inline.
@@ -269,69 +284,98 @@ function SubmittedVideoPlayerPaneInner({ asset }: { asset: PackageAsset }) {
   }
 
   return (
-    <div className="flex min-h-[min(40vh,16rem)] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-muted-foreground/30 bg-muted/40 px-4 py-10 text-center">
+    <div
+      className={cn(
+        "flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-muted-foreground/30 bg-muted/40 px-3 text-center",
+        compact ? "min-h-36 py-6" : "min-h-48 px-4 py-10"
+      )}
+    >
       <p className="max-w-sm text-sm text-muted-foreground">
         {videoError
           ? "We couldn’t play this file in the browser (often network or permissions). Open it in a new tab instead."
           : "There is no playable URL for this file yet."}
       </p>
-      {/* {asset.fileUrl ? (
-        <Button variant="outline" size="sm" asChild>
-          <a
-            href={asset.fileUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <ExternalLink className="mr-2 size-4" />
-            Open in new tab
-          </a>
-        </Button>
-      ) : null} */}
     </div>
   )
 }
 
-function SubmittedVideoPlayerPane({ asset }: { asset: PackageAsset }) {
-  return (
+function SubmittedVideoPlayerPane({
+  asset,
+  compact,
+}: {
+  asset: PackageAsset
+  compact?: boolean
+}) {
+  const inner = (
     <SubmittedVideoPlayerPaneInner
       key={asset.fileUrl ?? `no-url-${asset.id}`}
       asset={asset}
+      compact={compact}
     />
   )
+  if (compact) return inner
+  return <div className="flex min-h-0 min-w-0 flex-1 flex-col">{inner}</div>
 }
 
-function LocalReplacementVideoPreview({ file }: { file: File | null }) {
+function LocalReplacementVideoPreview({
+  file,
+  className,
+  compact,
+}: {
+  file: File | null
+  className?: string
+  compact?: boolean
+}) {
   if (!file) {
     return (
-      <div className="flex min-h-[min(40vh,16rem)] items-center justify-center rounded-xl border border-dashed border-muted-foreground/25 bg-muted/30 px-4 py-8 text-center">
-        <p className="max-w-xs text-sm text-muted-foreground">
-          Choose a replacement file to preview it here, side by side with your
-          current submission.
+      <div
+        className={cn(
+          "flex w-full items-center justify-center rounded-xl border border-dashed border-muted-foreground/25 bg-muted/30 px-2 text-center",
+          compact ? "min-h-36 py-6" : "px-4 py-8",
+          className
+        )}
+      >
+        <p className="max-w-[min(100%,12rem)] text-xs text-muted-foreground sm:max-w-xs sm:text-sm">
+          Choose a replacement to preview beside your current submission.
         </p>
       </div>
     )
   }
   const fileKey = `${file.name}-${file.size}-${file.lastModified}`
-  return <LocalReplacementVideoPreviewInner key={fileKey} file={file} />
+  return (
+    <LocalReplacementVideoPreviewInner
+      key={fileKey}
+      file={file}
+      className={className}
+      compact={compact}
+    />
+  )
 }
 
 function ReplacementBlobVideoPlayer({
   objectUrl,
   file,
+  compact,
 }: {
   objectUrl: string
   file: File
+  compact?: boolean
 }) {
   const [videoError, setVideoError] = useState(false)
 
   if (videoError) {
     return (
-      <div className="flex min-h-[min(40vh,16rem)] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-muted-foreground/30 bg-muted/40 px-4 py-8 text-center">
+      <div
+        className={cn(
+          "flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-muted-foreground/30 bg-muted/40 px-3 text-center",
+          compact ? "min-h-36 py-6" : "px-4 py-8"
+        )}
+      >
         <p className="text-sm text-muted-foreground">
           This file can’t be previewed in the browser (codec or format). It can
           still upload if you resubmit.
         </p>
-        <p className="font-mono text-xs break-all text-muted-foreground">
+        <p className="font-mono text-xs wrap-break-word text-muted-foreground">
           {file.name} · {formatPackageFileSize(file.size)}
         </p>
       </div>
@@ -339,13 +383,13 @@ function ReplacementBlobVideoPlayer({
   }
 
   return (
-    <div className="space-y-2">
-      <div className={VIDEO_PREVIEW_SHELL}>
+    <div className="flex w-full flex-col gap-2">
+      <div className={submittedVideoShellClass()}>
         <video
           controls
           playsInline
           preload="metadata"
-          className={VIDEO_PREVIEW_CLASS}
+          className={VIDEO_INLINE_CLASS}
           onError={() => setVideoError(true)}
         >
           {file.type ? (
@@ -356,14 +400,22 @@ function ReplacementBlobVideoPlayer({
           Your browser cannot play this video inline.
         </video>
       </div>
-      <p className="font-mono text-xs break-all text-muted-foreground">
+      <p className="shrink-0 font-mono text-xs wrap-break-word text-muted-foreground">
         {file.name} · {formatPackageFileSize(file.size)}
       </p>
     </div>
   )
 }
 
-function LocalReplacementVideoPreviewInner({ file }: { file: File }) {
+function LocalReplacementVideoPreviewInner({
+  file,
+  className,
+  compact,
+}: {
+  file: File
+  className?: string
+  compact?: boolean
+}) {
   /** Blob URL in state + effect: Strict Mode revokes on unmount; useMemo would
    *  reuse a revoked URL string on remount. */
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
@@ -380,18 +432,73 @@ function LocalReplacementVideoPreviewInner({ file }: { file: File }) {
 
   if (!objectUrl) {
     return (
-      <div className="flex min-h-32 items-center justify-center rounded-xl border border-border bg-muted/20">
+      <div
+        className={cn(
+          "flex w-full items-center justify-center rounded-xl border border-border bg-muted/20",
+          compact ? "min-h-36 py-8" : "min-h-48 py-8",
+          className
+        )}
+      >
         <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     )
   }
 
   return (
-    <ReplacementBlobVideoPlayer
-      key={objectUrl}
-      objectUrl={objectUrl}
-      file={file}
-    />
+    <div className={cn("flex min-w-0 flex-col", className)}>
+      <ReplacementBlobVideoPlayer
+        key={objectUrl}
+        objectUrl={objectUrl}
+        file={file}
+        compact={compact}
+      />
+    </div>
+  )
+}
+
+function VideoReplacementUploadCell({
+  assetId,
+  file,
+  onFileChange,
+}: {
+  assetId: string
+  file: File | null
+  onFileChange: (next: File | null) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const id = `video-replace-${assetId}`
+
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      <input
+        ref={inputRef}
+        id={id}
+        type="file"
+        accept="video/*"
+        className="hidden"
+        aria-label="Choose replacement video file"
+        onChange={(e) => {
+          onFileChange(e.target.files?.[0] ?? null)
+        }}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="w-full shrink-0"
+        onClick={() => inputRef.current?.click()}
+      >
+        <Upload className="mr-2 size-4" />
+        Re-upload
+      </Button>
+      {file ? (
+        <p className="text-xs wrap-break-word text-muted-foreground">
+          {file.name} — use Re-upload to change.
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">Required before resubmit.</p>
+      )}
+    </div>
   )
 }
 
@@ -482,6 +589,7 @@ function AgencyPackageVideoPreview({
 
 export default function AgencyPackageDetailPage() {
   const params = useParams()
+  const router = useRouter()
   const id = params.id as string
   const token = useAuthStore((s) => s.token)
   const user = useAuthStore((s) => s.user)
@@ -490,6 +598,7 @@ export default function AgencyPackageDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [withdrawOpen, setWithdrawOpen] = useState(false)
   const [withdrawing, setWithdrawing] = useState(false)
+  const [draftSubmitting, setDraftSubmitting] = useState(false)
   const [revisionTab, setRevisionTab] = useState<RevisionTab>("videos")
   const revisionTabInit = useRef(false)
 
@@ -558,7 +667,7 @@ export default function AgencyPackageDetailPage() {
     [pkg]
   )
 
-  const needsRevision = pkg ? agencyPackageNeedsRevision(pkg) : false
+  const needsSubmitWizard = pkg ? agencyPackageNeedsSubmitWizard(pkg) : false
 
   const videoFeedback = useMemo(() => {
     if (!latestRejection)
@@ -596,6 +705,41 @@ export default function AgencyPackageDetailPage() {
       toast.error(e instanceof Error ? e.message : "Withdraw failed")
     } finally {
       setWithdrawing(false)
+    }
+  }
+
+  async function handleSubmitDraftPackage() {
+    if (!token || !pkg) return
+    const body = buildSubmitPackageBodyFromPackage(pkg)
+    if (!body) {
+      toast.error("Cannot submit from saved files", {
+        description:
+          "Each video needs a file URL, at least one thumbnail, and at least one tag (or package-level tags). Use the full wizard if anything is missing.",
+      })
+      return
+    }
+    setDraftSubmitting(true)
+    try {
+      const res = await submitPackage(token, body)
+      toast.success(res.message ?? "Package submitted", {
+        description: "Medical and Brand parallel review has started.",
+      })
+      setPkg(res.package)
+      const clearResult = await clearPackageSubmitDraft(pkg.scriptId)
+      if (!clearResult.ok) {
+        const { title, description } = userMessageForClearDraftFailure()
+        toast.info(title, {
+          description,
+          id: "package-draft-clear-failed-detail",
+        })
+      }
+      router.replace(`/agency-poc-packages/${res.package.id}`)
+    } catch (e) {
+      toast.error("Could not submit package", {
+        description: e instanceof Error ? e.message : "Submit failed",
+      })
+    } finally {
+      setDraftSubmitting(false)
     }
   }
 
@@ -707,15 +851,28 @@ export default function AgencyPackageDetailPage() {
             </div>
           </div>
           <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:items-end">
-            {needsRevision && (
-              <Button asChild className="w-full sm:w-auto">
-                <Link
-                  href={`/agency-poc-packages/new?scriptId=${encodeURIComponent(pkg.scriptId)}`}
+            {needsSubmitWizard &&
+              (pkg.status === "DRAFT" ? (
+                <Button
+                  type="button"
+                  className="w-full sm:w-auto"
+                  disabled={draftSubmitting}
+                  onClick={() => void handleSubmitDraftPackage()}
                 >
-                  Full package wizard
-                </Link>
-              </Button>
-            )}
+                  {draftSubmitting ? (
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                  ) : null}
+                  Submit package
+                </Button>
+              ) : (
+                <Button asChild className="w-full sm:w-auto">
+                  <Link
+                    href={`/agency-poc-packages/new?scriptId=${encodeURIComponent(pkg.scriptId)}`}
+                  >
+                    Resubmit package
+                  </Link>
+                </Button>
+              ))}
             {showWithdraw && (
               <Button
                 variant="outline"
@@ -938,79 +1095,6 @@ export default function AgencyPackageDetailPage() {
         </DialogContent>
       </Dialog>
     </div>
-  )
-}
-
-function TrackStatusCallout({
-  status,
-  title,
-  children,
-  /** When set, drives icon, border tint, and badge variant (e.g. “approved” track still waiting on another reviewer). */
-  appearanceStatus,
-  badgeLabel,
-  headerDescription,
-}: {
-  status: PackageTrackStatus
-  title: string
-  children: ReactNode
-  appearanceStatus?: PackageTrackStatus
-  badgeLabel?: string
-  headerDescription?: ReactNode
-}) {
-  const vis = appearanceStatus ?? status
-  return (
-    <Card className={cn("border-2 shadow-none", trackStatusSurfaceClass(vis))}>
-      <CardHeader className="space-y-1 pb-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle className="flex items-center gap-2.5 text-lg leading-tight font-semibold">
-            {vis === "APPROVED" && (
-              <CheckCircle2 className="size-5 shrink-0 text-green-600 dark:text-green-400" />
-            )}
-            {vis === "PENDING" && (
-              <Clock className="size-5 shrink-0 text-muted-foreground" />
-            )}
-            {vis === "REJECTED" && (
-              <AlertTriangle className="size-5 shrink-0 text-destructive" />
-            )}
-            {title}
-          </CardTitle>
-          <Badge
-            variant={
-              vis === "REJECTED"
-                ? "destructive"
-                : vis === "APPROVED"
-                  ? "default"
-                  : "secondary"
-            }
-            className={cn(
-              "shrink-0",
-              badgeLabel
-                ? "max-w-[min(100%,20rem)] text-center text-xs leading-tight font-medium whitespace-normal normal-case"
-                : "uppercase"
-            )}
-          >
-            {badgeLabel ?? TRACK_STATUS_LABELS[status]}
-          </Badge>
-        </div>
-        <CardDescription className="text-xs font-normal text-muted-foreground">
-          {headerDescription !== undefined ? (
-            headerDescription
-          ) : (
-            <>
-              {status === "APPROVED" &&
-                "You do not need to upload or edit anything for this track."}
-              {status === "PENDING" &&
-                "Waiting on reviewers — nothing for you to do on this track yet."}
-              {status === "REJECTED" &&
-                "Reviewers asked for changes — follow the steps below this card."}
-            </>
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="border-t border-border/60 pt-4 text-sm leading-relaxed">
-        <div className="text-foreground [&_p]:leading-relaxed">{children}</div>
-      </CardContent>
-    </Card>
   )
 }
 
@@ -1355,78 +1439,56 @@ function VideoRevisionPanel({
                 </CardHeader>
                 <CardContent className="space-y-4 p-4 sm:p-6">
                   {vts === "REJECTED" && videoNeedsNewFile(asset.id) ? (
-                    <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-                      <div className="min-w-0 space-y-3">
-                        <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                    <div className="space-y-4">
+                      <div className="flex flex-wrap items-center gap-3 border-b border-border/80 pb-3">
+                        <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                          {icon}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-mono text-xs wrap-break-word text-muted-foreground">
+                            {asset.fileName}
+                            {submittedVideoSize
+                              ? ` · ${submittedVideoSize}`
+                              : ""}
+                          </p>
+                        </div>
+                        <Badge
+                          variant="secondary"
+                          className="shrink-0 uppercase"
+                        >
+                          {asset.type.replace("_", " ")}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-3 sm:gap-x-4">
+                        <p className="text-[0.65rem] font-semibold tracking-wide text-muted-foreground uppercase sm:text-xs">
                           Current submission
                         </p>
-                        <div className="flex flex-wrap items-start gap-3 border-b border-border/80 pb-3">
-                          <span className="mt-0.5 inline-flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                            {icon}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="font-mono text-xs break-all text-muted-foreground">
-                              {asset.fileName}
-                              {submittedVideoSize
-                                ? ` · ${submittedVideoSize}`
-                                : ""}
-                            </p>
-                          </div>
-                          <Badge
-                            variant="secondary"
-                            className="shrink-0 uppercase"
-                          >
-                            {asset.type.replace("_", " ")}
-                          </Badge>
-                        </div>
-                        <SubmittedVideoPlayerPane asset={asset} />
-                        <a
-                          href={asset.fileUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-sm text-primary underline-offset-4 hover:underline"
-                        >
-                          <FileVideo className="size-4" />
-                          Open current video in new tab
-                          <ExternalLink className="size-3.5" />
-                        </a>
-                      </div>
-                      <div className="min-w-0 space-y-3">
-                        <p className="text-xs font-semibold tracking-wide text-primary uppercase">
+                        <p className="text-[0.65rem] font-semibold tracking-wide text-primary uppercase sm:text-xs">
                           Your replacement
                         </p>
-                        <LocalReplacementVideoPreview
-                          file={replacementFiles[asset.id] ?? null}
-                        />
-                        <div className="space-y-2 rounded-lg border-2 border-dashed border-primary/25 bg-primary/5 p-4 dark:border-primary/30 dark:bg-primary/10">
-                          <Label
-                            htmlFor={`video-replace-${asset.id}`}
-                            className="text-foreground"
-                          >
-                            Replacement video file
-                          </Label>
-                          <Input
-                            id={`video-replace-${asset.id}`}
-                            type="file"
-                            accept="video/*"
-                            className="cursor-pointer border-border bg-background"
-                            onChange={(e) => {
-                              const f = e.target.files?.[0] ?? null
+                        <div className="min-w-0">
+                          <SubmittedVideoPlayerPane
+                            compact
+                            asset={asset}
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <LocalReplacementVideoPreview
+                            compact
+                            file={replacementFiles[asset.id] ?? null}
+                          />
+                        </div>
+                        <div className="min-w-0 self-start">
+                          <VideoReplacementUploadCell
+                            assetId={asset.id}
+                            file={replacementFiles[asset.id] ?? null}
+                            onFileChange={(f) =>
                               setReplacementFiles((prev) => ({
                                 ...prev,
                                 [asset.id]: f,
                               }))
-                            }}
+                            }
                           />
-                          {replacementFiles[asset.id] ? (
-                            <p className="text-xs text-muted-foreground">
-                              Change the file above to update this preview.
-                            </p>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">
-                              Required before resubmit.
-                            </p>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -1737,7 +1799,7 @@ function MetadataResubmitForm({
                 <p className="text-sm font-semibold text-foreground">{label}</p>
                 {hasAnyRevision ? (
                   <Badge variant="outline" className="max-w-full font-normal">
-                    <span className="break-words">
+                    <span className="wrap-break-word">
                       {[...revisionFields]
                         .sort()
                         .map((f) => humanizeItemFeedbackField(f))

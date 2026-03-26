@@ -95,11 +95,16 @@ export async function submitPackage(
   body: SubmitPackageBody
 ): Promise<{ success?: boolean; message?: string; package: FinalPackage }> {
   checkToken(token)
-  return apiRequest(`/api/packages`, {
+  const data = await apiRequest<{
+    success?: boolean
+    message?: string
+    package: unknown
+  }>("/api/packages", {
     method: "POST",
     body,
     token,
   })
+  return { ...data, package: normalizeFinalPackage(data.package) }
 }
 
 export async function resubmitPackageVideos(
