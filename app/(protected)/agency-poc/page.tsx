@@ -8,14 +8,17 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useAuthStore } from "@/store"
 import { getPackageQueue } from "@/lib/packages-api"
+import { scriptNeedsAgencyFirstLineUpUpload } from "@/lib/agency-first-line-up"
 import { getScriptQueue, getScriptStats } from "@/lib/scripts-api"
+import { getVideoQueue } from "@/lib/videos-api"
+import type { Video } from "@/types/video"
 import { filterScriptsBySearch } from "@/lib/script-search"
 import type { Script, ScriptStatus, ScriptStatsResponse } from "@/types/script"
 import { ScriptListSkeleton } from "@/components/loading/script-list-skeleton"
 import { ScriptListingCard } from "@/components/script-listing-card"
 import { ScriptListPagination } from "@/components/ui/pagination"
 import { ScriptStatsCards } from "@/components/script-stats-cards"
-import { FileText, Package, Search, Send, Upload } from "lucide-react"
+import { Clapperboard, FileText, Package, Search, Send, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 10
@@ -49,6 +52,8 @@ export default function AgencyPocPage() {
   const [finalPackageIdByScriptId, setFinalPackageIdByScriptId] = useState<
     Map<string, string>
   >(() => new Map())
+  /** For locked scripts: video queue rows (Phase 4/5) — used to hide First Line Up upload when FLU is approved. */
+  const [videos, setVideos] = useState<Video[]>([])
 
   const isAgencyPoc = user?.role === "AGENCY_POC"
 
@@ -122,6 +127,22 @@ export default function AgencyPocPage() {
       })
       .catch(() => {
         if (!cancelled) setFinalPackageIdByScriptId(new Map())
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    getVideoQueue(token)
+      .then((res) => {
+        if (cancelled) return
+        setVideos([...(res.available ?? []), ...(res.myReviews ?? [])])
+      })
+      .catch(() => {
+        if (!cancelled) setVideos([])
       })
     return () => {
       cancelled = true
@@ -279,6 +300,8 @@ export default function AgencyPocPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             {displayedScripts.map((script) => {
               const finalPackageId = finalPackageIdByScriptId.get(script.id)
+              const needsFirstLineUpUpload =
+                scriptNeedsAgencyFirstLineUpUpload(script.id, videos)
               return (
                 <ScriptListingCard
                   key={script.id}
@@ -299,12 +322,14 @@ export default function AgencyPocPage() {
                             variant="outline"
                             className="gap-1.5"
                           >
-                            <Link href={`/agency-poc-packages/${finalPackageId}`}>
+                            <Link
+                              href={`/agency-poc-packages/${finalPackageId}`}
+                            >
                               <Package className="size-4 shrink-0" />
                               Final package
                             </Link>
                           </Button>
-                        ) : (
+                        ) : needsFirstLineUpUpload ? (
                           <Button
                             asChild
                             size="sm"
@@ -312,7 +337,19 @@ export default function AgencyPocPage() {
                           >
                             <Link href={`/agency-poc/${script.id}/upload`}>
                               <Upload className="size-4 shrink-0" />
-                              Upload video
+                              Upload First Line Up
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button
+                            asChild
+                            size="sm"
+                            variant="outline"
+                            className="gap-1.5"
+                          >
+                            <Link href="/agency-poc-videos">
+                              <Clapperboard className="size-4 shrink-0" />
+                              Video production
                             </Link>
                           </Button>
                         )}

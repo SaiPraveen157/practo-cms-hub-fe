@@ -1,0 +1,37 @@
+import type { Video } from "@/types/video"
+
+/**
+ * Latest row for a script + phase (by version).
+ */
+function getLatestVideoForScriptPhase(
+  videos: Video[],
+  scriptId: string,
+  phase: Video["phase"]
+): Video | undefined {
+  const list = videos.filter((v) => v.scriptId === scriptId && v.phase === phase)
+  if (list.length === 0) return undefined
+  return [...list].sort((a, b) => b.version - a.version)[0]
+}
+
+/**
+ * Whether Agency should see the First Line Up upload entry (`/agency-poc/[id]/upload`).
+ *
+ * - No `FIRST_LINE_UP` row yet → Phase 4 not started; show upload.
+ * - Latest FLU `APPROVED` → Content/Brand approved First Line Up; Phase 4 done — hide FLU upload (use First Cut / video queue).
+ * - Latest FLU `AGENCY_UPLOAD_PENDING` → initial upload or re-upload after reject; show upload.
+ * - Latest FLU in `MEDICAL_REVIEW` or `CONTENT_BRAND_REVIEW` → in flight; hide upload until rejected back to Agency.
+ */
+export function scriptNeedsAgencyFirstLineUpUpload(
+  scriptId: string,
+  videos: Video[]
+): boolean {
+  const latestFlu = getLatestVideoForScriptPhase(
+    videos,
+    scriptId,
+    "FIRST_LINE_UP"
+  )
+  if (!latestFlu) return true
+  if (latestFlu.status === "APPROVED") return false
+  if (latestFlu.status === "AGENCY_UPLOAD_PENDING") return true
+  return false
+}

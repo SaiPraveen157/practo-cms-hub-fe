@@ -196,7 +196,12 @@ export default function MedicalAffairsScriptDetailPage() {
       toast.success("Sent to Content/Brand", {
         description: "Script is now in review. TAT 24 hours.",
       })
-      router.replace(`/medical-affairs-scripts/${id}`)
+      const submittedTitle = script?.title?.trim()
+      router.push(
+        submittedTitle
+          ? `/medical-affairs-scripts/submitted?title=${encodeURIComponent(submittedTitle)}`
+          : "/medical-affairs-scripts/submitted"
+      )
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to submit"
       setError(message)
@@ -312,7 +317,7 @@ export default function MedicalAffairsScriptDetailPage() {
         )}
 
         {isDraft ? (
-          <form onSubmit={handleSave} className=''>
+          <form onSubmit={handleSave} className="">
             <Card>
               <CardHeader>
                 <CardTitle>Edit script</CardTitle>
