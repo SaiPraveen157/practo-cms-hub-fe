@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import { forgotPassword } from "@/lib/auth-api"
 import { ArrowLeft, Loader2 } from "lucide-react"
+import { GsapFadeIn } from "@/components/motion"
 
 const LOGIN_BG_IMAGE = "/HomeBackground.jpg"
 
@@ -48,7 +49,8 @@ export default function ForgotPasswordPage() {
         }}
       >
         <div className="relative z-10 w-full max-w-[460px]">
-          <div className="rounded-2xl p-8  sm:p-10">
+          <GsapFadeIn>
+            <div className="rounded-2xl p-8  sm:p-10">
             <div className="mb-6 text-center">
               <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
                 Check your email
@@ -68,7 +70,8 @@ export default function ForgotPasswordPage() {
                 Back to Log In
               </Button>
             </Link>
-          </div>
+            </div>
+          </GsapFadeIn>
         </div>
       </div>
     )
@@ -85,7 +88,8 @@ export default function ForgotPasswordPage() {
       }}
     >
       <div className="relative z-10 w-full max-w-[460px]">
-        <div className="rounded-2xl  sm:p-10">
+        <GsapFadeIn>
+          <div className="rounded-2xl  sm:p-10">
           <div className="mb-8 text-center">
             <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
               Forgot Password
@@ -147,7 +151,8 @@ export default function ForgotPasswordPage() {
               Back to Log In
             </Link>
           </p>
-        </div>
+          </div>
+        </GsapFadeIn>
       </div>
     </div>
   )

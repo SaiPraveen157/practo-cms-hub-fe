@@ -55,8 +55,8 @@ function PackageTatBarInner({ tat }: { tat: PackageTat }) {
       >
         <div
           className={cn(
-            "h-full rounded-full transition-[width] duration-300 bg-green-600 dark:bg-green-600",
-            isOverdue ? "bg-destructive" : "bg-primary"
+            "h-full rounded-full transition-[width] duration-300",
+            isOverdue ? "bg-destructive" : "bg-green-600 dark:bg-green-600"
           )}
           style={{ width: `${remainingPercent}%` }}
         />
