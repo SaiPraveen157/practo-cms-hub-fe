@@ -12,6 +12,13 @@ export type ScriptStatus =
   | "CONTENT_APPROVER_REVIEW"
   | "LOCKED"
 
+/** First Line Up state on locked scripts from `GET /api/scripts/queue` (`fluStatus`). */
+export type ScriptFluStatus =
+  | "AGENCY_UPLOAD_PENDING"
+  | "MEDICAL_REVIEW"
+  | "CONTENT_BRAND_REVIEW"
+  | "APPROVED"
+
 export interface Script {
   id: string
   version: number
@@ -43,6 +50,11 @@ export interface Script {
     stageAtReview: string
     reviewedAt: string
   } | null
+  /**
+   * Locked scripts: First Line Up (Phase 4) progress from script queue.
+   * `null` = not uploaded yet; enum = pipeline stage.
+   */
+  fluStatus?: ScriptFluStatus | null
 }
 
 /** GET /api/scripts/queue — role-based queue: available + myReviews */

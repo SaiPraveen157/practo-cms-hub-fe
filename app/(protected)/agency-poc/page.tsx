@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { useAuthStore } from "@/store"
 import { getPackageQueue } from "@/lib/packages-api"
 import { scriptNeedsAgencyFirstLineUpUpload } from "@/lib/agency-first-line-up"
+import { packageVisibleInAgencyPhase6Workflow } from "@/lib/video-phase-gates"
 import { getScriptQueue, getScriptStats } from "@/lib/scripts-api"
 import { getVideoQueue } from "@/lib/videos-api"
 import type { Video } from "@/types/video"
@@ -113,36 +114,34 @@ export default function AgencyPocPage() {
   useEffect(() => {
     if (!token) return
     let cancelled = false
-    getPackageQueue(token)
-      .then((packageRes) => {
+    Promise.all([getPackageQueue(token), getVideoQueue(token)])
+      .then(([packageRes, videoRes]) => {
         if (cancelled) return
+        const mergedVideos = [
+          ...(videoRes.available ?? []),
+          ...(videoRes.myReviews ?? []),
+        ]
+        setVideos(mergedVideos)
         const m = new Map<string, string>()
         for (const p of [
           ...(packageRes.available ?? []),
           ...(packageRes.myReviews ?? []),
         ]) {
-          if (p.scriptId && p.id) m.set(p.scriptId, p.id)
+          if (
+            p.scriptId &&
+            p.id &&
+            packageVisibleInAgencyPhase6Workflow(p, mergedVideos)
+          ) {
+            m.set(p.scriptId, p.id)
+          }
         }
         setFinalPackageIdByScriptId(m)
       })
       .catch(() => {
-        if (!cancelled) setFinalPackageIdByScriptId(new Map())
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [token])
-
-  useEffect(() => {
-    if (!token) return
-    let cancelled = false
-    getVideoQueue(token)
-      .then((res) => {
-        if (cancelled) return
-        setVideos([...(res.available ?? []), ...(res.myReviews ?? [])])
-      })
-      .catch(() => {
-        if (!cancelled) setVideos([])
+        if (!cancelled) {
+          setVideos([])
+          setFinalPackageIdByScriptId(new Map())
+        }
       })
     return () => {
       cancelled = true

@@ -28,6 +28,8 @@ import { Badge } from "@/components/ui/badge"
 import { useAuthStore } from "@/store"
 import type { UserRole } from "@/types/auth"
 import { getScript, getScriptQueue } from "@/lib/scripts-api"
+import { getVideoQueue } from "@/lib/videos-api"
+import { isScriptEligibleForPhase6FinalPackage } from "@/lib/video-phase-gates"
 import {
   clearPackageSubmitDraft,
   loadPackageSubmitDraft,
@@ -227,6 +229,18 @@ export default function AgencySubmitPackagePage() {
       if (s.status !== "LOCKED") {
         setGateError(
           "Only locked scripts can receive a final package (Phase 6)."
+        )
+        return
+      }
+
+      const videoRes = await getVideoQueue(token)
+      const videos = [
+        ...(videoRes.available ?? []),
+        ...(videoRes.myReviews ?? []),
+      ]
+      if (!isScriptEligibleForPhase6FinalPackage(videos, scriptId)) {
+        setGateError(
+          "Complete Phases 4–5 first: First Line Up and First Cut must be approved before the final package (Phase 6). Use Video production until First Cut is approved."
         )
         return
       }

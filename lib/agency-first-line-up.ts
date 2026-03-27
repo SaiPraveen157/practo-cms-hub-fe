@@ -1,17 +1,7 @@
+import {
+  getLatestVideoForScriptPhase,
+} from "@/lib/video-phase-gates"
 import type { Video } from "@/types/video"
-
-/**
- * Latest row for a script + phase (by version).
- */
-function getLatestVideoForScriptPhase(
-  videos: Video[],
-  scriptId: string,
-  phase: Video["phase"]
-): Video | undefined {
-  const list = videos.filter((v) => v.scriptId === scriptId && v.phase === phase)
-  if (list.length === 0) return undefined
-  return [...list].sort((a, b) => b.version - a.version)[0]
-}
 
 /**
  * Whether Agency should see the First Line Up upload entry (`/agency-poc/[id]/upload`).
