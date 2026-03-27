@@ -18,6 +18,11 @@ import {
 } from "@/lib/package-submit-draft-idb"
 import { getPackageQueue, getPackageStats, submitPackage } from "@/lib/packages-api"
 import { getScriptQueue } from "@/lib/scripts-api"
+import { getVideoQueue } from "@/lib/videos-api"
+import {
+  isScriptEligibleForPhase6FinalPackage,
+  packageVisibleInAgencyPhase6Workflow,
+} from "@/lib/video-phase-gates"
 import { filterScriptsBySearch } from "@/lib/script-search"
 import {
   agencyPackageNeedsSubmitWizard,
@@ -27,6 +32,7 @@ import {
 } from "@/lib/package-list-utils"
 import type { FinalPackage, PackageStatus } from "@/types/package"
 import type { Script } from "@/types/script"
+import type { Video } from "@/types/video"
 import {
   PACKAGE_STATUS_LABELS,
   formatPackageDate,
@@ -50,6 +56,7 @@ export default function AgencyPocPackagesPage() {
   const [available, setAvailable] = useState<FinalPackage[]>([])
   const [myReviews, setMyReviews] = useState<FinalPackage[]>([])
   const [lockedScripts, setLockedScripts] = useState<Script[]>([])
+  const [videos, setVideos] = useState<Video[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
@@ -66,12 +73,17 @@ export default function AgencyPocPackagesPage() {
     setLoading(true)
     setError(null)
     try {
-      const [pkgRes, scriptRes] = await Promise.all([
+      const [pkgRes, scriptRes, videoRes] = await Promise.all([
         getPackageQueue(token),
         getScriptQueue(token),
+        getVideoQueue(token),
       ])
       setAvailable(pkgRes.available ?? [])
       setMyReviews(pkgRes.myReviews ?? [])
+      setVideos([
+        ...(videoRes.available ?? []),
+        ...(videoRes.myReviews ?? []),
+      ])
       const scriptsCombined = [
         ...(scriptRes.available ?? []),
         ...(scriptRes.myReviews ?? []),
@@ -85,6 +97,7 @@ export default function AgencyPocPackagesPage() {
       )
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load packages")
+      setVideos([])
     } finally {
       setLoading(false)
     }
@@ -142,14 +155,28 @@ export default function AgencyPocPackagesPage() {
     [available, myReviews]
   )
 
+  /** Hide DRAFT rows until Phase 5 (First Cut) is approved — same rule as POST /api/packages. */
+  const combinedVisible = useMemo(
+    () =>
+      combined.filter((p) =>
+        packageVisibleInAgencyPhase6Workflow(p, videos)
+      ),
+    [combined, videos]
+  )
+
   const scriptIdsWithPackage = useMemo(
-    () => new Set(combined.map((p) => p.scriptId)),
-    [combined]
+    () => new Set(combinedVisible.map((p) => p.scriptId)),
+    [combinedVisible]
   )
 
   const eligibleForFirstSubmit = useMemo(
-    () => lockedScripts.filter((s) => !scriptIdsWithPackage.has(s.id)),
-    [lockedScripts, scriptIdsWithPackage]
+    () =>
+      lockedScripts.filter(
+        (s) =>
+          !scriptIdsWithPackage.has(s.id) &&
+          isScriptEligibleForPhase6FinalPackage(videos, s.id)
+      ),
+    [lockedScripts, scriptIdsWithPackage, videos]
   )
 
   const eligibleFiltered = useMemo(
@@ -160,10 +187,10 @@ export default function AgencyPocPackagesPage() {
   const tabList = useMemo(() => {
     if (tab === "ready") return []
     return splitAgencyPackagesByTab(
-      combined,
+      combinedVisible,
       tab as "active" | "revision" | "approved"
     )
-  }, [combined, tab])
+  }, [combinedVisible, tab])
 
   const filtered = useMemo(
     () => filterPackagesBySearch(tabList, searchQuery),
@@ -173,11 +200,11 @@ export default function AgencyPocPackagesPage() {
   const tabCounts = useMemo(
     () => ({
       ready: eligibleForFirstSubmit.length,
-      active: splitAgencyPackagesByTab(combined, "active").length,
-      revision: splitAgencyPackagesByTab(combined, "revision").length,
-      approved: splitAgencyPackagesByTab(combined, "approved").length,
+      active: splitAgencyPackagesByTab(combinedVisible, "active").length,
+      revision: splitAgencyPackagesByTab(combinedVisible, "revision").length,
+      approved: splitAgencyPackagesByTab(combinedVisible, "approved").length,
     }),
-    [combined, eligibleForFirstSubmit.length]
+    [combinedVisible, eligibleForFirstSubmit.length]
   )
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
@@ -316,7 +343,7 @@ export default function AgencyPocPackagesPage() {
                 <p className="mt-3 font-medium">Nothing ready to submit</p>
                 <p className="mt-1 max-w-md text-sm text-muted-foreground">
                   {eligibleForFirstSubmit.length === 0
-                    ? "No locked scripts without a final package yet. Finish earlier phases first, or open Active / Needs revision if you already submitted."
+                    ? "Phase 6 starts after Phase 5 (First Cut) is approved. Finish First Line Up and First Cut in Video production first, or open Active / Needs revision if you already submitted a package."
                     : "No scripts match your search. Try another keyword."}
                 </p>
               </CardContent>
@@ -324,8 +351,8 @@ export default function AgencyPocPackagesPage() {
           ) : (
             <>
               <p className="text-xs text-muted-foreground">
-                Locked scripts with no final package yet — pick one to upload
-                Phase 6 assets.
+                Only scripts whose First Cut (Phase 5) is approved can submit a
+                final package. Pick one to upload Phase 6 assets.
               </p>
               <ul className="grid gap-3 sm:grid-cols-2">
                 {eligiblePageSlice.map((s) => (
