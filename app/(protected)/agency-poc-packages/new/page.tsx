@@ -70,6 +70,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
 
 type PerVideoMeta = {
   title: string
@@ -1116,16 +1117,13 @@ function ReviewBlobVideoPreview({ file }: { file: File | null }) {
     )
   }
   return (
-    <video
-      key={url}
+    <VideoPlayerTimeline
       src={url}
-      controls
-      playsInline
-      preload="metadata"
-      className="max-h-[min(55vh,26rem)] w-full bg-black object-contain"
-    >
-      Preview is not available in this browser.
-    </video>
+      mediaKey={url}
+      showCommentsUi={false}
+      videoClassName="max-h-[min(55vh,26rem)] w-full bg-black object-contain"
+      className="gap-2"
+    />
   )
 }
 
@@ -1957,16 +1955,13 @@ function MediaDropZone({
           <p className="py-2 text-xs font-medium text-muted-foreground">
             Preview
           </p>
-          <video
-            key={videoObjectUrl}
-            className="max-h-[min(50vh,28rem)] w-full rounded-lg bg-black object-contain shadow-inner"
-            controls
-            playsInline
-            preload="metadata"
+          <VideoPlayerTimeline
             src={videoObjectUrl}
-          >
-            Your browser cannot play this file in the preview.
-          </video>
+            mediaKey={videoObjectUrl}
+            showCommentsUi={false}
+            videoClassName="max-h-[min(50vh,28rem)] w-full rounded-lg bg-black object-contain shadow-inner"
+            className="gap-2"
+          />
         </div>
       ) : null}
     </div>

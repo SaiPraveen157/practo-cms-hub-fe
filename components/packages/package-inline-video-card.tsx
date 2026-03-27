@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import type { PackageAsset } from "@/types/package"
 import { parseAgencyDeliverableBlockBody } from "@/lib/package-composed-description"
 import { formatPackageFileSize, thumbnailsForVideo } from "@/lib/package-ui"
+import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
 import { ExternalLink } from "lucide-react"
 
 export function PackageInlineVideoCard({
@@ -46,17 +47,13 @@ export function PackageInlineVideoCard({
     <>
       {asset.fileUrl && !videoError ? (
         <div className="overflow-hidden rounded-xl border border-border bg-black shadow-inner">
-          <video
-            key={asset.fileUrl}
+          <VideoPlayerTimeline
             src={asset.fileUrl}
-            controls
-            playsInline
-            preload="metadata"
-            className="max-h-[min(80vh,40rem)] w-full object-contain"
-            onError={() => setVideoError(true)}
-          >
-            Your browser cannot play this video inline.
-          </video>
+            mediaKey={asset.id}
+            showCommentsUi={false}
+            videoClassName="max-h-[min(80vh,40rem)] w-full object-contain"
+            onVideoError={() => setVideoError(true)}
+          />
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/30 px-4 py-10 text-center">

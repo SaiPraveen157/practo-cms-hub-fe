@@ -31,6 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useAuthStore } from "@/store"
+import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
 import type { UserRole } from "@/types/auth"
 import { buildSubmitPackageBodyFromPackage } from "@/lib/build-submit-package-body"
 import {
@@ -268,17 +269,13 @@ function SubmittedVideoPlayerPaneInner({
   if (asset.fileUrl && !videoError) {
     return (
       <div className={submittedVideoShellClass()}>
-        <video
-          key={asset.fileUrl}
+        <VideoPlayerTimeline
           src={asset.fileUrl}
-          controls
-          playsInline
-          preload="metadata"
-          className={VIDEO_INLINE_CLASS}
-          onError={() => setVideoError(true)}
-        >
-          Your browser cannot play this video inline.
-        </video>
+          mediaKey={asset.id}
+          showCommentsUi={false}
+          videoClassName={VIDEO_INLINE_CLASS}
+          onVideoError={() => setVideoError(true)}
+        />
       </div>
     )
   }
@@ -385,20 +382,13 @@ function ReplacementBlobVideoPlayer({
   return (
     <div className="flex w-full flex-col gap-2">
       <div className={submittedVideoShellClass()}>
-        <video
-          controls
-          playsInline
-          preload="metadata"
-          className={VIDEO_INLINE_CLASS}
-          onError={() => setVideoError(true)}
-        >
-          {file.type ? (
-            <source src={objectUrl} type={file.type} />
-          ) : (
-            <source src={objectUrl} />
-          )}
-          Your browser cannot play this video inline.
-        </video>
+        <VideoPlayerTimeline
+          src={objectUrl}
+          mediaKey={objectUrl}
+          showCommentsUi={false}
+          videoClassName={VIDEO_INLINE_CLASS}
+          onVideoError={() => setVideoError(true)}
+        />
       </div>
       <p className="shrink-0 font-mono text-xs wrap-break-word text-muted-foreground">
         {file.name} · {formatPackageFileSize(file.size)}
