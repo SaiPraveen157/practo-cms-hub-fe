@@ -60,7 +60,7 @@ import {
   formatPackageDate,
   videoStatusBadgeClass,
 } from "@/lib/package-ui"
-import { PackageTatCard } from "@/components/packages/package-tat-card"
+import { PackageVideoTatInline } from "@/components/packages/package-video-tat-inline"
 import { PackageVideoMetadataProminent } from "@/components/packages/package-video-metadata-prominent"
 import { PackageInlineVideoCard } from "@/components/packages/package-inline-video-card"
 import { TrackStatusCallout } from "@/components/packages/track-status-callout"
@@ -542,8 +542,6 @@ export default function ContentBrandPackageDetailPage() {
               />
             </div>
             <div className="space-y-6 p-4 sm:p-6">
-              <PackageTatCard pkg={pkg} />
-
               {reviewTab === "metadata" ? (
                 <BrandMetadataPanel
                   sortedVideos={sortedVideos}
@@ -1047,6 +1045,10 @@ function BrandMetadataPanel({
                   </Badge>
                 </div>
               </div>
+              <PackageVideoTatInline
+                video={video}
+                className="border-t border-border/60 pt-4"
+              />
             </CardHeader>
             <CardContent className="space-y-6 px-4 py-6 sm:px-6">
               <PackageVideoMetadataProminent
@@ -1258,6 +1260,10 @@ function BrandVideoQualityPanel({
                   {VIDEO_STATUS_LABELS[video.status]}
                 </Badge>
               </div>
+              <PackageVideoTatInline
+                video={video}
+                className="border-t border-border/60 pt-4"
+              />
             </CardHeader>
             <CardContent className="space-y-6 px-4 py-6 sm:px-6">
               {!showQualityUi && (

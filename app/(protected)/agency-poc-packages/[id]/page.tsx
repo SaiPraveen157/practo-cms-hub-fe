@@ -65,7 +65,7 @@ import {
   packageStatusBadgeClass,
   videoStatusBadgeClass,
 } from "@/lib/package-ui"
-import { PackageTatCard } from "@/components/packages/package-tat-card"
+import { PackageVideoTatInline } from "@/components/packages/package-video-tat-inline"
 import { PackageItemFeedbackHumanizedList } from "@/components/packages/package-item-feedback-humanized"
 import { PackageListTabNav } from "@/components/packages/package-list-tab-nav"
 import { PackageVideoMetadataProminent } from "@/components/packages/package-video-metadata-prominent"
@@ -777,8 +777,6 @@ export default function AgencyPackageDetailPage() {
               />
             </div>
             <div className="space-y-6 p-4 sm:p-6">
-              <PackageTatCard pkg={pkg} />
-
               {revisionTab === "videos" ? (
                 <VideoRevisionPanel
                   pkg={pkg}
@@ -988,6 +986,10 @@ function VideoRevisionPanel({
                   </Button>
                 ) : null}
               </div>
+              <PackageVideoTatInline
+                video={video}
+                className="border-t border-border/60 pt-3"
+              />
             </CardHeader>
             <CardContent className="space-y-4 p-4 sm:p-6">
       <TrackStatusCallout
@@ -1558,6 +1560,10 @@ function MetadataRevisionPanel({
                   </Button>
                 ) : null}
               </div>
+              <PackageVideoTatInline
+                video={video}
+                className="border-t border-border/60 pt-3"
+              />
             </CardHeader>
             <CardContent className="space-y-8 p-4 sm:p-6">
               <TrackStatusCallout

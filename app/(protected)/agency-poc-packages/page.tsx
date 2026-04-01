@@ -507,17 +507,6 @@ function PackageRowCard({
             ) : null}
         </div>
         <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
-          {pkg.tat && status !== "REJECTED" && status !== "APPROVED" && (
-            <p
-              className={cn(
-                "text-xs",
-                pkg.tat.isOverdue ? "text-destructive" : "text-muted-foreground"
-              )}
-            >
-              TAT {pkg.tat.hoursElapsed}h / {pkg.tat.tatLimitHours}h
-              {pkg.tat.isOverdue ? " · Overdue" : ""}
-            </p>
-          )}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Button size="sm" variant="outline" asChild className="shrink-0">
               <Link href={href} className="gap-1">

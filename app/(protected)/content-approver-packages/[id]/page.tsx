@@ -44,7 +44,7 @@ import {
   formatPackageDate,
   videoStatusBadgeClass,
 } from "@/lib/package-ui"
-import { PackageTatCard } from "@/components/packages/package-tat-card"
+import { PackageVideoTatInline } from "@/components/packages/package-video-tat-inline"
 import { PackageInlineVideoCard } from "@/components/packages/package-inline-video-card"
 import { PackageVideoMetadataProminent } from "@/components/packages/package-video-metadata-prominent"
 import {
@@ -289,15 +289,18 @@ export default function ContentApproverPackageDetailPage() {
                   return (
                     <li
                       key={video.id}
-                      className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                      className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between"
                     >
-                      <span className="font-medium text-foreground">
-                        {label}
-                      </span>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <span className="font-medium text-foreground">
+                          {label}
+                        </span>
+                        <PackageVideoTatInline video={video} />
+                      </div>
                       <Badge
                         variant="outline"
                         className={cn(
-                          "w-fit font-normal",
+                          "w-fit shrink-0 font-normal",
                           videoStatusBadgeClass(video.status)
                         )}
                       >
@@ -311,8 +314,6 @@ export default function ContentApproverPackageDetailPage() {
           </Card>
         ) : (
           <>
-        <PackageTatCard pkg={pkg} />
-
         {showPackageApprove && (
           <Card className="border-primary/35 bg-primary/5 shadow-sm dark:bg-primary/10">
             <CardContent className="flex flex-col gap-4 py-6 sm:flex-row sm:items-center sm:justify-between">
@@ -367,13 +368,14 @@ export default function ContentApproverPackageDetailPage() {
                     key={video.id}
                     className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
                   >
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1 space-y-2">
                       <p className="font-medium text-foreground">{label}</p>
                       <p className="text-xs text-muted-foreground">
                         {video.type === "LONG_FORM" ? "Long-form" : "Short-form"}
                         {" · "}
                         {video.id.slice(0, 8)}…
                       </p>
+                      <PackageVideoTatInline video={video} />
                     </div>
                     <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                       <Badge
@@ -428,28 +430,34 @@ export default function ContentApproverPackageDetailPage() {
                 )}
               >
                 <CardHeader className="border-b border-border bg-muted/20 py-5 sm:py-6">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <CardTitle className="text-lg font-semibold">{label}</CardTitle>
-                      <CardDescription className="mt-1">
-                        {VIDEO_STATUS_LABELS[video.status]} · Video{" "}
-                        <span className="font-mono text-xs">{video.id}</span>
-                      </CardDescription>
+                  <div className="space-y-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <CardTitle className="text-lg font-semibold">{label}</CardTitle>
+                        <CardDescription className="mt-1">
+                          {VIDEO_STATUS_LABELS[video.status]} · Video{" "}
+                          <span className="font-mono text-xs">{video.id}</span>
+                        </CardDescription>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge
+                          variant="outline"
+                          className={videoStatusBadgeClass(video.status)}
+                        >
+                          {VIDEO_STATUS_LABELS[video.status]}
+                        </Badge>
+                        <Badge variant="secondary" className="text-xs font-normal">
+                          Video track: {TRACK_STATUS_LABELS[video.videoTrackStatus]}
+                        </Badge>
+                        <Badge variant="secondary" className="text-xs font-normal">
+                          Metadata: {TRACK_STATUS_LABELS[video.metadataTrackStatus]}
+                        </Badge>
+                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge
-                        variant="outline"
-                        className={videoStatusBadgeClass(video.status)}
-                      >
-                        {VIDEO_STATUS_LABELS[video.status]}
-                      </Badge>
-                      <Badge variant="secondary" className="text-xs font-normal">
-                        Video track: {TRACK_STATUS_LABELS[video.videoTrackStatus]}
-                      </Badge>
-                      <Badge variant="secondary" className="text-xs font-normal">
-                        Metadata: {TRACK_STATUS_LABELS[video.metadataTrackStatus]}
-                      </Badge>
-                    </div>
+                    <PackageVideoTatInline
+                      video={video}
+                      className="border-t border-border/60 pt-4"
+                    />
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-8 px-4 py-6 sm:px-6">
