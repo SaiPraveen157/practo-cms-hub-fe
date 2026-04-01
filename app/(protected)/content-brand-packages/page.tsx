@@ -11,15 +11,17 @@ import { ScriptListPagination } from "@/components/ui/pagination"
 import { PackageListTabNav } from "@/components/packages/package-list-tab-nav"
 import { useAuthStore } from "@/store"
 import {
-  getPackageQueue,
   getPackageMyReviews,
+  getPackageQueue,
   getPackageStats,
 } from "@/lib/packages-api"
 import {
-  dedupePackages,
-  filterPackagesBySearch,
-} from "@/lib/package-list-utils"
-import type { FinalPackage, PackageStatus } from "@/types/package"
+  aggregatePackageDisplayStatus,
+  filterQueuePackagesBySearch,
+  groupQueueVideosIntoPackages,
+  packageVideosSorted,
+} from "@/lib/package-video-helpers"
+import type { FinalPackage, PackageVideo } from "@/types/package"
 import type { UserRole } from "@/types/auth"
 import {
   PACKAGE_STATUS_LABELS,
@@ -39,9 +41,8 @@ export default function ContentBrandPackagesPage() {
   const user = useAuthStore((s) => s.user)
   const [tab, setTab] = useState<TabKey>("queue")
   const [page, setPage] = useState(1)
-  const [available, setAvailable] = useState<FinalPackage[]>([])
-  const [queueMyReviews, setQueueMyReviews] = useState<FinalPackage[]>([])
-  const [historyPackages, setHistoryPackages] = useState<FinalPackage[]>([])
+  const [queueVideos, setQueueVideos] = useState<PackageVideo[]>([])
+  const [historyVideos, setHistoryVideos] = useState<PackageVideo[]>([])
   const [historyTotal, setHistoryTotal] = useState(0)
   const [historyTotalPages, setHistoryTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
@@ -54,14 +55,14 @@ export default function ContentBrandPackagesPage() {
   const role = user?.role as UserRole | undefined
   const canAccess = role === "CONTENT_BRAND" || role === "SUPER_ADMIN"
 
-  const queueCombined = useMemo(
-    () => dedupePackages([...available, ...queueMyReviews]),
-    [available, queueMyReviews]
+  const queuePackages = useMemo(
+    () => groupQueueVideosIntoPackages(queueVideos),
+    [queueVideos]
   )
 
   const queueFiltered = useMemo(
-    () => filterPackagesBySearch(queueCombined, searchQuery),
-    [queueCombined, searchQuery]
+    () => filterQueuePackagesBySearch(queuePackages, searchQuery),
+    [queuePackages, searchQuery]
   )
 
   const queueTotalPages = Math.max(
@@ -73,11 +74,20 @@ export default function ContentBrandPackagesPage() {
     return queueFiltered.slice(start, start + PAGE_SIZE)
   }, [queueFiltered, page])
 
+  const historyPackages = useMemo(
+    () => groupQueueVideosIntoPackages(historyVideos),
+    [historyVideos]
+  )
+
+  const historyFiltered = useMemo(
+    () => filterQueuePackagesBySearch(historyPackages, searchQuery),
+    [historyPackages, searchQuery]
+  )
+
   const loadQueue = useCallback(async () => {
     if (!token || !canAccess) return
     const res = await getPackageQueue(token)
-    setAvailable(res.available ?? [])
-    setQueueMyReviews(res.myReviews ?? [])
+    setQueueVideos(res.videos ?? [])
   }, [token, canAccess])
 
   useEffect(() => {
@@ -108,7 +118,7 @@ export default function ContentBrandPackagesPage() {
       })
         .then((res) => {
           if (!cancelled) {
-            setHistoryPackages(res.packages ?? [])
+            setHistoryVideos(res.videos ?? [])
             setHistoryTotal(res.total ?? 0)
             setHistoryTotalPages(Math.max(1, res.totalPages ?? 1))
           }
@@ -131,10 +141,7 @@ export default function ContentBrandPackagesPage() {
     getPackageStats(token).then(setStats).catch(() => setStats(null))
   }, [token, canAccess])
 
-  const historyFiltered = useMemo(
-    () => filterPackagesBySearch(historyPackages, searchQuery),
-    [historyPackages, searchQuery]
-  )
+  const byStatus = stats?.stats?.byStatus ?? {}
 
   if (!canAccess) {
     return (
@@ -161,20 +168,21 @@ export default function ContentBrandPackagesPage() {
             Final packages — Content/Brand
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Metadata + thumbnails at Medical review, then full video review.
-            History shows your past approvals and rejections.
+            Open a package to work on metadata and thumbnails during the medical
+            stage, then video quality review — each deliverable is independent.
           </p>
         </div>
 
-        {stats && (
-          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {stats?.stats && (
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {(
               [
-                ["inReview", stats.inReview, "In review"],
-                ["overdue", stats.overdue, "Overdue"],
-                ["approved", stats.approved, "Approved"],
-                ["rejected", stats.rejected, "Rejected"],
-                ["draft", stats.draft, "Draft"],
+                ["total", stats.stats.total, "Total videos"],
+                ["mr", byStatus.MEDICAL_REVIEW ?? 0, "Medical stage"],
+                ["br", byStatus.BRAND_VIDEO_REVIEW ?? 0, "Brand quality"],
+                ["ap", byStatus.AWAITING_APPROVER ?? 0, "Final approval"],
+                ["ok", byStatus.APPROVED ?? 0, "Approved"],
+                ["wd", byStatus.WITHDRAWN ?? 0, "Withdrawn"],
               ] as const
             ).map(([k, v, label]) => (
               <Card key={k}>
@@ -232,9 +240,9 @@ export default function ContentBrandPackagesPage() {
               </Card>
             ) : (
               <ul className="space-y-3">
-                {queuePageSlice.map((p) => (
-                  <li key={p.id}>
-                    <QueueRow pkg={p} href={`/content-brand-packages/${p.id}`} />
+                {queuePageSlice.map((pkg) => (
+                  <li key={pkg.id}>
+                    <ContentBrandPackageQueueRow pkg={pkg} />
                   </li>
                 ))}
               </ul>
@@ -249,25 +257,30 @@ export default function ContentBrandPackagesPage() {
               />
             )}
           </>
+        ) : historyVideos.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center py-10 text-center">
+              <Package className="size-10 text-muted-foreground" />
+              <p className="mt-3 text-sm text-muted-foreground">
+                No items in this history tab.
+              </p>
+            </CardContent>
+          </Card>
         ) : historyFiltered.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center py-10 text-center">
               <Package className="size-10 text-muted-foreground" />
               <p className="mt-3 text-sm text-muted-foreground">
-                No packages in this history tab.
+                No packages match your search.
               </p>
             </CardContent>
           </Card>
         ) : (
           <>
             <ul className="space-y-3">
-              {historyFiltered.map((p) => (
-                <li key={p.id}>
-                  <QueueRow
-                    pkg={p}
-                    href={`/content-brand-packages/${p.id}`}
-                    showRejectionHint={tab === "rejected"}
-                  />
+              {historyFiltered.map((pkg) => (
+                <li key={pkg.id}>
+                  <ContentBrandPackageQueueRow pkg={pkg} variant="history" />
                 </li>
               ))}
             </ul>
@@ -285,53 +298,73 @@ export default function ContentBrandPackagesPage() {
   )
 }
 
-function QueueRow({
+function firstBrandActionableVideoId(pkg: FinalPackage): string | undefined {
+  for (const v of packageVideosSorted(pkg)) {
+    if (v.status === "MEDICAL_REVIEW" && v.metadataTrackStatus === "PENDING") {
+      return v.id
+    }
+  }
+  for (const v of packageVideosSorted(pkg)) {
+    if (v.status === "BRAND_VIDEO_REVIEW") return v.id
+  }
+  return packageVideosSorted(pkg)[0]?.id
+}
+
+function contentBrandPackageQueueHref(pkg: FinalPackage): string {
+  const vid = firstBrandActionableVideoId(pkg)
+  const base = `/content-brand-packages/${pkg.id}`
+  return vid ? `${base}?video=${encodeURIComponent(vid)}` : base
+}
+
+function contentBrandPackageHistoryHref(pkg: FinalPackage): string {
+  const first = packageVideosSorted(pkg)[0]
+  const base = `/content-brand-packages/${pkg.id}`
+  return first?.id ? `${base}?video=${encodeURIComponent(first.id)}` : base
+}
+
+function ContentBrandPackageQueueRow({
   pkg,
-  href,
-  showRejectionHint,
+  variant = "queue",
 }: {
   pkg: FinalPackage
-  href: string
-  showRejectionHint?: boolean
+  variant?: "queue" | "history"
 }) {
-  const status = pkg.status as PackageStatus
-  const stageHint =
-    status === "MEDICAL_REVIEW"
-      ? pkg.metadataTrackStatus === "PENDING"
-        ? "Metadata review"
-        : "Waiting on Medical video track"
-      : status === "BRAND_REVIEW"
-        ? "Full video review"
-        : ""
+  const displayStatus = aggregatePackageDisplayStatus(pkg)
+  const packageName = pkg.name?.trim() || "Final package"
+  const scriptTitle = pkg.script?.title?.trim()
 
   return (
     <Card>
-      <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
+      <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <Badge
               variant="outline"
-              className={cn("text-xs", packageStatusBadgeClass(status))}
+              className={cn("text-xs", packageStatusBadgeClass(displayStatus))}
             >
-              {PACKAGE_STATUS_LABELS[status]}
+              {PACKAGE_STATUS_LABELS[displayStatus]}
             </Badge>
-            {stageHint && (
-              <span className="text-xs text-muted-foreground">{stageHint}</span>
-            )}
+            {variant === "history" ? (
+              <Badge variant="outline" className="text-xs font-normal">
+                History
+              </Badge>
+            ) : null}
           </div>
-          <p className="mt-1 font-medium">{pkg.title}</p>
+          <p className="mt-1 font-medium leading-snug">{packageName}</p>
           <p className="text-sm text-muted-foreground">
-            {pkg.script?.title ?? "Script"} · v{pkg.version} ·{" "}
-            {formatPackageDate(pkg.updatedAt)}
+            {scriptTitle ? `Script: ${scriptTitle} · ` : ""}
+            Updated {formatPackageDate(pkg.updatedAt ?? "")}
           </p>
-          {showRejectionHint && pkg.latestRejection?.overallComments && (
-            <p className="mt-2 line-clamp-2 text-xs text-destructive">
-              {pkg.latestRejection.overallComments}
-            </p>
-          )}
         </div>
-        <Button size="sm" variant="outline" asChild className="shrink-0">
-          <Link href={href} className="gap-1">
+        <Button size="sm" variant="outline" asChild className="shrink-0 sm:mt-0">
+          <Link
+            href={
+              variant === "history"
+                ? contentBrandPackageHistoryHref(pkg)
+                : contentBrandPackageQueueHref(pkg)
+            }
+            className="gap-1"
+          >
             Open
             <ArrowRight className="size-4" />
           </Link>

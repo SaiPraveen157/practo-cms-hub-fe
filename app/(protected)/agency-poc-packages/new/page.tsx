@@ -28,22 +28,28 @@ import { Badge } from "@/components/ui/badge"
 import { useAuthStore } from "@/store"
 import type { UserRole } from "@/types/auth"
 import { getScript, getScriptQueue } from "@/lib/scripts-api"
+import { getVideoQueue } from "@/lib/videos-api"
+import { isScriptEligibleForPhase6FinalPackage } from "@/lib/video-phase-gates"
 import {
   clearPackageSubmitDraft,
   loadPackageSubmitDraft,
+  migratePackageSubmitDraftV1ToV2Slots,
   normalizeRestoredFile,
   packageSubmitDraftHasUsefulState,
   savePackageSubmitDraft,
   userMessageForClearDraftFailure,
   userMessageForLoadDraftFailure,
   userMessageForSaveDraftFailure,
+  type DraftPackageVideoSlot,
 } from "@/lib/package-submit-draft-idb"
 import {
+  addPackageVideo,
   getPackageByScriptId,
   submitPackage,
   uploadPackageThumbnailFile,
   uploadPackageVideoFile,
 } from "@/lib/packages-api"
+import type { FinalPackage } from "@/types/package"
 import type { Script } from "@/types/script"
 import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import {
@@ -60,7 +66,7 @@ import {
   ChevronRight,
   ChevronUp,
   Clapperboard,
-  FileImage,
+  Info,
   Loader2,
   Package,
   Plus,
@@ -131,18 +137,26 @@ function isVideoMetaComplete(m: PerVideoMeta): boolean {
   )
 }
 
-type ShortVideoSlot = {
-  id: string
-  meta: PerVideoMeta
-  file: File | null
-}
+type PackageVideoSlot = DraftPackageVideoSlot
 
-const MAX_SHORT_VIDEOS = 3
+function createNewVideoSlot(
+  videoType: "LONG_FORM" | "SHORT_FORM"
+): PackageVideoSlot {
+  return {
+    id:
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `vid-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    videoType,
+    meta: { ...EMPTY_VIDEO_META },
+    file: null,
+    thumbnailFiles: [],
+  }
+}
 
 const WIZARD_STEP_LABELS = [
   "Script context",
-  "Long-form video",
-  "Short-form videos",
+  "Videos",
   "Thumbnails",
   "Review & submit",
 ] as const
@@ -153,7 +167,7 @@ const WIZARD_STEP_COUNT = WIZARD_STEP_LABELS.length
 const WIZARD_COLUMN = "mx-auto w-full max-w-3xl px-4 sm:px-6 lg:px-8"
 
 /**
- * Phase 6 (redesigned): 1 long-form + 1–3 short-form videos, one+ thumbnails per video.
+ * Phase 6: any number of videos; each slot is long- or short-form (chosen before upload).
  * Script is chosen from `/agency-poc-packages` (`?scriptId=` required).
  */
 export default function AgencySubmitPackagePage() {
@@ -163,14 +177,7 @@ export default function AgencySubmitPackagePage() {
 
   const token = useAuthStore((s) => s.token)
   const user = useAuthStore((s) => s.user)
-  const [longVideoMeta, setLongVideoMeta] =
-    useState<PerVideoMeta>(EMPTY_VIDEO_META)
-  const [longFile, setLongFile] = useState<File | null>(null)
-  const [shortSlots, setShortSlots] = useState<ShortVideoSlot[]>([])
-  const [longThumbnailFile, setLongThumbnailFile] = useState<File | null>(null)
-  const [shortThumbnailBySlotId, setShortThumbnailBySlotId] = useState<
-    Record<string, File | null>
-  >({})
+  const [videoSlots, setVideoSlots] = useState<PackageVideoSlot[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [gateLoading, setGateLoading] = useState(true)
   const [gateError, setGateError] = useState<string | null>(null)
@@ -178,6 +185,12 @@ export default function AgencySubmitPackagePage() {
   const [scriptExpanded, setScriptExpanded] = useState(false)
   const [wizardStep, setWizardStep] = useState(0)
   const [draftHydrated, setDraftHydrated] = useState(false)
+  /** When set, wizard only adds videos to this package (no POST /api/packages create). */
+  const [existingPackage, setExistingPackage] = useState<FinalPackage | null>(
+    null
+  )
+  /** POST /api/packages `name` for new packages only (not used when adding to existing). */
+  const [packageName, setPackageName] = useState("")
 
   const role = user?.role as UserRole | undefined
   const isAgency = role === "AGENCY_POC" || role === "SUPER_ADMIN"
@@ -194,28 +207,33 @@ export default function AgencySubmitPackagePage() {
     setGateLoading(true)
     setGateError(null)
     setScriptContext(null)
-    let redirecting = false
+    setExistingPackage(null)
     try {
+      let existingPkg: FinalPackage | null = null
       try {
         const existing = await getPackageByScriptId(token, scriptId)
-        const p = existing?.package
-        /** Block wizard only while package is in review or done — not DRAFT (withdrawn) or REJECTED. */
-        const packageBlocksSubmitWizard =
-          p &&
-          (p.status === "MEDICAL_REVIEW" ||
-            p.status === "BRAND_REVIEW" ||
-            p.status === "APPROVER_REVIEW" ||
-            p.status === "APPROVED")
-        if (packageBlocksSubmitWizard) {
-          redirecting = true
-          toast.info("This script already has a final package.", {
-            description: "Open it from your list to continue.",
-          })
-          router.replace(`/agency-poc-packages/${p.id}`)
-          return
+        if (existing?.package?.id) {
+          existingPkg = existing.package
         }
       } catch {
-        /* no package for script — expected for first submit */
+        /* No package yet — normal for first-time Phase 6 submit */
+      }
+
+      if (existingPkg) {
+        setExistingPackage(existingPkg)
+        try {
+          const full = await getScript(token, scriptId)
+          if (full.script) {
+            setScriptContext(full.script)
+          } else {
+            setGateError("Could not load script for this package.")
+          }
+        } catch {
+          setGateError(
+            "Could not load script. Try again from Final packages."
+          )
+        }
+        return
       }
 
       const res = await getScriptQueue(token)
@@ -232,6 +250,18 @@ export default function AgencySubmitPackagePage() {
         return
       }
 
+      const videoRes = await getVideoQueue(token)
+      const videos = [
+        ...(videoRes.available ?? []),
+        ...(videoRes.myReviews ?? []),
+      ]
+      if (!isScriptEligibleForPhase6FinalPackage(videos, scriptId)) {
+        setGateError(
+          "Complete Phases 4–5 first: First Line Up and First Cut must be approved before the final package (Phase 6). Use Video production until First Cut is approved."
+        )
+        return
+      }
+
       let scriptForContext: Script = s
       try {
         const full = await getScript(token, scriptId)
@@ -243,9 +273,9 @@ export default function AgencySubmitPackagePage() {
     } catch {
       setGateError("Could not verify script. Try again from Final packages.")
     } finally {
-      if (!redirecting) setGateLoading(false)
+      setGateLoading(false)
     }
-  }, [token, isAgency, scriptId, router])
+  }, [token, isAgency, scriptId])
 
   useEffect(() => {
     if (!token || !isAgency || !scriptId) {
@@ -265,6 +295,7 @@ export default function AgencySubmitPackagePage() {
       const result = await loadPackageSubmitDraft(scriptId)
       if (cancelled) return
       if (!result.ok) {
+        setPackageName("")
         const { title, description } = userMessageForLoadDraftFailure()
         toast.error(title, {
           description,
@@ -276,41 +307,112 @@ export default function AgencySubmitPackagePage() {
           Math.max(0, Math.min(draft.wizardStep, WIZARD_STEP_COUNT - 1))
         )
         setScriptExpanded(draft.scriptExpanded)
-        setLongVideoMeta(draft.longVideoMeta)
-        setLongFile(
-          normalizeRestoredFile(draft.longFile, "long-form-video.mp4")
+        const migrated = migratePackageSubmitDraftV1ToV2Slots(draft)
+        setPackageName(
+          typeof draft.longVideoMeta?.title === "string"
+            ? draft.longVideoMeta.title.trim()
+            : ""
         )
-        setShortSlots(
-          draft.shortSlots.map((s) => ({
+        setVideoSlots(
+          migrated.map((s) => ({
             ...s,
             file: normalizeRestoredFile(
               s.file,
-              `short-video-${s.id.slice(0, 8)}.mp4`
+              s.videoType === "LONG_FORM"
+                ? "long-form-video.mp4"
+                : `video-${s.id.slice(0, 8)}.mp4`
             ),
+            thumbnailFiles: Array.isArray(s.thumbnailFiles)
+              ? s.thumbnailFiles
+                  .map((f, i) =>
+                    normalizeRestoredFile(
+                      f,
+                      `thumbnail-${s.id.slice(0, 8)}-${i + 1}.jpg`
+                    )
+                  )
+                  .filter((x): x is File => x != null)
+              : s.thumbnailFile
+                ? [
+                    normalizeRestoredFile(
+                      s.thumbnailFile,
+                      `thumbnail-${s.id.slice(0, 8)}.jpg`
+                    ),
+                  ].filter((x): x is File => x != null)
+                : [],
           }))
-        )
-        setLongThumbnailFile(
-          normalizeRestoredFile(draft.longThumbnailFile, "thumbnail-long.jpg")
-        )
-        setShortThumbnailBySlotId(
-          Object.fromEntries(
-            Object.entries(draft.shortThumbnailBySlotId).map(([id, f]) => [
-              id,
-              normalizeRestoredFile(f, `thumbnail-${id.slice(0, 8)}.jpg`),
-            ])
-          )
         )
         if (packageSubmitDraftHasUsefulState(draft)) {
           toast.info("Restored your in-progress package from this device.", {
             id: "package-draft-restored",
           })
         }
+      } else if (result.draft?.v === 2) {
+        const draft = result.draft
+        setWizardStep(
+          Math.max(0, Math.min(draft.wizardStep, WIZARD_STEP_COUNT - 1))
+        )
+        setScriptExpanded(draft.scriptExpanded)
+        setPackageName(
+          typeof draft.packageName === "string" ? draft.packageName : ""
+        )
+        const rawSlots = Array.isArray(draft.videoSlots)
+          ? draft.videoSlots
+          : []
+        setVideoSlots(
+          rawSlots.map((s) => ({
+            id:
+              typeof s?.id === "string" && s.id
+                ? s.id
+                : typeof crypto !== "undefined" && "randomUUID" in crypto
+                  ? crypto.randomUUID()
+                  : `vid-${Date.now()}`,
+            videoType:
+              s?.videoType === "SHORT_FORM" ? "SHORT_FORM" : "LONG_FORM",
+            meta: {
+              title: typeof s?.meta?.title === "string" ? s.meta.title : "",
+              description:
+                typeof s?.meta?.description === "string"
+                  ? s.meta.description
+                  : "",
+              tags: Array.isArray(s?.meta?.tags) ? s.meta.tags : [],
+              tagDraft:
+                typeof s?.meta?.tagDraft === "string"
+                  ? s.meta.tagDraft
+                  : undefined,
+            },
+            file: normalizeRestoredFile(
+              s?.file,
+              (s?.videoType === "LONG_FORM"
+                ? "long-form"
+                : "video") + "-restored.mp4"
+            ),
+            thumbnailFiles: Array.isArray(s?.thumbnailFiles)
+              ? s.thumbnailFiles
+                  .map((f, i) =>
+                    normalizeRestoredFile(f, `thumbnail-restored-${i + 1}.jpg`)
+                  )
+                  .filter((x): x is File => x != null)
+              : s?.thumbnailFile
+                ? [
+                    normalizeRestoredFile(
+                      s.thumbnailFile,
+                      "thumbnail-restored.jpg"
+                    ),
+                  ].filter((x): x is File => x != null)
+                : [],
+          }))
+        )
+        if (packageSubmitDraftHasUsefulState(draft)) {
+          toast.info("Restored your in-progress package from this device.", {
+            id: "package-draft-restored",
+          })
+        }
+      } else {
+        setPackageName("")
       }
       if (!cancelled) {
-        setShortSlots((prev) =>
-          prev.length === 0
-            ? [{ id: crypto.randomUUID(), meta: EMPTY_VIDEO_META, file: null }]
-            : prev
+        setVideoSlots((prev) =>
+          prev.length === 0 ? [createNewVideoSlot("LONG_FORM")] : prev
         )
         setDraftHydrated(true)
       }
@@ -327,11 +429,8 @@ export default function AgencySubmitPackagePage() {
         const saveResult = await savePackageSubmitDraft(scriptId, {
           wizardStep,
           scriptExpanded,
-          longVideoMeta,
-          longFile,
-          shortSlots,
-          longThumbnailFile,
-          shortThumbnailBySlotId,
+          packageName,
+          videoSlots,
         })
         if (!saveResult.ok) {
           const { title, description } = userMessageForSaveDraftFailure(
@@ -345,71 +444,36 @@ export default function AgencySubmitPackagePage() {
       })()
     }, 500)
     return () => window.clearTimeout(handle)
-  }, [
-    scriptId,
-    draftHydrated,
-    wizardStep,
-    scriptExpanded,
-    longVideoMeta,
-    longFile,
-    shortSlots,
-    longThumbnailFile,
-    shortThumbnailBySlotId,
-  ])
+  }, [scriptId, draftHydrated, wizardStep, scriptExpanded, packageName, videoSlots])
 
   const mergedPackageTags = useMemo(
     () =>
-      mergePackageTags(
-        effectiveTagsFromMeta(longVideoMeta),
-        ...shortSlots.map((s) => effectiveTagsFromMeta(s.meta))
-      ),
-    [longVideoMeta, shortSlots]
+      mergePackageTags(...videoSlots.map((s) => effectiveTagsFromMeta(s.meta))),
+    [videoSlots]
   )
 
-  function setShortThumbnailForSlot(slotId: string, file: File | null) {
-    setShortThumbnailBySlotId((prev) => ({ ...prev, [slotId]: file }))
+  function addVideoSlot() {
+    setVideoSlots((prev) => [...prev, createNewVideoSlot("SHORT_FORM")])
   }
 
-  function addShortVideoSlot() {
-    setShortSlots((prev) => {
-      if (prev.length >= MAX_SHORT_VIDEOS) return prev
-      return [
-        ...prev,
-        {
-          id:
-            typeof crypto !== "undefined" && "randomUUID" in crypto
-              ? crypto.randomUUID()
-              : `short-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          meta: { ...EMPTY_VIDEO_META },
-          file: null,
-        },
-      ]
-    })
-  }
-
-  function removeShortVideoSlot(id: string) {
-    setShortSlots((prev) => {
+  function removeVideoSlot(id: string) {
+    setVideoSlots((prev) => {
       if (prev.length <= 1) {
-        toast.error(
-          "At least one short-form video is required for final package submit."
-        )
+        toast.error("Keep at least one video in this package.")
         return prev
       }
       return prev.filter((s) => s.id !== id)
     })
-    setShortThumbnailBySlotId((prev) => {
-      if (!(id in prev)) return prev
-      const next = { ...prev }
-      delete next[id]
-      return next
-    })
   }
 
-  function patchShortSlotMeta(
-    id: string,
-    action: SetStateAction<PerVideoMeta>
-  ) {
-    setShortSlots((prev) =>
+  function setSlotVideoType(id: string, videoType: "LONG_FORM" | "SHORT_FORM") {
+    setVideoSlots((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, videoType } : s))
+    )
+  }
+
+  function patchSlotMeta(id: string, action: SetStateAction<PerVideoMeta>) {
+    setVideoSlots((prev) =>
       prev.map((s) => {
         if (s.id !== id) return s
         const meta = typeof action === "function" ? action(s.meta) : action
@@ -418,23 +482,20 @@ export default function AgencySubmitPackagePage() {
     )
   }
 
-  function setShortSlotFile(id: string, file: File | null) {
-    setShortSlots((prev) => prev.map((s) => (s.id === id ? { ...s, file } : s)))
+  function setSlotFile(id: string, file: File | null) {
+    setVideoSlots((prev) => prev.map((s) => (s.id === id ? { ...s, file } : s)))
   }
 
-  const longMetaOk = isVideoMetaComplete(longVideoMeta)
-  const shortsMetaOk =
-    shortSlots.length > 0 &&
-    shortSlots.every((s) => isVideoMetaComplete(s.meta))
-  const shortsFilesOk =
-    shortSlots.length > 0 && shortSlots.every((s) => s.file != null)
-  const perVideoMetaReady = longMetaOk && shortsMetaOk
-  const videosReady = Boolean(longFile && shortsFilesOk)
-  const longThumbOk = longThumbnailFile != null
-  const shortThumbsOk =
-    shortSlots.length > 0 &&
-    shortSlots.every((s) => Boolean(shortThumbnailBySlotId[s.id]))
-  const thumbsReady = longThumbOk && shortThumbsOk
+  const slotsMetaOk =
+    videoSlots.length > 0 &&
+    videoSlots.every((s) => isVideoMetaComplete(s.meta))
+  const slotsFilesOk =
+    videoSlots.length > 0 && videoSlots.every((s) => s.file != null)
+  const perVideoMetaReady = slotsMetaOk
+  const videosReady = slotsFilesOk && videoSlots.length > 0
+  const thumbsReady =
+    videoSlots.length > 0 &&
+    videoSlots.every((s) => (s.thumbnailFiles?.length ?? 0) > 0)
   const allReady = perVideoMetaReady && videosReady && thumbsReady
 
   useEffect(() => {
@@ -446,15 +507,13 @@ export default function AgencySubmitPackagePage() {
       case 0:
         return true
       case 1:
-        return longMetaOk && Boolean(longFile)
-      case 2:
         return (
-          shortSlots.length > 0 &&
-          shortSlots.every(
+          videoSlots.length > 0 &&
+          videoSlots.every(
             (s) => isVideoMetaComplete(s.meta) && Boolean(s.file)
           )
         )
-      case 3:
+      case 2:
         return thumbsReady
       default:
         return false
@@ -463,22 +522,19 @@ export default function AgencySubmitPackagePage() {
 
   async function performSubmit() {
     if (!token || !scriptId) return
-    if (!longMetaOk) {
-      toast.error("Long-form needs a title, description, and at least one tag")
+    if (videoSlots.length < 1) {
+      toast.error("Add at least one video")
       return
     }
-    if (shortSlots.length < 1) {
-      toast.error(
-        "Add at least one short-form video (API requires long + short)"
-      )
-      return
-    }
-    const incomplete = shortSlots.some(
-      (s) => !isVideoMetaComplete(s.meta) || !s.file
+    const incomplete = videoSlots.some(
+      (s) =>
+        !isVideoMetaComplete(s.meta) ||
+        !s.file ||
+        (s.thumbnailFiles?.length ?? 0) === 0
     )
     if (incomplete) {
       toast.error(
-        "Each short-form video needs a file, title, description, and at least one tag"
+        "Each video needs a file, title, description, at least one tag, and a thumbnail"
       )
       return
     }
@@ -486,87 +542,118 @@ export default function AgencySubmitPackagePage() {
       toast.error("Add tags for your videos")
       return
     }
-    if (!longFile) {
-      toast.error("Upload the long-form video")
-      return
-    }
-    if (!longThumbOk) {
-      toast.error("Add a thumbnail for the long-form video")
-      return
-    }
-    const missingShortThumb = shortSlots.find(
-      (s) => !shortThumbnailBySlotId[s.id]
-    )
-    if (missingShortThumb) {
-      toast.error(
-        "Each short-form video needs its own thumbnail — add any that are missing"
-      )
-      return
+    if (!existingPackage) {
+      const trimmedPkgName = packageName.trim()
+      if (!trimmedPkgName) {
+        toast.error("Enter a package name.")
+        return
+      }
     }
 
     setSubmitting(true)
     try {
-      const longVid = await uploadPackageVideoFile(token, longFile)
-      const shortVids = await Promise.all(
-        shortSlots.map((s) => uploadPackageVideoFile(token, s.file!))
+      const uploadedVideos = await Promise.all(
+        videoSlots.map((s) => uploadPackageVideoFile(token, s.file!))
       )
-      const longThumb = await uploadPackageThumbnailFile(
-        token,
-        longThumbnailFile
-      )
-      const shortThumbs = await Promise.all(
-        shortSlots.map((s) =>
-          uploadPackageThumbnailFile(token, shortThumbnailBySlotId[s.id]!)
-        )
+      const uploadedThumbsBySlot = await Promise.all(
+        videoSlots.map(async (s) => {
+          const list = s.thumbnailFiles ?? []
+          return await Promise.all(list.map((f) => uploadPackageThumbnailFile(token, f)))
+        })
       )
 
-      const packageName = longVideoMeta.title.trim()
-      const videos = [
-        {
-          type: "LONG_FORM" as const,
-          fileUrl: longVid.fileUrl,
-          fileName: longVid.fileName,
-          fileType: longVid.fileType,
-          fileSize: longVid.fileSize,
-          order: 1,
-          title: packageName,
-          description: longVideoMeta.description.trim(),
-          tags: effectiveTagsFromMeta(longVideoMeta),
-          thumbnails: [
-            {
-              fileUrl: longThumb.fileUrl,
-              fileName: longThumb.fileName,
-              fileType: longThumb.fileType,
-              fileSize: longThumb.fileSize,
-            },
-          ],
-        },
-        ...shortSlots.map((slot, i) => ({
-          type: "SHORT_FORM" as const,
-          fileUrl: shortVids[i]!.fileUrl,
-          fileName: shortVids[i]!.fileName,
-          fileType: shortVids[i]!.fileType,
-          fileSize: shortVids[i]!.fileSize,
-          order: i + 2,
-          title: slot.meta.title.trim(),
-          description: slot.meta.description.trim(),
-          tags: effectiveTagsFromMeta(slot.meta),
-          thumbnails: [
-            {
-              fileUrl: shortThumbs[i]!.fileUrl,
-              fileName: shortThumbs[i]!.fileName,
-              fileType: shortThumbs[i]!.fileType,
-              fileSize: shortThumbs[i]!.fileSize,
-            },
-          ],
+      if (existingPackage) {
+        const packageId = existingPackage.id
+        for (let i = 0; i < videoSlots.length; i += 1) {
+          const slot = videoSlots[i]!
+          const vid = uploadedVideos[i]!
+          const thumbs = uploadedThumbsBySlot[i] ?? []
+          await addPackageVideo(token, packageId, {
+            type: slot.videoType,
+            fileUrl: vid.fileUrl,
+            fileName: vid.fileName,
+            fileType: vid.fileType,
+            fileSize: vid.fileSize,
+            title: slot.meta.title.trim(),
+            description: slot.meta.description.trim(),
+            tags: effectiveTagsFromMeta(slot.meta),
+            thumbnails: thumbs.map((t) => ({
+              fileUrl: t.fileUrl,
+              fileName: t.fileName,
+              fileType: t.fileType,
+              fileSize: t.fileSize,
+            })),
+          })
+        }
+        toast.success(
+          videoSlots.length === 1
+            ? "Video added to your package."
+            : `${videoSlots.length} videos added to your package.`,
+          {
+            description:
+              "Each new deliverable starts its own Medical + Brand review.",
+          }
+        )
+        const clearResult = await clearPackageSubmitDraft(scriptId)
+        if (!clearResult.ok) {
+          const { title, description } = userMessageForClearDraftFailure()
+          toast.info(title, {
+            description,
+            id: "package-draft-clear-failed",
+          })
+        }
+        router.push(`/agency-poc-packages/${packageId}`)
+        return
+      }
+
+      const trimmedPkgName = packageName.trim()
+      const first = videoSlots[0]!
+      const firstVid = uploadedVideos[0]!
+      const firstThumbs = uploadedThumbsBySlot[0] ?? []
+      const firstVideo = {
+        type: first.videoType,
+        fileUrl: firstVid.fileUrl,
+        fileName: firstVid.fileName,
+        fileType: firstVid.fileType,
+        fileSize: firstVid.fileSize,
+        title: first.meta.title.trim(),
+        description: first.meta.description.trim(),
+        tags: effectiveTagsFromMeta(first.meta),
+        thumbnails: firstThumbs.map((t) => ({
+          fileUrl: t.fileUrl,
+          fileName: t.fileName,
+          fileType: t.fileType,
+          fileSize: t.fileSize,
         })),
-      ]
+      }
 
       const res = await submitPackage(token, {
         scriptId,
-        name: packageName,
-        videos,
+        name: trimmedPkgName,
+        video: firstVideo,
       })
+      const packageId = res.package.id
+      for (let i = 1; i < videoSlots.length; i += 1) {
+        const slot = videoSlots[i]!
+        const vid = uploadedVideos[i]!
+        const thumbs = uploadedThumbsBySlot[i] ?? []
+        await addPackageVideo(token, packageId, {
+          type: slot.videoType,
+          fileUrl: vid.fileUrl,
+          fileName: vid.fileName,
+          fileType: vid.fileType,
+          fileSize: vid.fileSize,
+          title: slot.meta.title.trim(),
+          description: slot.meta.description.trim(),
+          tags: effectiveTagsFromMeta(slot.meta),
+          thumbnails: thumbs.map((t) => ({
+            fileUrl: t.fileUrl,
+            fileName: t.fileName,
+            fileType: t.fileType,
+            fileSize: t.fileSize,
+          })),
+        })
+      }
       toast.success(res.message ?? "Package submitted", {
         description: "Medical and Brand parallel review has started.",
       })
@@ -578,7 +665,7 @@ export default function AgencySubmitPackagePage() {
           id: "package-draft-clear-failed",
         })
       }
-      router.push(`/agency-poc-packages/${res.package.id}`)
+      router.push(`/agency-poc-packages/${packageId}`)
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Submit failed"
       toast.error("Could not submit package", { description: msg })
@@ -653,6 +740,19 @@ export default function AgencySubmitPackagePage() {
   }
 
   const sc = scriptContext!
+  const addingToExisting = Boolean(existingPackage)
+  const existingPackageTitle =
+    existingPackage?.name?.trim() ||
+    existingPackage?.title?.trim() ||
+    "this package"
+
+  const canSubmitFinal =
+    allReady && (addingToExisting || packageName.trim().length > 0)
+  const lastStepBlockedHint = !allReady
+    ? "Complete all steps first"
+    : !addingToExisting && !packageName.trim()
+      ? "Enter a package name"
+      : undefined
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gradient-to-b from-muted/30 to-background">
@@ -674,6 +774,36 @@ export default function AgencySubmitPackagePage() {
               </Link>
             </Button>
 
+            {addingToExisting ? (
+              <Card className="border-primary/30 bg-primary/5 shadow-none">
+                <CardContent className="flex gap-4 py-5">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                    <Info className="size-5" />
+                  </div>
+                  <div className="min-w-0 text-sm leading-relaxed">
+                    <p className="font-semibold text-foreground">
+                      Adding deliverables to an existing package
+                    </p>
+                    <p className="mt-1 text-muted-foreground">
+                      <strong className="text-foreground">
+                        {existingPackageTitle}
+                      </strong>{" "}
+                      already exists for this script. Complete the wizard to
+                      submit{" "}
+                      <strong className="text-foreground">
+                        one or more new videos
+                      </strong>{" "}
+                      — each starts its own review (POST{" "}
+                      <code className="rounded bg-muted px-1 text-xs">
+                        /packages/:id/videos
+                      </code>
+                      ), not a second package.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
+
             <header className="space-y-4">
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
@@ -685,11 +815,14 @@ export default function AgencySubmitPackagePage() {
               </div>
               <div>
                 <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                  Submit final package
+                  {addingToExisting
+                    ? "Add videos to package"
+                    : "Submit final package"}
                 </h1>
                 <p className="mt-3 max-w-prose text-base leading-relaxed text-muted-foreground">
-                  Walk through each deliverable in order. Nothing is submitted
-                  until the final step.
+                  {addingToExisting
+                    ? "Upload and describe each new deliverable here. Nothing is sent until the last step. Package name stays the same — rename it from the package page if needed."
+                    : "Add any number of videos — for each one, choose long- or short-form before uploading. Nothing is submitted until the final step."}
                 </p>
               </div>
             </header>
@@ -718,138 +851,166 @@ export default function AgencySubmitPackagePage() {
                   onToggleExpand={() => setScriptExpanded((v) => !v)}
                   showWorkspaceLink={user?.role === "AGENCY_POC"}
                 />
+
+                {!addingToExisting ? (
+                  <Card className="shadow-lg">
+                    <CardHeader>
+                      <CardTitle className="text-base">Package name</CardTitle>
+                      <CardDescription>
+                        This label appears in queues and headers. It is separate
+                        from each video&apos;s title on the next step.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <Label htmlFor="package-name">Name</Label>
+                      <Input
+                        id="package-name"
+                        value={packageName}
+                        onChange={(e) => setPackageName(e.target.value)}
+                        placeholder="e.g. Heart Health Q1 final package"
+                        autoComplete="off"
+                      />
+                    </CardContent>
+                  </Card>
+                ) : null}
               </div>
             )}
 
             {wizardStep === 1 && (
               <div className="w-full space-y-10 py-4">
                 <StepIntro
-                  title="Long-form (main video)"
-                  body="This title becomes the primary package title for the API. Add a full description and tags for this cut, then attach the master file."
+                  title="Videos"
+                  body={
+                    addingToExisting
+                      ? "For each new deliverable, choose long- or short-form first, then add metadata and the video file. You can queue several additions in one go; they are submitted together on the last step."
+                      : "For each deliverable, choose long-form or short-form first, then add metadata and the video file. You can add as many videos as you need. Each video has its own title; the package name was set on the previous step."
+                  }
                 />
-                <VideoDeliverableCard
-                  badge="Primary"
-                  heading="Long-form deliverable"
-                  subheading="Full-length master — used as the main package title."
-                  meta={longVideoMeta}
-                  onMetaChange={setLongVideoMeta}
-                  file={longFile}
-                  onFile={setLongFile}
-                  dropId="pkg-long"
-                  emphasized
-                  icon={<Clapperboard className="size-5" />}
-                  idPrefix="long"
-                  spacious
-                />
-              </div>
-            )}
-
-            {wizardStep === 2 && (
-              <div className="w-full space-y-10 py-4">
-                <StepIntro
-                  title="Short-form videos (optional)"
-                  body={`Add between 1 and ${MAX_SHORT_VIDEOS} short cuts (e.g. reels). Each needs its own title, description, tags, and file. Upload order is sent to the API as \`order\` (2…).`}
-                />
-
                 <div className="space-y-12">
-                  {shortSlots.map((slot, index) => (
+                  {videoSlots.map((slot, index) => (
                     <div key={slot.id} className="space-y-4">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <p className="text-sm font-medium text-muted-foreground">
-                          Short {index + 1} of {shortSlots.length} · order{" "}
-                          {index + 1}
+                          Video {index + 1} of {videoSlots.length}
                         </p>
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
                           className="gap-1.5 text-muted-foreground"
-                          onClick={() => removeShortVideoSlot(slot.id)}
+                          onClick={() => removeVideoSlot(slot.id)}
                         >
                           <Trash2 className="size-3.5" />
                           Remove
                         </Button>
                       </div>
+                      <div className="rounded-xl border border-border bg-muted/20 p-4 sm:p-5">
+                        <p className="text-sm font-medium text-foreground">
+                          Video type
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Select this before uploading the file. You can change
+                          it until you submit.
+                        </p>
+                        <div
+                          className="mt-4 flex flex-wrap gap-2"
+                          role="group"
+                          aria-label="Video format"
+                        >
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={
+                              slot.videoType === "LONG_FORM"
+                                ? "default"
+                                : "outline"
+                            }
+                            className={cn(
+                              slot.videoType === "LONG_FORM" &&
+                                "bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white"
+                            )}
+                            onClick={() =>
+                              setSlotVideoType(slot.id, "LONG_FORM")
+                            }
+                          >
+                            <Clapperboard className="mr-2 size-4" />
+                            Long-form
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={
+                              slot.videoType === "SHORT_FORM"
+                                ? "default"
+                                : "outline"
+                            }
+                            className={cn(
+                              slot.videoType === "SHORT_FORM" &&
+                                "bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white"
+                            )}
+                            onClick={() =>
+                              setSlotVideoType(slot.id, "SHORT_FORM")
+                            }
+                          >
+                            <Smartphone className="mr-2 size-4" />
+                            Short-form
+                          </Button>
+                        </div>
+                      </div>
                       <VideoDeliverableCard
-                        badge={`Short ${index + 1}`}
-                        heading={`Short-form ${index + 1}`}
-                        subheading="e.g. 15–60s reel"
+                        badge={`${slot.videoType === "LONG_FORM" ? "Long-form" : "Short-form"} · ${index + 1}`}
+                        heading={
+                          slot.videoType === "LONG_FORM"
+                            ? "Long-form deliverable"
+                            : "Short-form deliverable"
+                        }
+                        subheading={
+                          slot.videoType === "LONG_FORM"
+                            ? "Full-length or main cut."
+                            : "e.g. reel or shorter cut."
+                        }
                         meta={slot.meta}
                         onMetaChange={(action) =>
-                          patchShortSlotMeta(slot.id, action)
+                          patchSlotMeta(slot.id, action)
                         }
                         file={slot.file}
-                        onFile={(f) => setShortSlotFile(slot.id, f)}
-                        dropId={`pkg-short-${slot.id}`}
-                        icon={<Smartphone className="size-5" />}
-                        idPrefix={`s-${slot.id}`}
+                        onFile={(f) => setSlotFile(slot.id, f)}
+                        dropId={`pkg-video-${slot.id}`}
+                        emphasized={index === 0}
+                        icon={
+                          slot.videoType === "LONG_FORM" ? (
+                            <Clapperboard className="size-5" />
+                          ) : (
+                            <Smartphone className="size-5" />
+                          )
+                        }
+                        idPrefix={`v-${slot.id}`}
                         spacious
                       />
                     </div>
                   ))}
                 </div>
-
-                {shortSlots.length > 0 &&
-                shortSlots.length < MAX_SHORT_VIDEOS ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="default"
-                    className="gap-2"
-                    onClick={addShortVideoSlot}
-                  >
-                    <Plus className="size-4" />
-                    Add another short ({shortSlots.length}/{MAX_SHORT_VIDEOS})
-                  </Button>
-                ) : null}
-                {shortSlots.length === MAX_SHORT_VIDEOS ? (
-                  <p className="text-sm text-muted-foreground">
-                    You’ve added the maximum of {MAX_SHORT_VIDEOS} short-form
-                    videos.
-                  </p>
-                ) : null}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="default"
+                  className="gap-2"
+                  onClick={addVideoSlot}
+                >
+                  <Plus className="size-4" />
+                  Add another video
+                </Button>
               </div>
             )}
 
-            {wizardStep === 3 && (
+            {wizardStep === 2 && (
               <div className="w-full space-y-10 py-4">
                 <StepIntro
-                  title="Thumbnails (one per video)"
-                  body="Upload a separate image for each video in this package — the long-form master and every short you added. Labels match the video step so reviewers know which thumbnail belongs to which cut. Content/Brand still selects a single published thumbnail later from these options."
+                  title="Thumbnails (one or more per video)"
+                  body="Upload one or more images per video. Content/Brand will review each thumbnail individually in Phase 6; only rejected thumbnails come back for revision."
                 />
                 <div className="space-y-10">
-                  <Card className="border-0 shadow-lg ring-1 ring-border/60">
-                    <CardContent className="space-y-6 px-6 py-8 sm:px-10 sm:py-10">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge
-                          variant="secondary"
-                          className="font-mono text-xs"
-                        >
-                          Thumbnail 1
-                        </Badge>
-                        <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                          For this video
-                        </span>
-                      </div>
-                      <div>
-                        <p className="font-semibold text-foreground">
-                          Long-form video
-                        </p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {longVideoMeta.title.trim() ||
-                            "— add title on the long-form step"}
-                        </p>
-                      </div>
-                      <ThumbnailSlot
-                        inputId="thumb-long-form"
-                        emptyHint="Image for long-form (16:9 recommended)"
-                        file={longThumbnailFile}
-                        onFile={setLongThumbnailFile}
-                      />
-                    </CardContent>
-                  </Card>
-
-                  {shortSlots.map((slot, index) => (
+                  {videoSlots.map((slot, index) => (
                     <Card
                       key={slot.id}
                       className="border-0 shadow-lg ring-1 ring-border/60"
@@ -860,7 +1021,12 @@ export default function AgencySubmitPackagePage() {
                             variant="secondary"
                             className="font-mono text-xs"
                           >
-                            Thumbnail {index + 2}
+                            Thumbnail {index + 1}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {slot.videoType === "LONG_FORM"
+                              ? "Long-form"
+                              : "Short-form"}
                           </Badge>
                           <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                             For this video
@@ -868,18 +1034,24 @@ export default function AgencySubmitPackagePage() {
                         </div>
                         <div>
                           <p className="font-semibold text-foreground">
-                            Short-form {index + 1}
+                            Video {index + 1}
                           </p>
                           <p className="mt-1 text-sm text-muted-foreground">
                             {slot.meta.title.trim() ||
-                              "— add title on the short-form step"}
+                              "— add a title on the Videos step"}
                           </p>
                         </div>
-                        <ThumbnailSlot
-                          inputId={`thumb-short-${slot.id}`}
-                          emptyHint={`Image for short ${index + 1}`}
-                          file={shortThumbnailBySlotId[slot.id] ?? null}
-                          onFile={(f) => setShortThumbnailForSlot(slot.id, f)}
+                        <MultiThumbnailSlot
+                          inputId={`thumb-${slot.id}`}
+                          emptyHint="Upload one or more images (16:9 recommended)"
+                          files={slot.thumbnailFiles ?? []}
+                          onFiles={(files) =>
+                            setVideoSlots((prev) =>
+                              prev.map((s) =>
+                                s.id === slot.id ? { ...s, thumbnailFiles: files } : s
+                              )
+                            )
+                          }
                         />
                       </CardContent>
                     </Card>
@@ -888,23 +1060,26 @@ export default function AgencySubmitPackagePage() {
               </div>
             )}
 
-            {wizardStep === 4 && (
+            {wizardStep === 3 && (
               <div className="w-full space-y-10 py-4">
                 <StepIntro
                   title="Review & submit"
-                  body="Check the summary below. When everything looks right, submit — Medical and Content/Brand review starts in parallel."
+                  body={
+                    addingToExisting
+                      ? "Check the summary below, then submit — each new deliverable goes to Medical + Content/Brand review on its own timeline."
+                      : "Check the summary below. When everything looks right, submit — Medical and Content/Brand review starts in parallel."
+                  }
                 />
                 <ReviewSummaryCard
-                  longVideoMeta={longVideoMeta}
-                  shortSlots={shortSlots}
-                  longFile={longFile}
-                  longThumbnailFile={longThumbnailFile}
-                  shortThumbnailBySlotId={shortThumbnailBySlotId}
+                  videoSlots={videoSlots}
                   mergedTags={mergedPackageTags}
-                  longMetaOk={longMetaOk}
-                  shortsMetaOk={shortsMetaOk}
+                  slotsMetaOk={slotsMetaOk}
                   videosReady={videosReady}
                   thumbsReady={thumbsReady}
+                  addingToExisting={addingToExisting}
+                  existingPackageDisplayName={existingPackageTitle}
+                  packageName={packageName}
+                  onPackageNameChange={setPackageName}
                 />
               </div>
             )}
@@ -915,8 +1090,12 @@ export default function AgencySubmitPackagePage() {
           wizardStep={wizardStep}
           stepCount={WIZARD_STEP_COUNT}
           canProceed={canProceedFromStep(wizardStep)}
-          allReady={allReady}
+          allReady={canSubmitFinal}
+          lastStepBlockedHint={lastStepBlockedHint}
           submitting={submitting}
+          confirmLabel={
+            addingToExisting ? "Add videos to package" : "Submit final package"
+          }
           onBack={() => setWizardStep((s) => Math.max(0, s - 1))}
           onContinue={() =>
             setWizardStep((s) => Math.min(WIZARD_STEP_COUNT - 1, s + 1))
@@ -1011,7 +1190,9 @@ function WizardFooter({
   stepCount,
   canProceed,
   allReady,
+  lastStepBlockedHint,
   submitting,
+  confirmLabel = "Submit final package",
   onBack,
   onContinue,
   onConfirmSubmit,
@@ -1020,7 +1201,10 @@ function WizardFooter({
   stepCount: number
   canProceed: boolean
   allReady: boolean
+  /** When the final submit button is disabled, explains why (e.g. missing package name). */
+  lastStepBlockedHint?: string
   submitting: boolean
+  confirmLabel?: string
   onBack: () => void
   onContinue: () => void
   onConfirmSubmit: () => void
@@ -1073,7 +1257,13 @@ function WizardFooter({
             size="lg"
             disabled={!allReady || submitting}
             className="w-full border-0 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90 sm:ml-auto sm:w-auto"
-            title={!allReady ? "Complete all steps first" : undefined}
+            title={
+              submitting
+                ? undefined
+                : !allReady
+                  ? lastStepBlockedHint ?? "Complete all steps first"
+                  : undefined
+            }
             onClick={onConfirmSubmit}
           >
             {submitting ? (
@@ -1083,7 +1273,7 @@ function WizardFooter({
               </>
             ) : (
               <>
-                Submit final package
+                {confirmLabel}
                 <ArrowRight className="ml-2 size-4" />
               </>
             )}
@@ -1167,13 +1357,13 @@ function ReviewThumbnailBlock({
   index,
   targetLabel,
   videoTitle,
-  file,
+  files,
   ok,
 }: {
   index: number
   targetLabel: string
   videoTitle: string
-  file: File | null
+  files: File[]
   ok: boolean
 }) {
   return (
@@ -1211,8 +1401,7 @@ function ReviewThumbnailBlock({
           {videoTitle}
         </p>
         <p className="font-mono text-xs break-all text-muted-foreground">
-          {file?.name ?? "—"}
-          {file ? ` · ${formatBytes(file.size)}` : ""}
+          {files.length > 0 ? `${files.length} image(s)` : "—"}
         </p>
         <div className="space-y-2">
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
@@ -1224,7 +1413,25 @@ function ReviewThumbnailBlock({
               "overflow-hidden rounded-xl border border-border bg-muted/20 ring-1 ring-border/60"
             )}
           >
-            <ReviewBlobImagePreview file={file} />
+            <div className="grid grid-cols-2 gap-2 p-2 sm:grid-cols-3">
+              {files.length === 0 ? (
+                <div className="col-span-full flex aspect-video w-full items-center justify-center bg-muted/50 px-4 text-center text-xs text-muted-foreground">
+                  No image attached
+                </div>
+              ) : (
+                files.map((f, i) => (
+                  <div
+                    key={`${f.name}-${f.size}-${i}`}
+                    className="overflow-hidden rounded-lg border border-border bg-muted/30"
+                  >
+                    <ReviewBlobImagePreview file={f} />
+                    <p className="truncate px-1 py-1 font-mono text-[10px] text-muted-foreground">
+                      {f.name}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1233,53 +1440,74 @@ function ReviewThumbnailBlock({
 }
 
 function ReviewSummaryCard({
-  longVideoMeta,
-  shortSlots,
-  longFile,
-  longThumbnailFile,
-  shortThumbnailBySlotId,
+  videoSlots,
   mergedTags,
-  longMetaOk,
-  shortsMetaOk,
+  slotsMetaOk,
   videosReady,
   thumbsReady,
+  addingToExisting = false,
+  existingPackageDisplayName,
+  packageName = "",
+  onPackageNameChange,
 }: {
-  longVideoMeta: PerVideoMeta
-  shortSlots: ShortVideoSlot[]
-  longFile: File | null
-  longThumbnailFile: File | null
-  shortThumbnailBySlotId: Record<string, File | null>
+  videoSlots: PackageVideoSlot[]
   mergedTags: string[]
-  longMetaOk: boolean
-  shortsMetaOk: boolean
+  slotsMetaOk: boolean
   videosReady: boolean
   thumbsReady: boolean
+  addingToExisting?: boolean
+  existingPackageDisplayName?: string
+  packageName?: string
+  onPackageNameChange?: (value: string) => void
 }) {
   return (
     <Card className="overflow-hidden border-0 shadow-lg ring-1 ring-border/60">
       <CardHeader className="border-b border-border bg-muted/30 px-5 py-7 sm:px-8 sm:py-8">
-        <CardTitle className="text-lg">Package summary</CardTitle>
+        <CardTitle className="text-lg">
+          {addingToExisting ? "Addition summary" : "Package summary"}
+        </CardTitle>
         <CardDescription className="mt-2 max-w-prose">
-          Long-form title becomes the package{" "}
-          <code className="text-xs">name</code>; each video is submitted with
-          its own title, description, tags, and thumbnail(s). Previews below are
-          local until you submit.
+          {addingToExisting ? (
+            <>
+              These deliverables will be added to{" "}
+              <strong>{existingPackageDisplayName ?? "your package"}</strong>.
+              The package name does not change from this wizard. Each video is
+              sent with its type, title, description, tags, and thumbnails.
+              Previews are local until you submit.
+            </>
+          ) : (
+            <>
+              Package <code className="text-xs">name</code> is the container
+              label you set below. Each video is submitted with its own type,
+              title, description, tags, and thumbnails. Previews below are local
+              until you submit.
+            </>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-12 bg-muted/5 px-5 py-8 sm:px-8 sm:py-10">
+        {!addingToExisting && onPackageNameChange ? (
+          <div className="space-y-4">
+            <ReviewSectionTitle>Package name</ReviewSectionTitle>
+            <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
+              <Label htmlFor="review-package-name">Name</Label>
+              <Input
+                id="review-package-name"
+                className="mt-2"
+                value={packageName}
+                onChange={(e) => onPackageNameChange(e.target.value)}
+                placeholder="Package name shown in lists"
+              />
+            </div>
+          </div>
+        ) : null}
         <div className="space-y-4">
           <ReviewSectionTitle>Videos</ReviewSectionTitle>
           <ul className="flex flex-col gap-6">
-            <ReviewVideoRow
-              label="Long-form"
-              meta={longVideoMeta}
-              file={longFile}
-              ok={longMetaOk && !!longFile}
-            />
-            {shortSlots.map((slot, i) => (
+            {videoSlots.map((slot, i) => (
               <ReviewVideoRow
                 key={slot.id}
-                label={`Short ${i + 1}`}
+                label={`${slot.videoType === "LONG_FORM" ? "Long-form" : "Short-form"} · ${i + 1}`}
                 meta={slot.meta}
                 file={slot.file}
                 ok={isVideoMetaComplete(slot.meta) && Boolean(slot.file)}
@@ -1290,26 +1518,16 @@ function ReviewSummaryCard({
         <div className="space-y-4 border-t border-border pt-10">
           <ReviewSectionTitle>Thumbnails (one per video)</ReviewSectionTitle>
           <ul className="flex flex-col gap-6">
-            <ReviewThumbnailBlock
-              index={1}
-              targetLabel="Long-form video"
-              videoTitle={longVideoMeta.title.trim() || "—"}
-              file={longThumbnailFile}
-              ok={Boolean(longThumbnailFile)}
-            />
-            {shortSlots.map((slot, i) => {
-              const tf = shortThumbnailBySlotId[slot.id] ?? null
-              return (
-                <ReviewThumbnailBlock
-                  key={slot.id}
-                  index={i + 2}
-                  targetLabel={`Short-form ${i + 1}`}
-                  videoTitle={slot.meta.title.trim() || "—"}
-                  file={tf}
-                  ok={Boolean(tf)}
-                />
-              )
-            })}
+            {videoSlots.map((slot, i) => (
+              <ReviewThumbnailBlock
+                key={slot.id}
+                index={i + 1}
+                targetLabel={`Video ${i + 1} (${slot.videoType === "LONG_FORM" ? "long" : "short"})`}
+                videoTitle={slot.meta.title.trim() || "—"}
+                files={slot.thumbnailFiles ?? []}
+                ok={(slot.thumbnailFiles?.length ?? 0) > 0}
+              />
+            ))}
           </ul>
         </div>
         <div className="space-y-4 border-t border-border pt-10">
@@ -1333,17 +1551,23 @@ function ReviewSummaryCard({
         <div className="border-t border-border pt-10">
           <ReviewSectionTitle>Ready to submit</ReviewSectionTitle>
           <ul className="mt-4 space-y-0 divide-y divide-border rounded-xl border border-border bg-card text-sm shadow-sm">
+            {!addingToExisting ? (
+              <ReviewCheck
+                ok={packageName.trim().length > 0}
+                text="Package name entered"
+              />
+            ) : null}
             <ReviewCheck
               ok={videosReady}
-              text="Long-form file attached; every short has a file"
+              text="Video file attached for every deliverable"
             />
             <ReviewCheck
               ok={thumbsReady}
-              text="Thumbnail for long-form and for each short"
+              text="At least one thumbnail uploaded for each video"
             />
             <ReviewCheck
-              ok={longMetaOk && shortsMetaOk}
-              text="Metadata complete for long-form and each short you added"
+              ok={slotsMetaOk}
+              text="Title, description, and tags complete for each video"
             />
           </ul>
         </div>
@@ -1968,81 +2192,102 @@ function MediaDropZone({
   )
 }
 
-function ThumbnailSlot({
+// Legacy single-thumbnail component intentionally removed in favor of MultiThumbnailSlot.
+
+function MultiThumbnailSlot({
   inputId,
   emptyHint,
-  file,
-  onFile,
+  files,
+  onFiles,
 }: {
   inputId: string
   emptyHint: string
-  file: File | null
-  onFile: (f: File | null) => void
+  files: File[]
+  onFiles: (files: File[]) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [preview, setPreview] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!file) {
-      setPreview(null)
-      return
-    }
-    const u = URL.createObjectURL(file)
-    setPreview(u)
-    return () => URL.revokeObjectURL(u)
-  }, [file])
+  const key =
+    files.length === 0
+      ? ""
+      : files.map((f) => `${f.name}-${f.size}-${f.lastModified}`).join("|")
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-muted/20 shadow-sm">
-      <div className="relative aspect-video bg-muted/40">
-        {preview ? (
-          // eslint-disable-next-line @next/next/no-img-element -- blob preview
-          <img src={preview} alt="" className="size-full object-cover" />
-        ) : (
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            className="flex size-full flex-col items-center justify-center gap-2 p-4 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-          >
-            <FileImage className="size-8 opacity-50" />
-            <span className="max-w-[14rem] text-center text-xs leading-snug font-medium">
-              {emptyHint}
-            </span>
-          </button>
-        )}
+    <div className="space-y-3">
+      {files.length > 0 ? (
+        <div
+          key={key}
+          className="grid grid-cols-2 gap-2 overflow-hidden rounded-xl border border-border bg-muted/20 p-2 sm:grid-cols-3"
+        >
+          {files.map((f, i) => (
+            <div
+              key={`${f.name}-${f.size}-${i}`}
+              className="overflow-hidden rounded-lg border border-border bg-background"
+            >
+              <ReviewBlobImagePreview file={f} />
+              <div className="flex items-center justify-between gap-2 p-1">
+                <p className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
+                  {f.name}
+                </p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-muted-foreground"
+                  onClick={() => onFiles(files.filter((_, idx) => idx !== i))}
+                >
+                  Remove
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="flex aspect-video items-center justify-center rounded-xl border border-dashed border-muted-foreground/25 bg-muted/20 px-4 text-center text-sm text-muted-foreground">
+          {emptyHint}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
         <input
           ref={inputRef}
           id={inputId}
           type="file"
           accept="image/*"
+          multiple
           className="sr-only"
-          onChange={(ev) => onFile(ev.target.files?.[0] ?? null)}
+          onChange={(ev) => {
+            const list = ev.target.files ? Array.from(ev.target.files) : []
+            if (list.length === 0) return
+            onFiles([...files, ...list])
+            if (inputRef.current) inputRef.current.value = ""
+          }}
         />
-      </div>
-      <div className="flex items-center gap-2 border-t border-border bg-card p-2">
         <Button
           type="button"
           variant="secondary"
           size="sm"
-          className="flex-1"
           onClick={() => inputRef.current?.click()}
         >
-          {file ? "Change image" : "Upload image"}
+          {files.length > 0 ? "Add more images" : "Upload images"}
         </Button>
-        {file ? (
+        {files.length > 0 ? (
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            className="shrink-0 text-muted-foreground"
+            className="text-muted-foreground"
             onClick={() => {
-              onFile(null)
+              onFiles([])
               if (inputRef.current) inputRef.current.value = ""
             }}
           >
-            Clear
+            Clear all
           </Button>
         ) : null}
+        <span className="text-xs text-muted-foreground self-center">
+          {files.length} selected
+        </span>
       </div>
     </div>
   )

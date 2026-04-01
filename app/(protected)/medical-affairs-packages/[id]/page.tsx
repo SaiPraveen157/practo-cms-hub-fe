@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react"
 import Link from "next/link"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -30,34 +30,40 @@ import {
 } from "@/components/ui/dialog"
 import { useAuthStore } from "@/store"
 import {
-  approvePackage,
+  approvePackageVideo,
   getPackage,
-  rejectPackage,
+  rejectPackageVideo,
 } from "@/lib/packages-api"
+import {
+  deliverableLabelsByVideoId,
+  getCurrentVideoAsset,
+  packageVideosSorted,
+  videoAssetToPackageAsset,
+} from "@/lib/package-video-helpers"
 import type {
   FinalPackage,
   PackageAsset,
   PackageItemFeedbackEntry,
-  PackageStatus,
+  PackageVideo,
 } from "@/types/package"
 import type { UserRole } from "@/types/auth"
 import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
 import {
-  PACKAGE_STATUS_LABELS,
   TRACK_STATUS_LABELS,
-  assetsOfType,
+  VIDEO_STATUS_LABELS,
   formatPackageDate,
   formatPackageFileSize,
-  packageStatusBadgeClass,
+  videoStatusBadgeClass,
 } from "@/lib/package-ui"
 import { PackageTatCard } from "@/components/packages/package-tat-card"
-import { PackageDetailSubTabs } from "@/components/packages/package-detail-subtabs"
+import { PackageFeedbackAndRevisionsPanel } from "@/components/packages/package-detail-subtabs"
+import { PackageListTabNav } from "@/components/packages/package-list-tab-nav"
 import {
   ArrowLeft,
   CheckCircle,
   Clapperboard,
+  Clock,
   ExternalLink,
-  Info,
   Loader2,
   Smartphone,
   XCircle,
@@ -78,8 +84,8 @@ function PackageVideoPlayerCard({
   const size = formatPackageFileSize(asset.fileSize ?? undefined)
 
   return (
-    <Card className="overflow-hidden border-0 shadow-md ring-1 ring-border/70">
-      <CardHeader className="border-b border-border bg-muted/30 pb-4">
+    <Card className="overflow-hidden border border-border bg-card shadow-sm">
+      <CardHeader className="border-b border-border bg-muted/20 pb-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -137,8 +143,9 @@ function PackageVideoPlayerCard({
 
 export default function MedicalPackageDetailPage() {
   const params = useParams()
-  const router = useRouter()
+  const searchParams = useSearchParams()
   const id = params.id as string
+  const focusVideoId = (searchParams.get("video") ?? "").trim()
   const token = useAuthStore((s) => s.token)
   const user = useAuthStore((s) => s.user)
   const role = user?.role as UserRole | undefined
@@ -151,9 +158,12 @@ export default function MedicalPackageDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [approveOpen, setApproveOpen] = useState(false)
   const [rejectOpen, setRejectOpen] = useState(false)
+  const [activeVideo, setActiveVideo] = useState<PackageVideo | null>(null)
   const [approveComments, setApproveComments] = useState("")
-  const [rejectLong, setRejectLong] = useState("")
-  const [rejectShort, setRejectShort] = useState("")
+  const [rejectVideoTab, setRejectVideoTab] = useState<string>("")
+  const [rejectCommentsByVideoId, setRejectCommentsByVideoId] = useState<
+    Record<string, string>
+  >({})
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
@@ -170,38 +180,62 @@ export default function MedicalPackageDetailPage() {
     }
   }, [token, id])
 
+  /** Refresh package without full-page loading (e.g. after approve/reject one deliverable). */
+  const refreshPackage = useCallback(async () => {
+    if (!token || !id) return
+    try {
+      const res = await getPackage(token, id)
+      setPkg(res.package)
+    } catch {
+      /* keep existing pkg */
+    }
+  }, [token, id])
+
   useEffect(() => {
     load()
   }, [load])
 
-  const canReviewVideo =
-    pkg?.status === "MEDICAL_REVIEW" &&
-    pkg.videoTrackStatus === "PENDING" &&
-    canAccess
+  useEffect(() => {
+    if (!pkg) return
+    const vids = pkg.videos ?? []
+    const pick =
+      (focusVideoId && vids.find((v) => v.id === focusVideoId)) || vids[0] || null
+    setActiveVideo(pick)
+    if (pick) setRejectVideoTab(pick.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: avoid resetting dialog selection on in-place merges
+  }, [pkg?.id, focusVideoId])
 
-  const longAssets = useMemo(
-    () => assetsOfType(pkg ?? ({} as FinalPackage), "LONG_FORM"),
+  const sortedVideos = useMemo(
+    () => (pkg ? packageVideosSorted(pkg) : []),
     [pkg]
   )
-  const shortAssets = useMemo(() => {
-    const list = assetsOfType(pkg ?? ({} as FinalPackage), "SHORT_FORM")
-    return [...list].sort(
-      (a, b) => (a.order ?? 0) - (b.order ?? 0)
-    )
-  }, [pkg])
+
+  const deliverableLabels = useMemo(
+    () => deliverableLabelsByVideoId(sortedVideos),
+    [sortedVideos]
+  )
+
+  useEffect(() => {
+    if (!focusVideoId || loading) return
+    const t = window.setTimeout(() => {
+      document
+        .getElementById(`video-${focusVideoId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }, 100)
+    return () => window.clearTimeout(t)
+  }, [focusVideoId, loading])
 
   async function handleApprove() {
-    if (!token || !id) return
+    if (!token || !activeVideo) return
     setBusy(true)
     try {
-      const res = await approvePackage(token, id, {
+      const res = await approvePackageVideo(token, activeVideo.id, {
         comments: approveComments.trim() || "Video track approved.",
       })
-      setPkg(res.package)
       setApproveOpen(false)
       setApproveComments("")
       toast.success(res.message ?? "Approved")
-      router.push("/medical-affairs-packages")
+      await refreshPackage()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Approve failed")
     } finally {
@@ -210,48 +244,35 @@ export default function MedicalPackageDetailPage() {
   }
 
   async function handleReject() {
-    if (!token || !id) return
-    const itemFeedback: PackageItemFeedbackEntry[] = []
-    const lc = rejectLong.trim()
-    const sc = rejectShort.trim()
-    for (const v of longAssets) {
-      if (lc) {
-        itemFeedback.push({
-          videoAssetId: v.id,
-          field: "VIDEO",
-          hasIssue: true,
-          comment: lc,
-        })
-      }
-    }
-    for (const v of shortAssets) {
-      if (sc) {
-        itemFeedback.push({
-          videoAssetId: v.id,
-          field: "VIDEO",
-          hasIssue: true,
-          comment: sc,
-        })
-      }
-    }
-    if (itemFeedback.length === 0) {
-      toast.error(
-        "Add feedback for at least one video (long and/or short sections)."
-      )
+    if (!token || !activeVideo) return
+    const comment = (rejectCommentsByVideoId[activeVideo.id] ?? "").trim()
+    if (!comment) {
+      toast.error("Add feedback for the selected deliverable.")
       return
     }
+    const asset = getCurrentVideoAsset(activeVideo)
+    if (!asset?.id) {
+      toast.error("Missing video asset.")
+      return
+    }
+    const itemFeedback: PackageItemFeedbackEntry[] = [
+      {
+        videoAssetId: asset.id,
+        field: "VIDEO",
+        hasIssue: true,
+        comment,
+      },
+    ]
     setBusy(true)
     try {
-      const res = await rejectPackage(token, id, {
+      const res = await rejectPackageVideo(token, activeVideo.id, {
         overallComments: "",
         itemFeedback,
       })
-      setPkg(res.package)
       setRejectOpen(false)
-      setRejectLong("")
-      setRejectShort("")
-      toast.warning(res.message ?? "Package rejected — Agency will resubmit.")
-      router.push("/medical-affairs-packages")
+      setRejectVideoTab("")
+      toast.warning(res.message ?? "Video track rejected")
+      await refreshPackage()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Reject failed")
     } finally {
@@ -290,161 +311,193 @@ export default function MedicalPackageDetailPage() {
     )
   }
 
-  const status = pkg.status as PackageStatus
-
   return (
-    <div className="min-h-full flex-1 bg-linear-to-b from-muted/40 to-background">
-      <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
-        <Button variant="ghost" size="sm" className="-ml-2 mb-6" asChild>
+    <div className="min-h-full flex-1 bg-background">
+      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
+        <Button variant="ghost" size="sm" className="mb-8 -ml-2" asChild>
           <Link href="/medical-affairs-packages">
-            <ArrowLeft className="mr-1 size-4" />
+            <ArrowLeft className="mr-2 size-4" />
             Medical queue
           </Link>
         </Button>
 
-        <header className="mb-8 space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge
-              variant="outline"
-              className={cn("uppercase", packageStatusBadgeClass(status))}
-            >
-              {PACKAGE_STATUS_LABELS[status]}
-            </Badge>
-            <Badge variant="secondary" className="font-normal">
-              Video track: {TRACK_STATUS_LABELS[pkg.videoTrackStatus]}
-            </Badge>
-            <Badge variant="outline" className="font-normal">
-              Metadata track: {TRACK_STATUS_LABELS[pkg.metadataTrackStatus]}
+        <header className="mb-10 space-y-4 border-b border-border pb-8">
+          <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+            Phase 6 · Medical (video track)
+          </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 space-y-1">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+                {pkg.name ?? pkg.title}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Script:{" "}
+                <span className="font-medium text-foreground">
+                  {pkg.script?.title ?? "—"}
+                </span>
+                {pkg.uploadedBy && (
+                  <>
+                    {" · "}
+                    {pkg.uploadedBy.firstName} {pkg.uploadedBy.lastName}
+                  </>
+                )}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Updated {formatPackageDate(pkg.updatedAt)}
+              </p>
+            </div>
+            <Badge variant="secondary" className="w-fit shrink-0 font-normal">
+              {sortedVideos.length} deliverable
+              {sortedVideos.length === 1 ? "" : "s"}
             </Badge>
           </div>
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-              {pkg.name ?? pkg.title}
-            </h1>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Review videos only. Metadata is reviewed by Brand in parallel.
-            </p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Script:{" "}
-              <span className="font-medium text-foreground">
-                {pkg.script?.title ?? "—"}
-              </span>
-              {" · "}
-              Package v{pkg.version}
-              {pkg.uploadedBy && (
-                <>
-                  {" · "}
-                  Uploaded by {pkg.uploadedBy.firstName}{" "}
-                  {pkg.uploadedBy.lastName}
-                </>
-              )}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Updated {formatPackageDate(pkg.updatedAt)}
-              {pkg.assignedAt
-                ? ` · Assigned ${formatPackageDate(pkg.assignedAt)}`
-                : ""}
-            </p>
-          </div>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            This page shows only the <strong>video file</strong> for each
+            deliverable. Title, description, tags, and thumbnails are{" "}
+            <strong>not</strong> shown here — Content/Brand reviews metadata in
+            their own workflow.
+          </p>
         </header>
 
-        <PackageDetailSubTabs
-          key={pkg.id}
-          pkg={pkg}
-          token={token}
-          packageId={id}
-        >
+        <div className="space-y-10">
           <PackageTatCard pkg={pkg} />
 
-          {!canReviewVideo && status === "MEDICAL_REVIEW" && (
-            <Card className="border-dashed border-border bg-card/80">
-              <CardContent className="flex flex-col gap-2 py-5 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-muted-foreground">
-                  {pkg.videoTrackStatus === "APPROVED"
-                    ? "You have already approved the video track for this version. Brand may still be reviewing metadata, or the package is waiting for the next stage."
-                    : "No video review action is required from you for this package right now."}
-                </p>
-              </CardContent>
-            </Card>
-          )}
+          <section className="space-y-8">
+            {sortedVideos.map((video) => {
+              const asset = getCurrentVideoAsset(video)
+              if (!asset) return null
+              const pa = videoAssetToPackageAsset(asset)
+              const label = deliverableLabels.get(video.id) ?? "Deliverable"
+              const icon =
+                video.type === "LONG_FORM" ? (
+                  <Clapperboard className="size-5" />
+                ) : (
+                  <Smartphone className="size-5" />
+                )
+              const canReview =
+                video.status === "MEDICAL_REVIEW" &&
+                video.videoTrackStatus === "PENDING" &&
+                canAccess
 
-          {canReviewVideo && (
-            <Card className="border-primary/30 bg-primary/5 dark:bg-primary/10">
-              <CardContent className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-medium text-foreground">
-                    Your review is needed
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Watch the videos below, then approve the video track or reject
-                    with feedback for the Agency.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button onClick={() => setApproveOpen(true)} className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700">
-                    <CheckCircle className="mr-2 size-4" />
-                    Approve videos
-                  </Button>
-                  <Button variant="outline" onClick={() => setRejectOpen(true)} className="gap-1.5 text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-500/30 dark:text-red-500 dark:hover:bg-red-950/50 dark:hover:text-red-400">
-                    <XCircle className="mr-2 size-4" />
-                    Reject package
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+              return (
+                <Card
+                  key={video.id}
+                  id={`video-${video.id}`}
+                  className="scroll-mt-24 overflow-hidden border-border shadow-sm"
+                >
+                  <CardHeader className="space-y-4 border-b border-border bg-muted/15 py-5 sm:py-6">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <CardTitle className="text-base font-semibold">
+                          {label}
+                        </CardTitle>
+                        <CardDescription className="mt-1">
+                          Video file only — medical review of the uploaded file.
+                        </CardDescription>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "uppercase",
+                            videoStatusBadgeClass(video.status)
+                          )}
+                        >
+                          {VIDEO_STATUS_LABELS[video.status]}
+                        </Badge>
+                        <Badge variant="secondary" className="text-xs font-normal">
+                          Video track:{" "}
+                          {TRACK_STATUS_LABELS[video.videoTrackStatus]}
+                        </Badge>
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          v{video.currentVersion}
+                        </span>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-6 px-4 py-6 sm:px-6">
+                    <div>
+                      <p className="mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                        Video file
+                      </p>
+                      <PackageVideoPlayerCard
+                        asset={pa}
+                        label={label}
+                        icon={icon}
+                      />
+                    </div>
 
-          <section className="space-y-4">
-            <div>
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                Video track (your review scope)
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                All videos as part of this package are reviewed here. 
-              </p>
-            </div>
-            <div className="space-y-6">
-              {longAssets.map((a) => (
-                <PackageVideoPlayerCard
-                  key={a.id}
-                  asset={a}
-                  label="Long-form (main)"
-                  icon={<Clapperboard className="size-5" />}
-                />
-              ))}
-              {shortAssets.map((a, i) => (
-                <PackageVideoPlayerCard
-                  key={a.id}
-                  asset={a}
-                  label={`Short-form ${i + 1}`}
-                  icon={<Smartphone className="size-5" />}
-                />
-              ))}
-              {longAssets.length === 0 && shortAssets.length === 0 && (
-                <Card>
-                  <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                    No video assets on this package yet.
+                    {canReview ? (
+                      <div className="flex flex-col gap-4 rounded-lg border border-primary/25 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between dark:bg-primary/10">
+                        <p className="text-sm text-foreground">
+                          <span className="font-medium">Action required</span>
+                          <span className="text-muted-foreground">
+                            {" "}
+                            — approve or reject this video file (not metadata)
+                          </span>
+                        </p>
+                        <div className="flex flex-wrap gap-2 sm:shrink-0">
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              setActiveVideo(video)
+                              setApproveOpen(true)
+                            }}
+                            className="bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
+                          >
+                            <CheckCircle className="mr-2 size-4" />
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setActiveVideo(video)
+                              setRejectVideoTab(video.id)
+                              setRejectOpen(true)
+                            }}
+                            className="text-destructive hover:bg-destructive/10"
+                          >
+                            <XCircle className="mr-2 size-4" />
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      video.status === "MEDICAL_REVIEW" &&
+                      (video.videoTrackStatus === "APPROVED" ? (
+                        <p className="flex items-center rounded-lg border border-success bg-green-950/20 px-4 py-3 text-sm text-green-400 border-green-600">
+                          <CheckCircle className="mr-2 size-4" />
+                          Video track approved for this version.
+                        </p>
+                      ) : (
+                        <p className="rounded-lg border border-dashed border-border bg-muted/25 px-4 py-3 text-sm text-muted-foreground">
+                          <Clock className="mr-2 size-4" />
+                          No video track action for you on this deliverable right
+                          now.
+                        </p>
+                      ))
+                    )}
                   </CardContent>
                 </Card>
-              )}
-            </div>
+              )
+            })}
           </section>
 
-          <Card className="border-dashed border-border bg-muted/20">
-            <CardContent className="flex gap-3 py-4 text-sm text-muted-foreground">
-              <Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-              <p>
-                <span className="font-medium text-foreground">
-                  Metadata track (not shown here)
-                </span>
-                : Full description, tags, and thumbnail options are reviewed by
-                Content/Brand alongside this package. Use the Feedback &
-                revisions tab if you need prior rejection notes that mention
-                non-video assets.
-              </p>
-            </CardContent>
-          </Card>
-        </PackageDetailSubTabs>
+          <div className="space-y-3">
+            <h2 className="text-base font-semibold tracking-tight">
+              Video-track feedback &amp; revisions
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Only rejections that concern the <strong>video file</strong> are
+              listed here.
+            </p>
+            <PackageFeedbackAndRevisionsPanel
+              pkg={pkg}
+              trackFilter="VIDEO_TRACK"
+            />
+          </div>
+        </div>
       </div>
 
       <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
@@ -452,13 +505,12 @@ export default function MedicalPackageDetailPage() {
           <DialogHeader>
             <DialogTitle>Approve video track</DialogTitle>
             <DialogDescription>
-              Confirms medical sign-off on the video track (long + short videos
-              only). Content/Brand may still be reviewing metadata and thumbnails
-              in parallel.
+              Medical sign-off for this deliverable only. Other videos in the
+              package are unaffected.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="ap">Comments</Label>
+            <Label htmlFor="ap">Comments(optional)</Label>
             <Textarea
               id="ap"
               value={approveComments}
@@ -480,32 +532,59 @@ export default function MedicalPackageDetailPage() {
       </Dialog>
 
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Reject package</DialogTitle>
+            <DialogTitle>Reject video track</DialogTitle>
             <DialogDescription>
-              Sends the package back to Agency. Add video feedback below (at
-              least one field required).
+              Each deliverable has its own independent flow. Choose a
+              deliverable below and add feedback for the submitted video file.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Long form feedback (optional)</Label>
-              <Textarea
-                value={rejectLong}
-                onChange={(e) => setRejectLong(e.target.value)}
-                rows={2}
+
+          {sortedVideos.length > 0 && (
+            <div className="space-y-4">
+              <PackageListTabNav<string>
+                tabs={sortedVideos.map((v) => ({
+                  key: v.id,
+                  label: deliverableLabels.get(v.id) ?? "Deliverable",
+                }))}
+                active={
+                  rejectVideoTab ||
+                  activeVideo?.id ||
+                  sortedVideos[0]!.id
+                }
+                onChange={(k) => {
+                  setRejectVideoTab(k)
+                  const chosen = sortedVideos.find((v) => v.id === k) ?? null
+                  setActiveVideo(chosen)
+                }}
+                ariaLabel="Reject deliverable tabs"
               />
+
+              <div className="space-y-2">
+                <Label htmlFor="rj">Feedback(required)</Label>
+                <Textarea
+                  id="rj"
+                  value={
+                    rejectCommentsByVideoId[
+                      rejectVideoTab || activeVideo?.id || ""
+                    ] ?? ""
+                  }
+                  onChange={(e) => {
+                    const vid = rejectVideoTab || activeVideo?.id
+                    if (!vid) return
+                    const val = e.target.value
+                    setRejectCommentsByVideoId((prev) => ({
+                      ...prev,
+                      [vid]: val,
+                    }))
+                  }}
+                  rows={4}
+                  placeholder="What should Agency change in the video file?"
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>Short form feedback (optional)</Label>
-              <Textarea
-                value={rejectShort}
-                onChange={(e) => setRejectShort(e.target.value)}
-                rows={2}
-              />
-            </div>
-          </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setRejectOpen(false)}>
               Cancel

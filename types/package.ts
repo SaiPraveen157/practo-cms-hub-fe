@@ -1,19 +1,32 @@
 /**
- * Phase 6 — Final Package Delivery (redesigned API).
- * Postman: `postman/Phase 6 — Final Package Delivery.postman_collection.json`
+ * Phase 6 — Final Package Delivery (per-video independent flow).
+ * Postman: `postman/Phase 6 — Final Package Delivery (Per-Video Flow).postman_collection.json`
  */
 
+/** @deprecated Legacy package-level status; workflow is per `PackageVideo.status`. */
 export type PackageStatus =
   | "DRAFT"
   | "MEDICAL_REVIEW"
   | "BRAND_REVIEW"
+  | "BRAND_VIDEO_REVIEW"
   | "APPROVER_REVIEW"
+  | "AWAITING_APPROVER"
   | "APPROVED"
   | "REJECTED"
+  | "WITHDRAWN"
 
 export type PackageTrackStatus = "PENDING" | "APPROVED" | "REJECTED"
 
 export type PackageAssetType = "LONG_FORM" | "SHORT_FORM" | "THUMBNAIL"
+
+export type PackageVideoStatus =
+  | "MEDICAL_REVIEW"
+  | "BRAND_VIDEO_REVIEW"
+  | "AWAITING_APPROVER"
+  | "APPROVED"
+  | "WITHDRAWN"
+
+export type ThumbnailReviewStatus = "PENDING" | "APPROVED" | "REJECTED"
 
 export type PackageFeedbackAssetType =
   | PackageAssetType
@@ -21,7 +34,6 @@ export type PackageFeedbackAssetType =
   | "DESCRIPTION"
   | "TAGS"
 
-/** Reject / review item feedback (redesigned). */
 export type PackageItemFeedbackField =
   | "VIDEO"
   | "TITLE"
@@ -30,7 +42,8 @@ export type PackageItemFeedbackField =
   | "THUMBNAIL"
 
 export interface PackageItemFeedbackEntry {
-  videoAssetId: string
+  videoAssetId?: string
+  thumbnailId?: string
   field: PackageItemFeedbackField
   hasIssue: boolean
   comment?: string
@@ -50,6 +63,42 @@ export interface PackageUserRef {
   role?: string
 }
 
+/** Thumbnail on a package video asset (reviewed individually by Brand). */
+export interface PackageThumbnailRecord {
+  id: string
+  assetId: string
+  fileUrl: string
+  fileName: string
+  fileType?: string | null
+  fileSize?: number | null
+  status: ThumbnailReviewStatus
+  comment?: string | null
+  version?: number
+  createdAt?: string
+}
+
+/** One version snapshot for a package video (video file + metadata + thumbnails). */
+export interface PackageVideoAsset {
+  id: string
+  packageVideoId?: string
+  type: "LONG_FORM" | "SHORT_FORM"
+  fileUrl: string
+  fileName: string
+  fileType?: string | null
+  fileSize?: number | null
+  order?: number | null
+  version: number
+  createdAt?: string
+  title?: string | null
+  description?: string | null
+  tags?: string[] | null
+  thumbnails?: PackageThumbnailRecord[]
+}
+
+/**
+ * Legacy flat asset shape (nested thumbnails as PackageAsset[]) — still used by
+ * some UI helpers / players; convert from `PackageVideoAsset` when needed.
+ */
 export interface PackageAsset {
   id: string
   packageId?: string
@@ -62,11 +111,9 @@ export interface PackageAsset {
   isSelected?: boolean
   version?: number
   createdAt?: string
-  /** Per-video metadata (nested model from GET package). */
   title?: string | null
   description?: string | null
   tags?: string[] | null
-  /** Thumbnail options for this video (nested). */
   thumbnails?: PackageAsset[]
 }
 
@@ -109,6 +156,40 @@ export interface PackageReview {
   itemFeedback?: PackageItemFeedbackEntry[]
 }
 
+export interface PackageVideoReview {
+  id: string
+  packageVideoId: string
+  reviewerId?: string
+  reviewerType: string
+  decision: string
+  overallComments?: string | null
+  trackReviewed?: string
+  stageAtReview?: string
+  reviewedAt: string
+  itemFeedback?: PackageItemFeedbackEntry[]
+}
+
+/** One deliverable video — independent workflow from siblings in the same package. */
+export interface PackageVideo {
+  id: string
+  packageId: string
+  type: "LONG_FORM" | "SHORT_FORM"
+  status: PackageVideoStatus
+  videoTrackStatus: PackageTrackStatus
+  metadataTrackStatus: PackageTrackStatus
+  currentVersion: number
+  assets: PackageVideoAsset[]
+  reviews?: PackageVideoReview[]
+  uploadedById?: string | null
+  createdAt?: string
+  updatedAt?: string
+  /** When API embeds script on queue items */
+  scriptId?: string
+  script?: PackageScriptRef
+  /** When API embeds parent package summary */
+  package?: { id: string; name?: string; scriptId?: string }
+}
+
 export interface PackageTat {
   hoursElapsed: number
   isOverdue: boolean
@@ -118,18 +199,18 @@ export interface PackageTat {
   cycleNumber: number
 }
 
+/** API package container — no workflow status at package level. */
 export interface FinalPackage {
   id: string
   scriptId: string
-  status: PackageStatus
-  version: number
-  videoTrackStatus: PackageTrackStatus
-  metadataTrackStatus: PackageTrackStatus
-  /** Package display name (submit `name`). */
   name?: string
-  title: string
-  description: string
-  tags: string[]
+  /** Legacy display fallback */
+  title?: string
+  description?: string
+  tags?: string[]
+  language?: string
+  stage?: string
+  videos: PackageVideo[]
   assignedAt?: string | null
   lockedAt?: string | null
   createdAt: string
@@ -137,13 +218,17 @@ export interface FinalPackage {
   script?: PackageScriptRef
   uploadedBy?: PackageUserRef
   lockedBy?: PackageUserRef | null
-  currentAssets: PackageAsset[]
+  tat?: PackageTat | null
+  /** @deprecated Aggregated / legacy — prefer per-video fields */
+  status?: PackageStatus
+  version?: number
+  videoTrackStatus?: PackageTrackStatus
+  metadataTrackStatus?: PackageTrackStatus
+  currentAssets?: PackageAsset[]
   previousAssets?: PackageAsset[]
-  /** Legacy single selected thumb; prefer nested `thumbnails[].isSelected` per video. */
   selectedThumbnail?: PackageAsset | null
   latestRejection?: PackageLatestRejection | null
   reviews?: PackageReview[]
-  tat?: PackageTat | null
 }
 
 export interface PackageUploadUrlResponse {
@@ -153,7 +238,6 @@ export interface PackageUploadUrlResponse {
   key: string
 }
 
-/** Presign request — `assetType` is `video` or `thumbnail`. */
 export type PackageUploadUrlAssetType = "video" | "thumbnail"
 
 export interface SubmitPackageThumbnailInput {
@@ -169,79 +253,83 @@ export interface SubmitPackageVideoInput {
   fileName: string
   fileType?: string
   fileSize?: number
-  order: number
-  title: string
-  description: string
-  tags: string[]
+  title?: string
+  description?: string
+  tags?: string[]
   thumbnails: SubmitPackageThumbnailInput[]
 }
 
 export interface SubmitPackageBody {
   scriptId: string
   name: string
-  videos: SubmitPackageVideoInput[]
+  video: SubmitPackageVideoInput
 }
 
-export interface ResubmitVideosBody {
-  videos: Array<{
-    type: "LONG_FORM" | "SHORT_FORM"
-    fileUrl: string
-    fileName: string
-    fileType?: string
-    fileSize?: number
-    order: number
-  }>
+export interface AddPackageVideoBody extends SubmitPackageVideoInput {}
+
+export interface ResubmitPackageVideoBody {
+  fileUrl: string
+  fileName: string
+  fileType?: string
+  fileSize?: number
 }
 
-export interface ResubmitVideoMetadataEntry {
-  order: number
-  type: "LONG_FORM" | "SHORT_FORM"
+export interface ResubmitPackageVideoMetadataBody {
   title: string
   description: string
-  tags: string[]
+  tags?: string[]
   thumbnails: SubmitPackageThumbnailInput[]
 }
 
-export interface ResubmitMetadataBody {
-  videoMetadata: ResubmitVideoMetadataEntry[]
-}
-
-export type ApprovePackageBody = {
+export type ApprovePackageVideoBody = {
   comments?: string
-  /** Brand metadata approval at MEDICAL_REVIEW — one selection per video asset. */
-  thumbnailSelections?: Array<{ assetId: string; thumbnailId: string }>
 }
 
-export type RejectPackageBody = {
-  overallComments: string
-  itemFeedback?: PackageItemFeedbackEntry[]
+export type RejectPackageVideoBody = {
+  overallComments?: string
+  itemFeedback: PackageItemFeedbackEntry[]
+}
+
+export interface ReviewThumbnailBody {
+  status: "APPROVED" | "REJECTED"
+  comment?: string
 }
 
 export interface PackageQueueResponse {
   success?: boolean
-  available: FinalPackage[]
-  myReviews: FinalPackage[]
   total: number
+  videos: PackageVideo[]
 }
 
 export interface PackageStatsResponse {
   success?: boolean
-  draft: number
-  inReview: number
-  overdue: number
-  approved: number
-  rejected: number
-  tatConfig?: {
-    limitHours: number
-    repeatCycleHours: number
+  stats: {
+    total: number
+    byStatus: Partial<Record<PackageVideoStatus | string, number>>
   }
 }
 
+export interface PackageVersionHistoryEntry {
+  version: number
+  asset: PackageVideoAsset
+  reviews?: PackageVideoReview[]
+}
+
+export interface PackageVideoVersionsResponse {
+  success?: boolean
+  videoId: string
+  currentVersion: number
+  totalVersions?: number
+  versions: PackageVersionHistoryEntry[]
+}
+
+/** @deprecated Use PackageVideoVersionsResponse per video */
 export interface PackageVersionEntry {
   version: number
   assets: PackageAsset[]
 }
 
+/** @deprecated */
 export interface PackageVersionsResponse {
   success?: boolean
   packageId: string
@@ -251,9 +339,9 @@ export interface PackageVersionsResponse {
 
 export interface PackageMyReviewsResponse {
   success?: boolean
-  packages: FinalPackage[]
   total: number
   page: number
   limit: number
-  totalPages: number
+  totalPages?: number
+  videos: PackageVideo[]
 }
