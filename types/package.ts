@@ -169,6 +169,15 @@ export interface PackageVideoReview {
   itemFeedback?: PackageItemFeedbackEntry[]
 }
 
+export interface PackageTat {
+  hoursElapsed: number
+  isOverdue: boolean
+  tatLimitHours: number
+  repeatCycleHours: number
+  hoursInCurrentCycle: number
+  cycleNumber: number
+}
+
 /** One deliverable video — independent workflow from siblings in the same package. */
 export interface PackageVideo {
   id: string
@@ -183,20 +192,15 @@ export interface PackageVideo {
   uploadedById?: string | null
   createdAt?: string
   updatedAt?: string
+  /** Review SLA clock start for current stage (queue / detail). */
+  assignedAt?: string | null
+  /** Per-video TAT from API (queue); falls back to assignedAt-derived SLA in UI. */
+  tat?: PackageTat | null
   /** When API embeds script on queue items */
   scriptId?: string
   script?: PackageScriptRef
   /** When API embeds parent package summary */
   package?: { id: string; name?: string; scriptId?: string }
-}
-
-export interface PackageTat {
-  hoursElapsed: number
-  isOverdue: boolean
-  tatLimitHours: number
-  repeatCycleHours: number
-  hoursInCurrentCycle: number
-  cycleNumber: number
 }
 
 /** API package container — no workflow status at package level. */

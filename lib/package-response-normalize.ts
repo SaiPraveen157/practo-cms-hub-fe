@@ -2,6 +2,7 @@
  * Coerce Phase 6 package / video payloads (camelCase or snake_case).
  */
 
+import { normalizePackageTat } from "@/lib/package-tat"
 import { videoAssetToPackageAsset } from "@/lib/package-video-helpers"
 import type {
   FinalPackage,
@@ -180,6 +181,8 @@ export function normalizePackageVideo(v: unknown): PackageVideo {
     uploadedById: (x.uploadedById ?? x.uploaded_by_id) as string | undefined,
     createdAt: (x.createdAt ?? x.created_at) as string | undefined,
     updatedAt: (x.updatedAt ?? x.updated_at) as string | undefined,
+    assignedAt: (x.assignedAt ?? x.assigned_at) as string | null | undefined,
+    tat: normalizePackageTat(x.tat) ?? undefined,
     scriptId: sid,
     script,
     package: nestedPkg

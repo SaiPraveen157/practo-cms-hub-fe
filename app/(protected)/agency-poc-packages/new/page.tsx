@@ -820,8 +820,8 @@ export default function AgencySubmitPackagePage() {
                 </h1>
                 <p className="mt-3 max-w-prose text-base leading-relaxed text-muted-foreground">
                   {addingToExisting
-                    ? "Upload and describe each new deliverable here. Nothing is sent until the last step. Package name stays the same — rename it from the package page if needed."
-                    : "Add any number of videos — for each one, choose long- or short-form before uploading. Nothing is submitted until the final step."}
+                    ? "Upload and describe each new deliverable here. Nothing is sent until the last step. Package name stays the same — rename it from the package page if needed. After submission, each deliverable shows a TAT progress bar while reviewers work (24h target per round)."
+                    : "Add any number of videos — for each one, choose long- or short-form before uploading. Nothing is submitted until the final step. After submission, each deliverable shows a TAT progress bar while reviewers work (24h target per round)."}
                 </p>
               </div>
             </header>
