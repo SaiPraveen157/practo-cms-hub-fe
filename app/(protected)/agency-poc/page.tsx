@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { useAuthStore } from "@/store"
 import { getPackageQueue } from "@/lib/packages-api"
 import { scriptNeedsAgencyFirstLineUpUpload } from "@/lib/agency-first-line-up"
+import { groupQueueVideosIntoPackages } from "@/lib/package-video-helpers"
 import { packageVisibleInAgencyPhase6Workflow } from "@/lib/video-phase-gates"
 import { getScriptQueue, getScriptStats } from "@/lib/scripts-api"
 import { getVideoQueue } from "@/lib/videos-api"
@@ -123,10 +124,8 @@ export default function AgencyPocPage() {
         ]
         setVideos(mergedVideos)
         const m = new Map<string, string>()
-        for (const p of [
-          ...(packageRes.available ?? []),
-          ...(packageRes.myReviews ?? []),
-        ]) {
+        const packages = groupQueueVideosIntoPackages(packageRes.videos ?? [])
+        for (const p of packages) {
           if (
             p.scriptId &&
             p.id &&

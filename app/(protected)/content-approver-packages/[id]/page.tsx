@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import Link from "next/link"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -23,53 +23,58 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useAuthStore } from "@/store"
+import { approvePackageVideo, getPackage } from "@/lib/packages-api"
 import {
-  approvePackage,
-  getPackage,
-  rejectPackage,
-} from "@/lib/packages-api"
+  deliverableLabelsByVideoId,
+  getCurrentVideoAsset,
+  mergeVideoIntoPackage,
+  packageReadyForContentApproverFullView,
+  packageVideosSorted,
+  thumbnailsOnAsset,
+  videoAssetToPackageAsset,
+} from "@/lib/package-video-helpers"
 import type {
   FinalPackage,
-  PackageAsset,
-  PackageItemFeedbackEntry,
-  PackageStatus,
+  PackageThumbnailRecord,
 } from "@/types/package"
 import type { UserRole } from "@/types/auth"
 import {
-  filterVideoDeliverableDescriptionBlocks,
-  parsePerVideoPackageDescriptionBlocks,
-} from "@/lib/package-composed-description"
-import {
-  PACKAGE_STATUS_LABELS,
   TRACK_STATUS_LABELS,
-  assetsOfType,
+  VIDEO_STATUS_LABELS,
   formatPackageDate,
-  formatPackageFileSize,
-  packageStatusBadgeClass,
-  thumbnailsForVideo,
+  videoStatusBadgeClass,
 } from "@/lib/package-ui"
 import { PackageTatCard } from "@/components/packages/package-tat-card"
 import { PackageInlineVideoCard } from "@/components/packages/package-inline-video-card"
+import { PackageVideoMetadataProminent } from "@/components/packages/package-video-metadata-prominent"
 import {
   ArrowLeft,
-  Calendar,
-  CheckCircle,
+  CheckCircle2,
   Clapperboard,
-  Hash,
-  ImageIcon,
-  Info,
+  ExternalLink,
   Loader2,
+  Package,
   Smartphone,
-  User,
-  XCircle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
+function thumbBadgeClass(s: PackageThumbnailRecord["status"]) {
+  switch (s) {
+    case "APPROVED":
+      return "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200"
+    case "REJECTED":
+      return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200"
+    default:
+      return "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
+  }
+}
+
 export default function ContentApproverPackageDetailPage() {
   const params = useParams()
-  const router = useRouter()
+  const searchParams = useSearchParams()
   const id = params.id as string
+  const focusVideoId = (searchParams.get("video") ?? "").trim()
   const token = useAuthStore((s) => s.token)
   const user = useAuthStore((s) => s.user)
   const role = user?.role as UserRole | undefined
@@ -81,10 +86,7 @@ export default function ContentApproverPackageDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [approveOpen, setApproveOpen] = useState(false)
-  const [rejectOpen, setRejectOpen] = useState(false)
   const [approveComments, setApproveComments] = useState("")
-  const [rejectLong, setRejectLong] = useState("")
-  const [rejectShort, setRejectShort] = useState("")
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
@@ -105,123 +107,56 @@ export default function ContentApproverPackageDetailPage() {
     load()
   }, [load])
 
-  const longAssets = useMemo(
-    () => assetsOfType(pkg ?? ({} as FinalPackage), "LONG_FORM"),
+  const sortedVideos = useMemo(
+    () => (pkg ? packageVideosSorted(pkg) : []),
     [pkg]
   )
-  const shortAssets = useMemo(() => {
-    const list = assetsOfType(pkg ?? ({} as FinalPackage), "SHORT_FORM")
-    return [...list].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-  }, [pkg])
-  const rawDescriptionBlocks = useMemo(
-    () => parsePerVideoPackageDescriptionBlocks(pkg?.description ?? ""),
-    [pkg?.description]
-  )
-  const videoDeliverableBlocks = useMemo(
-    () => filterVideoDeliverableDescriptionBlocks(rawDescriptionBlocks),
-    [rawDescriptionBlocks]
+
+  const deliverableLabels = useMemo(
+    () => deliverableLabelsByVideoId(sortedVideos),
+    [sortedVideos]
   )
 
-  const videoReviewSteps = useMemo(() => {
-    const steps: Array<{
-      asset: PackageAsset
-      label: string
-      icon: ReactNode
-    }> = []
-    for (const a of longAssets) {
-      steps.push({
-        asset: a,
-        label: "Long-form (main)",
-        icon: <Clapperboard className="size-5" />,
-      })
-    }
-    shortAssets.forEach((a, i) => {
-      steps.push({
-        asset: a,
-        label: `Short-form ${i + 1}`,
-        icon: <Smartphone className="size-5" />,
-      })
-    })
-    return steps
-  }, [longAssets, shortAssets])
-
-  const flatThumbnailAssets = useMemo(() => {
-    const list = assetsOfType(pkg ?? ({} as FinalPackage), "THUMBNAIL")
-    return [...list].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-  }, [pkg])
-
-  const hasNestedThumbnailsOnVideos = useMemo(
-    () =>
-      videoReviewSteps.some((s) => thumbnailsForVideo(s.asset).length > 0),
-    [videoReviewSteps]
+  const awaitingVideos = useMemo(
+    () => sortedVideos.filter((v) => v.status === "AWAITING_APPROVER"),
+    [sortedVideos]
   )
 
-  const canFinalApprove = pkg?.status === "APPROVER_REVIEW" && canAccess
+  useEffect(() => {
+    if (!focusVideoId || loading) return
+    const t = window.setTimeout(() => {
+      document
+        .getElementById(`video-${focusVideoId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }, 100)
+    return () => window.clearTimeout(t)
+  }, [focusVideoId, loading])
 
-  async function handleApprove() {
-    if (!token || !id) return
+  async function handleApprovePackage() {
+    if (!token || awaitingVideos.length === 0) return
     setBusy(true)
+    const comment =
+      approveComments.trim() || "Final approval for English final package."
     try {
-      const res = await approvePackage(token, id, {
-        comments: approveComments.trim() || "Final approval.",
-      })
-      setPkg(res.package)
+      let updated = pkg
+      for (const video of awaitingVideos) {
+        const res = await approvePackageVideo(token, video.id, {
+          comments: comment,
+        })
+        updated = updated ? mergeVideoIntoPackage(updated, res.video) : updated
+        setPkg(updated)
+      }
       setApproveOpen(false)
       setApproveComments("")
-      toast.success(res.message ?? "Package approved and locked")
-      router.push("/content-approver-packages")
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Approve failed")
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleReject() {
-    if (!token || !id) return
-    const itemFeedback: PackageItemFeedbackEntry[] = []
-    const lc = rejectLong.trim()
-    const sc = rejectShort.trim()
-    for (const v of longAssets) {
-      if (lc) {
-        itemFeedback.push({
-          videoAssetId: v.id,
-          field: "VIDEO",
-          hasIssue: true,
-          comment: lc,
-        })
-      }
-    }
-    for (const v of shortAssets) {
-      if (sc) {
-        itemFeedback.push({
-          videoAssetId: v.id,
-          field: "VIDEO",
-          hasIssue: true,
-          comment: sc,
-        })
-      }
-    }
-    if (itemFeedback.length === 0) {
-      toast.error(
-        "Add feedback for at least one video (long and/or short sections)."
+      toast.success(
+        awaitingVideos.length === 1
+          ? "Package final approval recorded."
+          : `Package final approval recorded for all ${awaitingVideos.length} deliverables.`
       )
-      return
-    }
-    setBusy(true)
-    try {
-      const res = await rejectPackage(token, id, {
-        overallComments: "",
-        itemFeedback,
-      })
-      setPkg(res.package)
-      setRejectOpen(false)
-      setRejectLong("")
-      setRejectShort("")
-      toast.warning(res.message ?? "Rejected")
-      router.push("/content-approver-packages")
+      await load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Reject failed")
+      toast.error(e instanceof Error ? e.message : "Approval failed")
+      await load()
     } finally {
       setBusy(false)
     }
@@ -258,402 +193,401 @@ export default function ContentApproverPackageDetailPage() {
     )
   }
 
-  const status = pkg.status as PackageStatus
-  const displayTitle = (pkg.name?.trim() || pkg.title).trim()
+  const packageUnlocked =
+    isSuper || packageReadyForContentApproverFullView(sortedVideos)
+  const lockedForApprover = isApprover && !packageUnlocked
+
+  const showPackageApprove =
+    packageUnlocked && awaitingVideos.length > 0 && canAccess
 
   return (
-    <div className="min-h-full flex-1 bg-linear-to-b from-muted/40 via-background to-background pb-16">
-      <div className="mx-auto max-w-5xl space-y-10 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
-        <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground hover:text-foreground" asChild>
+    <div className="min-h-full bg-background pb-16">
+      <div className="mx-auto max-w-5xl space-y-8 px-4 py-6 sm:px-6 md:py-8">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 text-muted-foreground hover:text-foreground"
+          asChild
+        >
           <Link href="/content-approver-packages">
             <ArrowLeft className="mr-1 size-4" />
-            Approver queue
+            Final packages
           </Link>
         </Button>
 
-        <header className="space-y-5 border-b border-border/80 pb-8">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <header className="space-y-3 border-b border-border pb-8">
+          <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
             Phase 6 · Final package · Content approver
           </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge
-              variant="outline"
-              className={cn("uppercase", packageStatusBadgeClass(status))}
-            >
-              {PACKAGE_STATUS_LABELS[status] ?? status}
-            </Badge>
-            <Badge variant="secondary" className="font-normal">
-              Video track: {TRACK_STATUS_LABELS[pkg.videoTrackStatus]}
-            </Badge>
-            <Badge variant="outline" className="font-normal">
-              Metadata: {TRACK_STATUS_LABELS[pkg.metadataTrackStatus]}
-            </Badge>
-            <Badge variant="outline" className="tabular-nums font-normal">
-              v{pkg.version}
-            </Badge>
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-              {displayTitle}
-            </h1>
-            {pkg.name?.trim() && pkg.name.trim() !== pkg.title?.trim() ? (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 space-y-1">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+                {pkg.name ?? pkg.title}
+              </h1>
               <p className="text-sm text-muted-foreground">
-                API title field:{" "}
-                <span className="font-medium text-foreground">{pkg.title}</span>
-              </p>
-            ) : null}
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-              <span>
-                Script{" "}
+                Script:{" "}
                 <span className="font-medium text-foreground">
                   {pkg.script?.title ?? "—"}
                 </span>
-              </span>
-              {pkg.uploadedBy ? (
-                <span className="flex items-center gap-1.5">
-                  <User className="size-3.5 shrink-0" />
-                  {pkg.uploadedBy.firstName} {pkg.uploadedBy.lastName}
-                  {pkg.uploadedBy.role ? ` · ${pkg.uploadedBy.role}` : ""}
-                </span>
-              ) : null}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Updated {formatPackageDate(pkg.updatedAt)}
+              </p>
             </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <Calendar className="size-3.5" />
-                Created {formatPackageDate(pkg.createdAt)}
-              </span>
-              <span>Updated {formatPackageDate(pkg.updatedAt)}</span>
-              {pkg.assignedAt ? (
-                <span>Assigned {formatPackageDate(pkg.assignedAt)}</span>
-              ) : null}
-            </div>
-            {pkg.tags && pkg.tags.length > 0 ? (
-              <div className="flex flex-wrap items-center gap-2 pt-2">
-                <Hash className="size-3.5 shrink-0 text-muted-foreground" />
-                <div className="flex flex-wrap gap-2">
-                  {pkg.tags.map((t) => (
-                    <Badge
-                      key={t}
-                      variant="secondary"
-                      className="text-xs font-normal"
-                    >
-                      {t}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            ) : null}
+            <Badge variant="secondary" className="w-fit shrink-0 font-normal">
+              {sortedVideos.length} deliverable
+              {sortedVideos.length === 1 ? "" : "s"}
+            </Badge>
           </div>
+          <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+            {lockedForApprover ? (
+              <>
+                Full package contents (video files, metadata, thumbnails) stay
+                hidden until <strong className="font-medium text-foreground">every</strong>{" "}
+                deliverable has finished Medical and Content/Brand review. Below
+                is a status summary only. Super Admin can always open the full
+                package.
+              </>
+            ) : (
+              <>
+                Review every deliverable below, then use{" "}
+                <strong className="font-medium text-foreground">
+                  Final approve package
+                </strong>{" "}
+                when you are ready to sign off on the whole package. You cannot
+                reject at this stage — escalate offline or use Super Admin
+                withdraw if needed.
+              </>
+            )}
+          </p>
         </header>
 
-        {canFinalApprove ? (
-          <Card className="border-primary/30 bg-primary/5 dark:bg-primary/10">
-            <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-foreground">
-                <span className="font-medium">Action required.</span> Review all
-                sections below, then use final approve or reject at the bottom of
-                the page.
+        {lockedForApprover ? (
+          <Card className="border-amber-200/80 bg-amber-50/50 shadow-none dark:border-amber-900/50 dark:bg-amber-950/20">
+            <CardHeader>
+              <CardTitle className="text-base">
+                Package not ready for full Content Approver review
+              </CardTitle>
+              <CardDescription className="text-sm leading-relaxed">
+                At least one deliverable is still in Medical review or Brand
+                video quality review. When all deliverables are in{" "}
+                <span className="font-medium text-foreground">
+                  Awaiting final approval
+                </span>
+                , are already approved, or withdrawn, this page will show the
+                full contents and final sign-off actions.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                Deliverable status (summary only)
               </p>
+              <ul className="divide-y divide-border rounded-lg border border-border">
+                {sortedVideos.map((video) => {
+                  const label =
+                    deliverableLabels.get(video.id) ?? "Deliverable"
+                  return (
+                    <li
+                      key={video.id}
+                      className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <span className="font-medium text-foreground">
+                        {label}
+                      </span>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "w-fit font-normal",
+                          videoStatusBadgeClass(video.status)
+                        )}
+                      >
+                        {VIDEO_STATUS_LABELS[video.status]}
+                      </Badge>
+                    </li>
+                  )
+                })}
+              </ul>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+        <PackageTatCard pkg={pkg} />
+
+        {showPackageApprove && (
+          <Card className="border-primary/35 bg-primary/5 shadow-sm dark:bg-primary/10">
+            <CardContent className="flex flex-col gap-4 py-6 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex gap-3">
+                <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                  <Package className="size-5" />
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <p className="font-semibold text-foreground">
+                    Final approval
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    <strong className="text-foreground">
+                      {awaitingVideos.length}
+                    </strong>{" "}
+                    deliverable
+                    {awaitingVideos.length === 1 ? "" : "s"} awaiting your
+                    sign-off. One action records final approval for the whole
+                    package (same optional note for each deliverable).
+                  </p>
+                </div>
+              </div>
               <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={() =>
-                  document
-                    .getElementById("final-package-actions")
-                    ?.scrollIntoView({ behavior: "smooth" })
-                }
+                className="shrink-0 gap-2 bg-green-600 text-white hover:bg-green-700"
+                onClick={() => setApproveOpen(true)}
               >
-                Jump to sign-off
+                <CheckCircle2 className="size-4" />
+                Final approve package
               </Button>
             </CardContent>
           </Card>
-        ) : null}
+        )}
 
-        <Card className="border-blue-200/60 bg-blue-50/60 shadow-none dark:border-blue-900/40 dark:bg-blue-950/25">
-          <CardContent className="flex gap-4 py-5 sm:py-6">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-blue-700 dark:text-blue-300">
-              <Info className="size-5" />
-            </div>
-            <div className="min-w-0 space-y-2 text-sm text-muted-foreground">
-              <p className="font-semibold text-foreground">How to read this page</p>
-              <p>
-                This page shows the final deliverables for this package. Review each deliverable and approve the package at the bottom of the page.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        {!showPackageApprove && sortedVideos.length > 0 && (
+          <p className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+            Nothing is in <strong>Awaiting final approval</strong> on this
+            package right now. Other deliverables may still be with Medical,
+            Content/Brand, or Agency — they advance independently.
+          </p>
+        )}
 
-        <PackageTatCard pkg={pkg} />
-
-        {/* <section className="space-y-4">
-          <h2 className="text-lg font-semibold tracking-tight text-foreground">
-            Package at a glance
+        <section aria-label="Package deliverables" className="space-y-4">
+          <h2 className="text-sm font-semibold tracking-wide text-foreground uppercase">
+            Contents overview
           </h2>
-          <Card className="overflow-hidden border shadow-sm">
-            <CardHeader className="border-b border-border bg-muted/20 py-4">
-              <CardTitle className="text-base">Identifiers &amp; workflow</CardTitle>
-              <CardDescription>
-                Use these for support tickets and cross-checking the API.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              <dl className="divide-y divide-border">
-                <div className="grid gap-1 px-5 py-4 sm:grid-cols-[minmax(8rem,12rem)_1fr] sm:gap-4">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Package ID
-                  </dt>
-                  <dd className="break-all font-mono text-sm">{pkg.id}</dd>
-                </div>
-                <div className="grid gap-1 px-5 py-4 sm:grid-cols-[minmax(8rem,12rem)_1fr] sm:gap-4">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Script ID
-                  </dt>
-                  <dd className="break-all font-mono text-sm">{pkg.scriptId}</dd>
-                </div>
-                <div className="grid gap-1 px-5 py-4 sm:grid-cols-[minmax(8rem,12rem)_1fr] sm:gap-4">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Package status
-                  </dt>
-                  <dd className="text-sm font-medium">{PACKAGE_STATUS_LABELS[status] ?? status}</dd>
-                </div>
-                <div className="grid gap-1 px-5 py-4 sm:grid-cols-[minmax(8rem,12rem)_1fr] sm:gap-4">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Parallel tracks
-                  </dt>
-                  <dd className="text-sm text-muted-foreground">
-                    Videos: {TRACK_STATUS_LABELS[pkg.videoTrackStatus]} · Metadata:{" "}
-                    {TRACK_STATUS_LABELS[pkg.metadataTrackStatus]}
-                  </dd>
-                </div>
-                {pkg.lockedAt ? (
-                  <div className="grid gap-1 px-5 py-4 sm:grid-cols-[minmax(8rem,12rem)_1fr] sm:gap-4">
-                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Locked at
-                    </dt>
-                    <dd className="text-sm">{formatPackageDate(pkg.lockedAt)}</dd>
-                  </div>
-                ) : null}
-                {pkg.lockedBy ? (
-                  <div className="grid gap-1 px-5 py-4 sm:grid-cols-[minmax(8rem,12rem)_1fr] sm:gap-4">
-                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Locked by
-                    </dt>
-                    <dd className="text-sm">
-                      {pkg.lockedBy.firstName} {pkg.lockedBy.lastName}
-                      {pkg.lockedBy.role ? ` · ${pkg.lockedBy.role}` : ""}
-                    </dd>
-                  </div>
-                ) : null}
-              </dl>
-            </CardContent>
-          </Card>
-        </section> */}
-
-        {!hasNestedThumbnailsOnVideos && flatThumbnailAssets.length > 0 ? (
-          <section className="space-y-4">
-            <h2 className="text-lg font-semibold tracking-tight text-foreground">
-              Thumbnail options (package-level)
-            </h2>
-            <Card className="border-0 shadow-md ring-1 ring-border/60">
-              <CardHeader className="border-b border-border bg-muted/20">
-                <div className="flex items-center gap-2">
-                  <ImageIcon className="size-5 text-primary" />
-                  <div>
-                    <CardTitle className="text-base">All uploaded thumbnails</CardTitle>
-                    <CardDescription>
-                      Not nested under individual videos on this package — shown
-                      once for reference next to the deliverables below.
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="p-5 sm:p-6">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {flatThumbnailAssets.map((t, i) => {
-                    const isSelected = pkg.selectedThumbnail?.id === t.id
-                    return (
-                      <div
-                        key={t.id}
+          <Card className="overflow-hidden border-border shadow-sm">
+            <div className="divide-y divide-border">
+              {sortedVideos.map((video) => {
+                const label = deliverableLabels.get(video.id) ?? "Deliverable"
+                return (
+                  <div
+                    key={video.id}
+                    className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground">{label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {video.type === "LONG_FORM" ? "Long-form" : "Short-form"}
+                        {" · "}
+                        {video.id.slice(0, 8)}…
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                      <Badge
+                        variant="outline"
                         className={cn(
-                          "overflow-hidden rounded-xl border-2 p-2",
-                          isSelected
-                            ? "border-primary bg-primary/5 ring-2 ring-primary/15"
-                            : "border-border"
+                          "font-normal",
+                          videoStatusBadgeClass(video.status)
                         )}
                       >
-                        {isSelected ? (
-                          <Badge className="mb-2 w-full justify-center">
-                            Selected for publication
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="mb-2 font-mono text-xs">
-                            Order {t.order ?? i + 1}
-                          </Badge>
-                        )}
-                        <div className="overflow-hidden rounded-lg bg-muted/30">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={t.fileUrl}
-                            alt=""
-                            className="aspect-video w-full object-cover"
-                          />
-                        </div>
-                        <p className="mt-2 truncate font-mono text-[11px] text-muted-foreground">
-                          {t.fileName}
-                        </p>
-                        {formatPackageFileSize(t.fileSize ?? undefined) ? (
-                          <p className="text-[10px] text-muted-foreground">
-                            {formatPackageFileSize(t.fileSize ?? undefined)}
-                          </p>
-                        ) : null}
-                      </div>
-                    )
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          </section>
-        ) : null}
-
-        <section className="space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight text-foreground">
-              Deliverables
-            </h2>
-            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              Long-form and each short-form cut in a single card: metadata, thumbnail
-              options, then the video player.
-            </p>
-          </div>
-          <div className="space-y-8">
-            {videoReviewSteps.map((step, i) => (
-              <PackageInlineVideoCard
-                key={step.asset.id}
-                asset={step.asset}
-                label={step.label}
-                icon={step.icon}
-                unifiedMetadata
-                deliverableBlockBody={
-                  videoDeliverableBlocks[i]?.body ?? null
-                }
-                selectedThumbnailId={pkg.selectedThumbnail?.id ?? null}
-              />
-            ))}
-            {videoReviewSteps.length === 0 ? (
-              <Card>
-                <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                  No video assets on this package.
-                </CardContent>
-              </Card>
-            ) : null}
-          </div>
+                        {VIDEO_STATUS_LABELS[video.status]}
+                      </Badge>
+                      <Button variant="outline" size="sm" asChild>
+                        <a href={`#video-${video.id}`}>
+                          Jump to detail
+                          <ExternalLink className="ml-1 size-3.5 opacity-70" />
+                        </a>
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </Card>
         </section>
 
-        {!canFinalApprove && status === "APPROVED" && pkg.lockedAt ? (
-          <Card className="border-green-600/30 bg-green-50/50 dark:border-green-700/40 dark:bg-green-950/30">
-            <CardContent className="flex items-center gap-3 py-4 text-sm text-green-900 dark:text-green-100">
-              <CheckCircle className="size-5 shrink-0" />
-              <span>
-                This package is <strong>approved and locked</strong> as of{" "}
-                {formatPackageDate(pkg.lockedAt)}.
-              </span>
-            </CardContent>
-          </Card>
-        ) : null}
+        <section aria-label="Deliverable details" className="space-y-10 pt-4">
+          <h2 className="text-sm font-semibold tracking-wide text-foreground uppercase">
+            Deliverable details
+          </h2>
+          {sortedVideos.map((video) => {
+            const asset = getCurrentVideoAsset(video)
+            if (!asset) return null
+            const pa = videoAssetToPackageAsset(asset)
+            const label = deliverableLabels.get(video.id) ?? "Deliverable"
+            const icon: ReactNode =
+              video.type === "LONG_FORM" ? (
+                <Clapperboard className="size-5" />
+              ) : (
+                <Smartphone className="size-5" />
+              )
+            const thumbs = thumbnailsOnAsset(asset)
+            const isFocused = focusVideoId === video.id
 
-        {canFinalApprove ? (
-          <Card
-            id="final-package-actions"
-            className="border-primary/30 bg-primary/5 scroll-mt-24 dark:bg-primary/10"
-          >
-            <CardHeader>
-              <CardTitle className="text-lg">Final sign-off</CardTitle>
-              <CardDescription>
-                Approve to lock this English final package for delivery.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-muted-foreground">
-                Both Medical Affairs and Content/Brand have approved the package.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={() => setApproveOpen(true)} className="bg-green-500 hover:bg-green-600">
-                  <CheckCircle className="mr-2 size-4" />
-                  Final approve &amp; lock
-                </Button>
-                {/* <Button variant="outline" onClick={() => setRejectOpen(true)}>
-                  <XCircle className="mr-2 size-4" />
-                  Reject
-                </Button> */}
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
+            return (
+              <Card
+                key={video.id}
+                id={`video-${video.id}`}
+                className={cn(
+                  "scroll-mt-24 overflow-hidden border-border shadow-sm",
+                  isFocused &&
+                    "ring-2 ring-primary ring-offset-2 ring-offset-background"
+                )}
+              >
+                <CardHeader className="border-b border-border bg-muted/20 py-5 sm:py-6">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <CardTitle className="text-lg font-semibold">{label}</CardTitle>
+                      <CardDescription className="mt-1">
+                        {VIDEO_STATUS_LABELS[video.status]} · Video{" "}
+                        <span className="font-mono text-xs">{video.id}</span>
+                      </CardDescription>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge
+                        variant="outline"
+                        className={videoStatusBadgeClass(video.status)}
+                      >
+                        {VIDEO_STATUS_LABELS[video.status]}
+                      </Badge>
+                      <Badge variant="secondary" className="text-xs font-normal">
+                        Video track: {TRACK_STATUS_LABELS[video.videoTrackStatus]}
+                      </Badge>
+                      <Badge variant="secondary" className="text-xs font-normal">
+                        Metadata: {TRACK_STATUS_LABELS[video.metadataTrackStatus]}
+                      </Badge>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-8 px-4 py-6 sm:px-6">
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                      Video file
+                    </h3>
+                    <PackageInlineVideoCard
+                      asset={pa}
+                      label={label}
+                      icon={icon}
+                      videoOnly
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                      Metadata
+                    </h3>
+                    <PackageVideoMetadataProminent
+                      variant="embedded"
+                      deliverableLabel={label}
+                      title={asset.title}
+                      description={asset.description}
+                      tags={asset.tags ?? undefined}
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                      Thumbnails
+                    </h3>
+                    {thumbs.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">—</p>
+                    ) : (
+                      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {thumbs.map((t) => (
+                          <li
+                            key={t.id}
+                            className="overflow-hidden rounded-lg border border-border bg-card"
+                          >
+                            <a
+                              href={t.fileUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block aspect-video bg-muted"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={t.fileUrl}
+                                alt={t.fileName ?? "Thumbnail"}
+                                className="size-full object-cover"
+                              />
+                            </a>
+                            <div className="space-y-1 p-3">
+                              <Badge
+                                className={thumbBadgeClass(t.status)}
+                                variant="secondary"
+                              >
+                                {t.status}
+                              </Badge>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {t.fileName}
+                              </p>
+                              {t.status === "REJECTED" && t.comment && (
+                                <p className="text-xs text-destructive">
+                                  {t.comment}
+                                </p>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                </CardContent>
+              </Card>
+            )
+          })}
+        </section>
+          </>
+        )}
       </div>
 
       <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[min(90vh,40rem)] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Final approval</DialogTitle>
+            <DialogTitle>Final approve package</DialogTitle>
             <DialogDescription>
-              Locks the English final package for delivery.
+              You are about to record final approval for every deliverable listed
+              below. You can add one optional note; it is applied to each
+              deliverable in the approval record.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label>Comments</Label>
-            <Textarea
-              value={approveComments}
-              onChange={(e) => setApproveComments(e.target.value)}
-              rows={3}
-            />
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
+              <p className="mb-2 text-xs font-medium text-muted-foreground uppercase">
+                Included in this approval
+              </p>
+              <ul className="list-inside list-disc space-y-1 text-sm text-foreground">
+                {awaitingVideos.map((v) => (
+                  <li key={v.id}>
+                    {deliverableLabels.get(v.id) ?? v.id}
+                    <span className="text-muted-foreground">
+                      {" "}
+                      ({VIDEO_STATUS_LABELS[v.status]})
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="approver-note">Note (optional, applied to all)</Label>
+              <Textarea
+                id="approver-note"
+                value={approveComments}
+                onChange={(e) => setApproveComments(e.target.value)}
+                rows={3}
+                placeholder="Optional comment for the approval record…"
+              />
+            </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setApproveOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleApprove} disabled={busy}>
-              {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
-              Approve
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reject package</DialogTitle>
-            <DialogDescription>
-              Sends the package back to Agency. Add at least one video note
-              below.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <Label>Long form detail (optional)</Label>
-              <Textarea
-                value={rejectLong}
-                onChange={(e) => setRejectLong(e.target.value)}
-                rows={2}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Short form detail (optional)</Label>
-              <Textarea
-                value={rejectShort}
-                onChange={(e) => setRejectShort(e.target.value)}
-                rows={2}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRejectOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleReject} disabled={busy}>
-              {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
-              Reject
+            <Button
+              className="bg-green-600 text-white hover:bg-green-700"
+              onClick={() => void handleApprovePackage()}
+              disabled={busy || awaitingVideos.length === 0}
+            >
+              {busy ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="mr-2 size-4" />
+              )}
+              Final approve package
             </Button>
           </DialogFooter>
         </DialogContent>

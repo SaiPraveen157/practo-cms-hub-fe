@@ -4,9 +4,9 @@ import type {
   PackageAssetFeedback,
   PackageItemFeedbackEntry,
   PackageUserRef,
+  PackageVideo,
 } from "@/types/package"
 
-/** Unified shape for showing the most recent rejection (API may use `latestRejection` or `reviews` only). */
 export type PackageRejectionDisplay = {
   id: string
   reviewerLine: string
@@ -15,6 +15,26 @@ export type PackageRejectionDisplay = {
   overallComments: string
   assetFeedback?: PackageAssetFeedback[]
   itemFeedback?: PackageItemFeedbackEntry[]
+}
+
+/** Join item feedback comments the way the old reject UI did — used to hide duplicate “summary” bars. */
+export function itemFeedbackCommentsJoined(
+  items: PackageItemFeedbackEntry[]
+): string {
+  return items
+    .map((i) => i.comment?.trim())
+    .filter(Boolean)
+    .join(" · ")
+}
+
+export function isOverallCommentsRedundantWithItemFeedback(
+  overall: string,
+  items: PackageItemFeedbackEntry[]
+): boolean {
+  const o = overall.trim()
+  if (!o) return false
+  const joined = itemFeedbackCommentsJoined(items)
+  return joined.length > 0 && o === joined
 }
 
 function reviewerLine(
@@ -31,10 +51,6 @@ function reviewerLine(
   return reviewerType || "Reviewer"
 }
 
-/**
- * Latest rejection for display: prefers `package.latestRejection`, else newest
- * `reviews[]` entry with decision REJECTED.
- */
 export function getLatestDisplayableRejection(
   pkg: FinalPackage
 ): PackageRejectionDisplay | null {
@@ -71,24 +87,86 @@ export function getLatestDisplayableRejection(
   }
 }
 
-/**
- * Agency must revise when the package is fully rejected or any parallel track
- * was rejected (e.g. Medical rejects videos → status stays MEDICAL_REVIEW but
- * videoTrackStatus is REJECTED per Phase 6 API).
- */
-export function agencyPackageNeedsRevision(p: FinalPackage): boolean {
-  if (p.status === "REJECTED") return true
-  if (p.videoTrackStatus === "REJECTED") return true
-  if (p.metadataTrackStatus === "REJECTED") return true
-  return false
+export function getLatestDisplayableRejectionForVideo(
+  video: PackageVideo
+): PackageRejectionDisplay | null {
+  const rejects = (video.reviews ?? [])
+    .filter((r) => r.decision === "REJECTED")
+    .sort(
+      (a, b) =>
+        new Date(b.reviewedAt).getTime() - new Date(a.reviewedAt).getTime()
+    )
+  const r = rejects[0]
+  if (!r) return null
+  const overall = r.overallComments?.trim() ?? ""
+  return {
+    id: r.id,
+    reviewerLine: r.reviewerType,
+    trackLine: [r.trackReviewed, r.stageAtReview].filter(Boolean).join(" · "),
+    reviewedAtLabel: formatPackageDate(r.reviewedAt),
+    overallComments: overall,
+    itemFeedback: r.itemFeedback,
+  }
 }
 
-/**
- * Agency may open the Phase 6 submit wizard (`/new?scriptId`) after withdraw
- * (status DRAFT) or when reviewers rejected work (full package or a track).
- */
+/** Latest rejection for a specific parallel track (`BOTH` matches either filter). */
+export function getLatestRejectionForVideoByTrack(
+  video: PackageVideo,
+  track: "VIDEO_TRACK" | "METADATA_TRACK"
+): PackageRejectionDisplay | null {
+  const matches = (tr: string | undefined) => {
+    if (!tr) return false
+    if (tr === "BOTH") return true
+    return tr === track
+  }
+  const rejects = (video.reviews ?? [])
+    .filter((r) => r.decision === "REJECTED" && matches(r.trackReviewed))
+    .sort(
+      (a, b) =>
+        new Date(b.reviewedAt).getTime() - new Date(a.reviewedAt).getTime()
+    )
+  const r = rejects[0]
+  if (!r) return null
+  const overall = r.overallComments?.trim() ?? ""
+  return {
+    id: r.id,
+    reviewerLine: r.reviewerType,
+    trackLine: [r.trackReviewed, r.stageAtReview].filter(Boolean).join(" · "),
+    reviewedAtLabel: formatPackageDate(r.reviewedAt),
+    overallComments: overall,
+    itemFeedback: r.itemFeedback,
+  }
+}
+
+export function medicalPackageVideoTrackNeedsRevision(
+  pkg: FinalPackage
+): boolean {
+  return (pkg.videos ?? []).some(
+    (v) =>
+      v.status === "MEDICAL_REVIEW" && v.videoTrackStatus === "REJECTED"
+  )
+}
+
+export function agencyVideoNeedsAgencyAction(v: PackageVideo): boolean {
+  if (v.status === "WITHDRAWN" || v.status === "APPROVED") return false
+  return (
+    v.status === "MEDICAL_REVIEW" &&
+    (v.videoTrackStatus === "REJECTED" ||
+      v.metadataTrackStatus === "REJECTED")
+  )
+}
+
+export function agencyPackageNeedsRevision(p: FinalPackage): boolean {
+  return (p.videos ?? []).some(agencyVideoNeedsAgencyAction)
+}
+
+export function agencyPackageAllVideosTerminal(p: FinalPackage): boolean {
+  const vids = p.videos ?? []
+  if (vids.length === 0) return false
+  return vids.every((v) => v.status === "APPROVED" || v.status === "WITHDRAWN")
+}
+
 export function agencyPackageNeedsSubmitWizard(p: FinalPackage): boolean {
-  if (p.status === "DRAFT") return true
   return agencyPackageNeedsRevision(p)
 }
 
@@ -108,24 +186,24 @@ export function filterPackagesBySearch(
   const q = searchQuery.trim().toLowerCase()
   if (!q) return list
   return list.filter((p) => {
-    const t = (p.title ?? "").toLowerCase()
+    const t = (p.name ?? p.title ?? "").toLowerCase()
     const st = (p.script?.title ?? "").toLowerCase()
     return t.includes(q) || st.includes(q)
   })
 }
 
-/** Agency: split combined queue into workflow buckets (client-side). */
 export function splitAgencyPackagesByTab(
   combined: FinalPackage[],
   tab: "active" | "revision" | "approved"
 ): FinalPackage[] {
   if (tab === "approved") {
-    return combined.filter((p) => p.status === "APPROVED")
+    return combined.filter(agencyPackageAllVideosTerminal)
   }
   if (tab === "revision") {
     return combined.filter(agencyPackageNeedsRevision)
   }
   return combined.filter(
-    (p) => p.status !== "APPROVED" && !agencyPackageNeedsRevision(p)
+    (p) =>
+      !agencyPackageAllVideosTerminal(p) && !agencyPackageNeedsRevision(p)
   )
 }

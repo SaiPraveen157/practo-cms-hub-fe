@@ -4,10 +4,21 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { getPackageVersions } from "@/lib/packages-api"
+import { getPackageVideoVersions } from "@/lib/packages-api"
+import {
+  agencyPackageNeedsRevision,
+  getLatestDisplayableRejectionForVideo,
+  getLatestRejectionForVideoByTrack,
+  isOverallCommentsRedundantWithItemFeedback,
+  medicalPackageVideoTrackNeedsRevision,
+} from "@/lib/package-list-utils"
+import { packageVideosSorted, videoAssetToPackageAsset } from "@/lib/package-video-helpers"
 import { formatPackageDate } from "@/lib/package-ui"
-import { agencyPackageNeedsRevision } from "@/lib/package-list-utils"
-import type { FinalPackage, PackageVersionsResponse } from "@/types/package"
+import type {
+  FinalPackage,
+  PackageVideo,
+  PackageVideoVersionsResponse,
+} from "@/types/package"
 import { Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { PackageListTabNav } from "@/components/packages/package-list-tab-nav"
@@ -24,7 +35,7 @@ const DETAIL_TABS: readonly { key: DetailTab; label: string }[] = [
 export function PackageDetailSubTabs({
   pkg,
   token,
-  packageId,
+  packageId: _packageId,
   children,
 }: {
   pkg: FinalPackage
@@ -32,12 +43,15 @@ export function PackageDetailSubTabs({
   packageId: string
   children: React.ReactNode
 }) {
+  void _packageId
   const [tab, setTab] = useState<DetailTab>("overview")
   const didInitTab = useRef(false)
 
   useEffect(() => {
     if (didInitTab.current) return
     if (agencyPackageNeedsRevision(pkg)) {
+      /* Open feedback when agency may need to act; one-time init from loaded pkg. */
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTab("feedback")
       didInitTab.current = true
     }
@@ -59,7 +73,7 @@ export function PackageDetailSubTabs({
       )}
 
       {tab === "versions" && (
-        <PackageVersionHistoryPanel token={token} packageId={packageId} />
+        <PackageVideoVersionsMultiPanel token={token} pkg={pkg} />
       )}
     </div>
   )
@@ -69,162 +83,168 @@ function reviewBody(r: { overallComments?: string | null; comments?: string | nu
   return r.overallComments?.trim() || r.comments?.trim() || null
 }
 
-export function PackageFeedbackAndRevisionsPanel({ pkg }: { pkg: FinalPackage }) {
-  const rejectFromReviews = (pkg.reviews ?? []).filter(
-    (r) =>
-      r.decision === "REJECTED" &&
-      (!pkg.latestRejection?.id || r.id !== pkg.latestRejection.id)
-  )
-  const approveReviews = (pkg.reviews ?? []).filter(
-    (r) => r.decision === "APPROVED"
-  )
+export function PackageFeedbackAndRevisionsPanel({
+  pkg,
+  trackFilter,
+}: {
+  pkg: FinalPackage
+  /** When set, only show rejections for this track (e.g. Medical UI = video file only). */
+  trackFilter?: "VIDEO_TRACK" | "METADATA_TRACK"
+}) {
+  const videos = packageVideosSorted(pkg)
+
+  const needsRevision =
+    trackFilter === "VIDEO_TRACK"
+      ? medicalPackageVideoTrackNeedsRevision(pkg)
+      : trackFilter === "METADATA_TRACK"
+        ? videos.some(
+            (v) =>
+              v.status === "MEDICAL_REVIEW" &&
+              v.metadataTrackStatus === "REJECTED"
+          )
+        : agencyPackageNeedsRevision(pkg)
+
+  const getDisplay = (v: PackageVideo) =>
+    trackFilter
+      ? getLatestRejectionForVideoByTrack(v, trackFilter)
+      : getLatestDisplayableRejectionForVideo(v)
 
   return (
-    <div className="space-y-6">
-      {agencyPackageNeedsRevision(pkg) && (
+    <div className="space-y-8">
+      {needsRevision && (
         <Card className="border-amber-500/40 bg-amber-500/5 dark:bg-amber-950/20">
           <CardHeader>
             <CardTitle className="text-base">Revision required</CardTitle>
             <CardDescription>
-              A reviewer rejected part of this package (video track, metadata
-              track, or the whole package). Use the feedback below, then
-              resubmit using <strong>Submit package</strong> for this script or
-              the resubmit APIs when available.
+              {trackFilter === "VIDEO_TRACK" ? (
+                <>
+                  At least one deliverable needs a new{" "}
+                  <strong>video file</strong>. Agency uses the Videos tab to
+                  resubmit; metadata is handled by Content/Brand separately.
+                </>
+              ) : trackFilter === "METADATA_TRACK" ? (
+                <>
+                  At least one deliverable needs{" "}
+                  <strong>metadata / thumbnail</strong> changes from Agency.
+                </>
+              ) : (
+                <>
+                  At least one deliverable needs changes. Use the feedback
+                  below, then resubmit the <strong>video file</strong> and/or{" "}
+                  <strong>metadata</strong> from the package overview for each
+                  affected video.
+                </>
+              )}
             </CardDescription>
           </CardHeader>
         </Card>
       )}
 
-      {pkg.latestRejection && (
-        <Card className="border-destructive/40 bg-destructive/5">
-          <CardHeader>
-            <CardTitle className="text-base text-destructive">
-              Latest rejection
-            </CardTitle>
-            <CardDescription>
-              {pkg.latestRejection.reviewer
-                ? `${pkg.latestRejection.reviewer.firstName} ${pkg.latestRejection.reviewer.lastName} · ${pkg.latestRejection.reviewerType}`
-                : pkg.latestRejection.reviewerType}{" "}
-              · {pkg.latestRejection.trackReviewed ?? "—"} ·{" "}
-              {pkg.latestRejection.stageAtReview ?? "—"} ·{" "}
-              {formatPackageDate(pkg.latestRejection.reviewedAt)}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <p className="font-medium text-foreground">
-              {pkg.latestRejection.overallComments}
-            </p>
-            {pkg.latestRejection.assetFeedback &&
-              pkg.latestRejection.assetFeedback.length > 0 && (
-                <ul className="space-y-2 border-t border-border pt-3">
-                  {pkg.latestRejection.assetFeedback.map((a, i) => (
-                    <li
-                      key={a.id ?? i}
-                      className="rounded-md bg-muted/50 px-3 py-2"
-                    >
-                      <span className="font-medium">{a.assetType}</span>
-                      {a.hasIssue ? (
-                        <span className="text-destructive"> · Issue</span>
-                      ) : (
-                        <span className="text-muted-foreground"> · OK</span>
-                      )}
-                      {a.comments && (
-                        <p className="mt-1 text-muted-foreground">
-                          {a.comments}
+      {videos.map((v) => {
+        const display = getDisplay(v)
+        if (!display) {
+          if (trackFilter) {
+            return null
+          }
+          return (
+            <Card key={v.id}>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  {v.type.replace("_", " ")} · v{v.currentVersion}
+                </CardTitle>
+                <CardDescription>
+                  No rejection feedback recorded on this deliverable for the
+                  current view.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )
+        }
+        return (
+          <Card key={v.id} className="border-destructive/40 bg-destructive/5">
+            <CardHeader>
+              <CardTitle className="text-base text-destructive">
+                {v.type.replace("_", " ")} — reviewer feedback
+              </CardTitle>
+              <CardDescription>
+                {display.reviewerLine} · {display.trackLine} ·{" "}
+                {display.reviewedAtLabel}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              {(() => {
+                const raw = display.itemFeedback ?? []
+                const items =
+                  trackFilter === "VIDEO_TRACK"
+                    ? raw.filter((f) => f.field === "VIDEO")
+                    : trackFilter === "METADATA_TRACK"
+                      ? raw.filter((f) =>
+                          ["TITLE", "DESCRIPTION", "TAGS", "THUMBNAIL"].includes(
+                            f.field
+                          )
+                        )
+                      : raw
+                const oc = display.overallComments?.trim() ?? ""
+                const showOverall =
+                  Boolean(oc) &&
+                  !isOverallCommentsRedundantWithItemFeedback(oc, items)
+                return (
+                  <>
+                    {showOverall ? (
+                      <div className="space-y-1 rounded-lg border border-border bg-muted/30 px-3 py-2">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Overall note
                         </p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            {pkg.latestRejection.itemFeedback &&
-              pkg.latestRejection.itemFeedback.length > 0 && (
-                <PackageItemFeedbackHumanizedList
-                  pkg={pkg}
-                  items={pkg.latestRejection.itemFeedback}
-                />
-              )}
-          </CardContent>
-        </Card>
-      )}
+                        <p className="whitespace-pre-wrap font-medium leading-relaxed text-foreground">
+                          {oc}
+                        </p>
+                      </div>
+                    ) : oc && items.length > 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Overall line matches the detailed items below — see each
+                        entry.
+                      </p>
+                    ) : null}
+                    {items.length > 0 ? (
+                      <PackageItemFeedbackHumanizedList
+                        pkg={pkg}
+                        items={items}
+                        className="border-t-0 pt-0"
+                      />
+                    ) : null}
+                  </>
+                )
+              })()}
+            </CardContent>
+          </Card>
+        )
+      })}
 
-      {!pkg.latestRejection && rejectFromReviews.length === 0 && (
+      {videos.every((v) => !getDisplay(v)) && !needsRevision && (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No rejection feedback on this version. Approve/reject events appear
-            here after reviewers act.
+            {trackFilter === "VIDEO_TRACK"
+              ? "No video-track rejection feedback on these deliverables."
+              : trackFilter === "METADATA_TRACK"
+                ? "No metadata-track rejection feedback on these deliverables."
+                : "No rejection feedback on these deliverables yet."}
           </CardContent>
         </Card>
       )}
 
-      {rejectFromReviews.length > 0 && (
+      {!trackFilter && pkg.reviews && pkg.reviews.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Earlier rejections (log)</CardTitle>
-            <CardDescription>
-              Rejection events recorded on this package (may include prior
-              versions if returned by the API).
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {rejectFromReviews.map((r) => (
-              <div
-                key={r.id}
-                className="border-b border-border pb-4 last:border-0 last:pb-0"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="destructive">Rejected</Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {r.reviewerType} · {r.stageAtReview ?? "—"} ·{" "}
-                    {r.trackReviewed ?? "—"} · {formatPackageDate(r.reviewedAt)}
-                  </span>
-                </div>
-                {reviewBody(r) && (
-                  <p className="mt-2 text-sm">{reviewBody(r)}</p>
-                )}
-                {r.assetFeedback && r.assetFeedback.length > 0 && (
-                  <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                    {r.assetFeedback.map((a, i) => (
-                      <li key={a.id ?? i}>
-                        <span className="font-medium text-foreground">
-                          {a.assetType}
-                        </span>
-                        : {a.comments}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {r.itemFeedback && r.itemFeedback.length > 0 && (
-                  <PackageItemFeedbackHumanizedList
-                    pkg={pkg}
-                    items={r.itemFeedback}
-                    className="mt-2 border-t-0 pt-0"
-                  />
-                )}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {approveReviews.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Approval history</CardTitle>
+            <CardTitle className="text-base">Package-level review log (legacy)</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            {approveReviews.map((r) => (
+            {pkg.reviews.map((r) => (
               <div
                 key={r.id}
                 className="flex flex-col gap-1 border-b border-border pb-3 last:border-0"
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge
-                    variant="outline"
-                    className="border-green-600/50 text-green-700 dark:text-green-400"
-                  >
-                    Approved
-                  </Badge>
+                  <Badge variant="outline">{r.decision}</Badge>
                   <span className="text-xs text-muted-foreground">
                     {r.reviewerType} · {formatPackageDate(r.reviewedAt)}
                   </span>
@@ -241,14 +261,36 @@ export function PackageFeedbackAndRevisionsPanel({ pkg }: { pkg: FinalPackage })
   )
 }
 
-export function PackageVersionHistoryPanel({
+function PackageVideoVersionsMultiPanel({
   token,
-  packageId,
+  pkg,
 }: {
   token: string | null
-  packageId: string
+  pkg: FinalPackage
 }) {
-  const [data, setData] = useState<PackageVersionsResponse | null>(null)
+  const videos = packageVideosSorted(pkg)
+  return (
+    <div className="space-y-10">
+      {videos.map((v) => (
+        <div key={v.id} className="space-y-3">
+          <h3 className="text-sm font-semibold text-foreground">
+            {v.type.replace("_", " ")} — version history
+          </h3>
+          <PackageVideoVersionHistoryPanel token={token} videoId={v.id} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function PackageVideoVersionHistoryPanel({
+  token,
+  videoId,
+}: {
+  token: string | null
+  videoId: string
+}) {
+  const [data, setData] = useState<PackageVideoVersionsResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
@@ -257,14 +299,14 @@ export function PackageVersionHistoryPanel({
     setLoading(true)
     setErr(null)
     try {
-      const res = await getPackageVersions(token, packageId)
+      const res = await getPackageVideoVersions(token, videoId)
       setData(res)
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to load versions")
     } finally {
       setLoading(false)
     }
-  }, [token, packageId])
+  }, [token, videoId])
 
   useEffect(() => {
     load()
@@ -301,68 +343,64 @@ export function PackageVersionHistoryPanel({
     )
   }
 
-  const versions = data?.versions ?? []
+  const rows = data?.versions ?? []
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Current version on server:{" "}
+        Current version:{" "}
         <span className="font-medium text-foreground">
           {data?.currentVersion ?? "—"}
         </span>
       </p>
-      {versions.length === 0 ? (
+      {rows.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            No prior versions recorded yet.
+            No prior versions recorded.
           </CardContent>
         </Card>
       ) : (
-        versions.map((v) => (
-          <Card key={v.version}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">
-                Version {v.version}
-                {v.version === data?.currentVersion && (
-                  <Badge variant="secondary" className="ml-2">
-                    Current
-                  </Badge>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              {v.assets.map((a, idx) => (
-                <div
-                  key={a.id ?? `${v.version}-${idx}`}
-                  className={cn(
-                    "flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2",
-                    a.isSelected && "border-primary/50 bg-primary/5"
+        rows.map((row) => {
+          const asset = row.asset ? videoAssetToPackageAsset(row.asset) : null
+          return (
+            <Card key={row.version}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">
+                  Version {row.version}
+                  {row.version === data?.currentVersion && (
+                    <Badge variant="secondary" className="ml-2">
+                      Current
+                    </Badge>
                   )}
-                >
-                  <div>
-                    <span className="font-medium">{a.type}</span>
-                    {a.isSelected && (
-                      <Badge variant="outline" className="ml-2 text-xs">
-                        Selected thumb
-                      </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                {asset ? (
+                  <div
+                    className={cn(
+                      "flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
                     )}
-                    <p className="text-xs text-muted-foreground">
-                      {a.fileName}
-                    </p>
-                  </div>
-                  <a
-                    href={a.fileUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-primary underline-offset-4 hover:underline"
                   >
-                    Open
-                  </a>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        ))
+                    <div>
+                      <span className="font-medium">{asset.type}</span>
+                      <p className="text-xs text-muted-foreground">
+                        {asset.fileName}
+                      </p>
+                    </div>
+                    <a
+                      href={asset.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary underline-offset-4 hover:underline"
+                    >
+                      Open
+                    </a>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          )
+        })
       )}
     </div>
   )

@@ -29,7 +29,36 @@ export type PackageSubmitDraftV1 = {
   shortThumbnailBySlotId: Record<string, File | null>
 }
 
-type StoredRow = PackageSubmitDraftV1 & { scriptId: string }
+/** One deliverable in the unified videos step (type chosen before upload). */
+export type DraftPackageVideoSlot = {
+  id: string
+  videoType: "LONG_FORM" | "SHORT_FORM"
+  meta: DraftVideoMeta
+  file: File | null
+  /**
+   * Thumbnails for this video (Phase 6 supports multiple, reviewed individually).
+   * Legacy single-thumbnail drafts may still populate `thumbnailFile`.
+   */
+  thumbnailFiles: File[]
+  /** @deprecated legacy single-thumbnail draft field */
+  thumbnailFile?: File | null
+}
+
+export type PackageSubmitDraftV2 = {
+  v: 2
+  savedAt: number
+  wizardStep: number
+  scriptExpanded: boolean
+  /** Display name for the package (POST /api/packages `name`). Optional in stored drafts for backward compatibility. */
+  packageName?: string
+  videoSlots: DraftPackageVideoSlot[]
+}
+
+export type PackageSubmitDraftAny = PackageSubmitDraftV1 | PackageSubmitDraftV2
+
+type StoredRow = (PackageSubmitDraftV1 | PackageSubmitDraftV2) & {
+  scriptId: string
+}
 
 const DB_NAME = "practo-cms-hub"
 const DB_VERSION = 1
@@ -43,7 +72,7 @@ export type DraftStorageErrorCode =
   | "CLEAR_FAILED"
 
 export type LoadDraftResult =
-  | { ok: true; draft: PackageSubmitDraftV1 | null }
+  | { ok: true; draft: PackageSubmitDraftAny | null }
   | { ok: false; draft: null; code: DraftStorageErrorCode; detail?: string }
 
 export type SaveDraftResult =
@@ -135,7 +164,7 @@ export async function loadPackageSubmitDraft(
   }
   try {
     const db = await openDb()
-    const draft = await new Promise<PackageSubmitDraftV1 | null>(
+    const draft = await new Promise<PackageSubmitDraftAny | null>(
       (resolve, reject) => {
         const tx = db.transaction(STORE, "readonly")
         const store = tx.objectStore(STORE)
@@ -143,12 +172,12 @@ export async function loadPackageSubmitDraft(
         r.onerror = () => reject(r.error)
         r.onsuccess = () => {
           const row = r.result as StoredRow | undefined
-          if (!row?.v || row.v !== 1) {
+          if (!row?.v || (row.v !== 1 && row.v !== 2)) {
             resolve(null)
             return
           }
           const { scriptId: _sid, ...rest } = row
-          resolve(rest as PackageSubmitDraftV1)
+          resolve(rest as PackageSubmitDraftAny)
         }
       }
     )
@@ -163,9 +192,14 @@ export async function loadPackageSubmitDraft(
   }
 }
 
+export type PackageSubmitDraftSavePayload = Omit<
+  PackageSubmitDraftV2,
+  "savedAt" | "v"
+>
+
 export async function savePackageSubmitDraft(
-  scriptId: string,
-  draft: Omit<PackageSubmitDraftV1, "savedAt" | "v">
+       scriptId: string,
+       draft: PackageSubmitDraftSavePayload
 ): Promise<SaveDraftResult> {
   if (typeof indexedDB === "undefined" || !scriptId) {
     return { ok: false, code: "INDEXEDDB_UNAVAILABLE" }
@@ -173,7 +207,7 @@ export async function savePackageSubmitDraft(
   try {
     const db = await openDb()
     const row: StoredRow = {
-      v: 1,
+      v: 2,
       savedAt: Date.now(),
       ...draft,
       scriptId,
@@ -235,9 +269,7 @@ export function normalizeRestoredFile(
   return null
 }
 
-export function packageSubmitDraftHasUsefulState(
-  d: PackageSubmitDraftV1
-): boolean {
+function packageSubmitDraftHasUsefulStateV1(d: PackageSubmitDraftV1): boolean {
   return (
     d.wizardStep > 0 ||
     Boolean(d.longVideoMeta.title.trim()) ||
@@ -252,4 +284,67 @@ export function packageSubmitDraftHasUsefulState(
       (s) => s.file != null || Boolean(s.meta.tagDraft?.trim())
     )
   )
+}
+
+export function packageSubmitDraftHasUsefulState(
+  d: PackageSubmitDraftAny
+): boolean {
+  if (d.v === 2) {
+    return (
+      d.wizardStep > 0 ||
+      d.videoSlots.some(
+        (s) =>
+          s.file != null ||
+          (Array.isArray(s.thumbnailFiles) && s.thumbnailFiles.length > 0) ||
+          s.thumbnailFile != null ||
+          Boolean(s.meta.title.trim()) ||
+          Boolean(s.meta.description.trim()) ||
+          s.meta.tags.length > 0 ||
+          Boolean(s.meta.tagDraft?.trim())
+      )
+    )
+  }
+  return packageSubmitDraftHasUsefulStateV1(d)
+}
+
+/** Migrate legacy wizard draft (separate long/short steps) to unified video slots. */
+export function migratePackageSubmitDraftV1ToV2Slots(
+  d: PackageSubmitDraftV1
+): DraftPackageVideoSlot[] {
+  const longId =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `slot-long-${Date.now()}`
+  const longMeta = d.longVideoMeta ?? {
+    title: "",
+    description: "",
+    tags: [] as string[],
+  }
+  const shortList = Array.isArray(d.shortSlots) ? d.shortSlots : []
+  const thumbMap =
+    d.shortThumbnailBySlotId && typeof d.shortThumbnailBySlotId === "object"
+      ? d.shortThumbnailBySlotId
+      : {}
+  const slots: DraftPackageVideoSlot[] = [
+    {
+      id: longId,
+      videoType: "LONG_FORM",
+      meta: longMeta,
+      file: d.longFile ?? null,
+      thumbnailFiles: d.longThumbnailFile ? [d.longThumbnailFile] : [],
+      thumbnailFile: d.longThumbnailFile ?? null,
+    },
+  ]
+  for (const s of shortList) {
+    if (!s?.id) continue
+    slots.push({
+      id: s.id,
+      videoType: "SHORT_FORM",
+      meta: s.meta ?? { title: "", description: "", tags: [] },
+      file: s.file ?? null,
+      thumbnailFiles: thumbMap[s.id] ? [thumbMap[s.id]!] : [],
+      thumbnailFile: thumbMap[s.id] ?? null,
+    })
+  }
+  return slots
 }

@@ -37,13 +37,13 @@ export function mergeVideoListsById(...lists: Video[][]): Video[] {
 }
 
 /**
- * DRAFT final packages may be auto-created before Phase 5 completes; hide them until
- * First Cut is approved. In-review packages are assumed backend-validated.
+ * Show package in Agency Phase 6 lists once it has videos, or allow empty shell
+ * only when Phase 5 is complete (backend enforces on submit).
  */
 export function packageVisibleInAgencyPhase6Workflow(
   pkg: FinalPackage,
   videos: Video[]
 ): boolean {
-  if (pkg.status !== "DRAFT") return true
+  if ((pkg.videos?.length ?? 0) > 0) return true
   return isScriptEligibleForPhase6FinalPackage(videos, pkg.scriptId)
 }
