@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useLayoutEffect, useRef } from "react"
+import gsap from "gsap"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useTheme } from "next-themes"
@@ -25,6 +26,7 @@ import {
   Settings,
   ChevronLeft,
 } from "lucide-react"
+import { GSAP_DURATION, GSAP_EASE, prefersReducedMotion } from "@/lib/gsap-motion"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -109,6 +111,32 @@ export function AppSidebar() {
   }, [token])
 
   const navItems = user?.role ? getSidebarNavForRole(user.role as UserRole) : []
+  const navRef = useRef<HTMLElement>(null)
+  const didStaggerNav = useRef(false)
+
+  useLayoutEffect(() => {
+    if (didStaggerNav.current || !user?.role || navItems.length === 0) return
+    const nav = navRef.current
+    if (!nav) return
+    if (prefersReducedMotion()) {
+      didStaggerNav.current = true
+      return
+    }
+    const items = nav.querySelectorAll<HTMLElement>(":scope > a, :scope > button")
+    if (items.length === 0) return
+    didStaggerNav.current = true
+    gsap.fromTo(
+      items,
+      { opacity: 0.35, x: -14 },
+      {
+        opacity: 1,
+        x: 0,
+        duration: GSAP_DURATION.navItem,
+        stagger: 0.055,
+        ease: GSAP_EASE,
+      }
+    )
+  }, [user?.role, navItems.length])
 
   function handleLogout() {
     logout()
@@ -167,7 +195,10 @@ export function AppSidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+      <nav
+        ref={navRef}
+        className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2"
+      >
         {navItems.map((item) => {
           const isActive = pathname === item.href
           const Icon = iconMap[item.icon] ?? LayoutDashboard

@@ -47,6 +47,7 @@ import type {
   PackageVideo,
 } from "@/types/package"
 import type { UserRole } from "@/types/auth"
+import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
 import {
   TRACK_STATUS_LABELS,
   VIDEO_STATUS_LABELS,
@@ -106,17 +107,13 @@ function PackageVideoPlayerCard({
       <CardContent className="space-y-4 p-4 sm:p-6">
         {asset.fileUrl && !videoError ? (
           <div className="overflow-hidden rounded-xl border border-border bg-black shadow-inner">
-            <video
-              key={asset.fileUrl}
+            <VideoPlayerTimeline
               src={asset.fileUrl}
-              controls
-              playsInline
-              preload="metadata"
-              className="max-h-[min(72vh,32rem)] w-full object-contain"
-              onError={() => setVideoError(true)}
-            >
-              Your browser cannot play this video inline.
-            </video>
+              mediaKey={asset.id}
+              showCommentsUi={false}
+              videoClassName="max-h-[min(72vh,32rem)] w-full object-contain"
+              onVideoError={() => setVideoError(true)}
+            />
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/30 px-4 py-10 text-center">

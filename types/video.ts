@@ -127,5 +127,6 @@ export interface VideoComment {
   id: string
   content: string
   createdAt: string
+  timestampSeconds?: number | null
   author?: { id: string; firstName: string; lastName: string; role: string }
 }
