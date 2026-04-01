@@ -1,23 +1,28 @@
 /**
- * Phase 6 — Final Package Delivery API (redesigned).
- * Postman: `postman/Phase 6 — Final Package Delivery.postman_collection.json`
+ * Phase 6 — Final Package Delivery (per-video flow).
  */
 
 import { apiRequest } from "@/lib/api"
-import { normalizeFinalPackage } from "@/lib/package-response-normalize"
+import {
+  normalizeFinalPackage,
+  normalizePackageVideo,
+} from "@/lib/package-response-normalize"
 import { uploadFileToPresignedUrl } from "@/lib/videos-api"
 import type {
-  ApprovePackageBody,
+  AddPackageVideoBody,
+  ApprovePackageVideoBody,
   FinalPackage,
   PackageMyReviewsResponse,
   PackageQueueResponse,
   PackageStatsResponse,
   PackageUploadUrlAssetType,
   PackageUploadUrlResponse,
-  PackageVersionsResponse,
-  RejectPackageBody,
-  ResubmitMetadataBody,
-  ResubmitVideosBody,
+  PackageVideo,
+  PackageVideoVersionsResponse,
+  RejectPackageVideoBody,
+  ResubmitPackageVideoBody,
+  ResubmitPackageVideoMetadataBody,
+  ReviewThumbnailBody,
   SubmitPackageBody,
 } from "@/types/package"
 
@@ -48,7 +53,6 @@ export type UploadedPackageFileMeta = {
   fileSize: number
 }
 
-/** Upload a package video file (presign uses assetType `video`). */
 export async function uploadPackageVideoFile(
   token: string | null,
   file: File
@@ -69,7 +73,6 @@ export async function uploadPackageVideoFile(
   }
 }
 
-/** Upload a thumbnail image (presign uses assetType `thumbnail`). */
 export async function uploadPackageThumbnailFile(
   token: string | null,
   file: File
@@ -107,92 +110,180 @@ export async function submitPackage(
   return { ...data, package: normalizeFinalPackage(data.package) }
 }
 
-export async function resubmitPackageVideos(
+export async function addPackageVideo(
   token: string | null,
   packageId: string,
-  body: ResubmitVideosBody
+  body: AddPackageVideoBody
+): Promise<{ success?: boolean; message?: string; video: PackageVideo }> {
+  checkToken(token)
+  const data = await apiRequest<{
+    success?: boolean
+    message?: string
+    video?: unknown
+    videos?: unknown[]
+  }>(`/api/packages/${packageId}/videos`, {
+    method: "POST",
+    // Backend payload shape has been inconsistent across environments:
+    // some deployments validate `video` while others validate `videos`.
+    // Sending both keeps the frontend compatible without backend changes.
+    body: { video: body, videos: [body] },
+    token,
+  })
+  const rawVideo =
+    data.video ?? (Array.isArray(data.videos) ? data.videos[0] : undefined)
+  if (rawVideo == null) {
+    throw new Error(
+      typeof data.message === "string" ? data.message : "Add video failed"
+    )
+  }
+  return {
+    success: data.success,
+    message: data.message,
+    video: normalizePackageVideo(rawVideo),
+  }
+}
+
+export async function updatePackageName(
+  token: string | null,
+  packageId: string,
+  body: { name: string }
 ): Promise<{ success?: boolean; message?: string; package: FinalPackage }> {
   checkToken(token)
   const data = await apiRequest<{
     success?: boolean
     message?: string
     package: unknown
-  }>(`/api/packages/${packageId}/resubmit-videos`, {
-    method: "POST",
+  }>(`/api/packages/${packageId}`, {
+    method: "PATCH",
     body,
     token,
   })
   return { ...data, package: normalizeFinalPackage(data.package) }
+}
+
+export async function resubmitPackageVideoFile(
+  token: string | null,
+  videoId: string,
+  body: ResubmitPackageVideoBody
+): Promise<{ success?: boolean; message?: string; video: PackageVideo }> {
+  checkToken(token)
+  const data = await apiRequest<{
+    success?: boolean
+    message?: string
+    video: unknown
+  }>(`/api/packages/videos/${videoId}/resubmit-video`, {
+    method: "POST",
+    body,
+    token,
+  })
+  return {
+    success: data.success,
+    message: data.message,
+    video: normalizePackageVideo(data.video),
+  }
 }
 
 export async function resubmitPackageMetadata(
   token: string | null,
-  packageId: string,
-  body: ResubmitMetadataBody
-): Promise<{ success?: boolean; message?: string; package: FinalPackage }> {
+  videoId: string,
+  body: ResubmitPackageVideoMetadataBody
+): Promise<{ success?: boolean; message?: string; video: PackageVideo }> {
   checkToken(token)
   const data = await apiRequest<{
     success?: boolean
     message?: string
-    package: unknown
-  }>(`/api/packages/${packageId}/resubmit-metadata`, {
+    video: unknown
+  }>(`/api/packages/videos/${videoId}/resubmit-metadata`, {
     method: "POST",
     body,
     token,
   })
-  return { ...data, package: normalizeFinalPackage(data.package) }
+  return {
+    success: data.success,
+    message: data.message,
+    video: normalizePackageVideo(data.video),
+  }
 }
 
-export async function withdrawPackage(
+export async function withdrawPackageVideo(
   token: string | null,
-  packageId: string
-): Promise<{ success?: boolean; message?: string; package: FinalPackage }> {
+  videoId: string
+): Promise<{ success?: boolean; message?: string; video: PackageVideo }> {
   checkToken(token)
   const data = await apiRequest<{
     success?: boolean
     message?: string
-    package: unknown
-  }>(`/api/packages/${packageId}/withdraw`, {
+    video: unknown
+  }>(`/api/packages/videos/${videoId}/withdraw`, {
     method: "PATCH",
     token,
   })
-  return { ...data, package: normalizeFinalPackage(data.package) }
+  return {
+    success: data.success,
+    message: data.message,
+    video: normalizePackageVideo(data.video),
+  }
 }
 
-export async function approvePackage(
+export async function approvePackageVideo(
   token: string | null,
-  packageId: string,
-  body: ApprovePackageBody
-): Promise<{ success?: boolean; message?: string; package: FinalPackage }> {
+  videoId: string,
+  body: ApprovePackageVideoBody
+): Promise<{ success?: boolean; message?: string; video: PackageVideo }> {
   checkToken(token)
   const data = await apiRequest<{
     success?: boolean
     message?: string
-    package: unknown
-  }>(`/api/packages/${packageId}/approve`, {
+    video: unknown
+  }>(`/api/packages/videos/${videoId}/approve`, {
     method: "POST",
     body,
     token,
   })
-  return { ...data, package: normalizeFinalPackage(data.package) }
+  return {
+    success: data.success,
+    message: data.message,
+    video: normalizePackageVideo(data.video),
+  }
 }
 
-export async function rejectPackage(
+export async function rejectPackageVideo(
   token: string | null,
-  packageId: string,
-  body: RejectPackageBody
-): Promise<{ success?: boolean; message?: string; package: FinalPackage }> {
+  videoId: string,
+  body: RejectPackageVideoBody
+): Promise<{ success?: boolean; message?: string; video: PackageVideo }> {
   checkToken(token)
   const data = await apiRequest<{
     success?: boolean
     message?: string
-    package: unknown
-  }>(`/api/packages/${packageId}/reject`, {
+    video: unknown
+  }>(`/api/packages/videos/${videoId}/reject`, {
     method: "POST",
     body,
     token,
   })
-  return { ...data, package: normalizeFinalPackage(data.package) }
+  return {
+    success: data.success,
+    message: data.message,
+    video: normalizePackageVideo(data.video),
+  }
+}
+
+export async function reviewPackageThumbnail(
+  token: string | null,
+  thumbnailId: string,
+  body: ReviewThumbnailBody
+): Promise<{ success?: boolean; thumbnail?: unknown; message?: string }> {
+  checkToken(token)
+  return apiRequest<{
+    success?: boolean
+    thumbnail?: unknown
+    message?: string
+  }>(`/api/packages/thumbnails/${thumbnailId}/review`, {
+    method: "PATCH",
+    body,
+    token,
+  })
 }
 
 export async function getPackage(
@@ -207,6 +298,18 @@ export async function getPackage(
   return { ...data, package: normalizeFinalPackage(data.package) }
 }
 
+export async function getPackageVideo(
+  token: string | null,
+  videoId: string
+): Promise<{ success?: boolean; video: PackageVideo }> {
+  checkToken(token)
+  const data = await apiRequest<{ success?: boolean; video: unknown }>(
+    `/api/packages/videos/${videoId}`,
+    { token }
+  )
+  return { ...data, video: normalizePackageVideo(data.video) }
+}
+
 export async function getPackageByScriptId(
   token: string | null,
   scriptId: string
@@ -219,29 +322,67 @@ export async function getPackageByScriptId(
   return { ...data, package: normalizeFinalPackage(data.package) }
 }
 
-export async function getPackageVersions(
+export async function getPackageVideoVersions(
   token: string | null,
-  packageId: string
-): Promise<PackageVersionsResponse> {
+  videoId: string
+): Promise<PackageVideoVersionsResponse> {
   checkToken(token)
-  return apiRequest<PackageVersionsResponse>(
-    `/api/packages/${packageId}/versions`,
+  return apiRequest<PackageVideoVersionsResponse>(
+    `/api/packages/videos/${videoId}/versions`,
     { token }
   )
+}
+
+/** Prefer first non-empty array so `videos: []` does not hide `packages[].videos`. */
+function firstNonEmptyVideoList(
+  ...candidates: (unknown[] | undefined | null)[]
+): unknown[] {
+  for (const c of candidates) {
+    if (Array.isArray(c) && c.length > 0) return c
+  }
+  return []
+}
+
+function dedupePackageQueueVideos(videos: PackageVideo[]): PackageVideo[] {
+  const byId = new Map<string, PackageVideo>()
+  for (const v of videos) {
+    if (!v.id || byId.has(v.id)) continue
+    byId.set(v.id, v)
+  }
+  return [...byId.values()]
 }
 
 export async function getPackageQueue(
   token: string | null
 ): Promise<PackageQueueResponse> {
   checkToken(token)
-  const data = await apiRequest<PackageQueueResponse>(
-    "/api/packages/queue",
-    { token }
+  const data = await apiRequest<{
+    success?: boolean
+    total?: number
+    videos?: unknown[]
+    packageVideos?: unknown[]
+    packages?: unknown[]
+    data?: { videos?: unknown[]; total?: number }
+  }>("/api/packages/queue", { token })
+  const rawVideosFromPackages = Array.isArray(data.packages)
+    ? data.packages.flatMap((p) => {
+        if (!p || typeof p !== "object") return []
+        const vids = (p as { videos?: unknown[] }).videos
+        return Array.isArray(vids) ? vids : []
+      })
+    : []
+  const rawVideos = firstNonEmptyVideoList(
+    data.videos,
+    data.packageVideos,
+    data.data?.videos,
+    rawVideosFromPackages
   )
+  const normalized = rawVideos.map((v) => normalizePackageVideo(v))
+  const videos = dedupePackageQueueVideos(normalized)
   return {
-    ...data,
-    available: (data.available ?? []).map(normalizeFinalPackage),
-    myReviews: (data.myReviews ?? []).map(normalizeFinalPackage),
+    success: data.success,
+    total: data.total ?? data.data?.total ?? videos.length,
+    videos,
   }
 }
 
@@ -260,12 +401,20 @@ export async function getPackageMyReviews(
   const sp = new URLSearchParams({ decision: params.decision })
   if (params.page != null) sp.set("page", String(params.page))
   if (params.limit != null) sp.set("limit", String(params.limit))
-  const data = await apiRequest<PackageMyReviewsResponse>(
-    `/api/packages/my-reviews?${sp.toString()}`,
-    { token }
-  )
+  const data = await apiRequest<{
+    success?: boolean
+    total?: number
+    page?: number
+    limit?: number
+    totalPages?: number
+    videos?: unknown[]
+  }>(`/api/packages/my-reviews?${sp.toString()}`, { token })
   return {
-    ...data,
-    packages: (data.packages ?? []).map(normalizeFinalPackage),
+    success: data.success,
+    total: data.total ?? 0,
+    page: data.page ?? 1,
+    limit: data.limit ?? 20,
+    totalPages: data.totalPages,
+    videos: (data.videos ?? []).map((v) => normalizePackageVideo(v)),
   }
 }

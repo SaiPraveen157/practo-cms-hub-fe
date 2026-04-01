@@ -4,11 +4,14 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
+  type Dispatch,
   type ReactNode,
+  type SetStateAction,
 } from "react"
 import Link from "next/link"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -29,96 +32,111 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useAuthStore } from "@/store"
-import { approvePackage, getPackage, rejectPackage } from "@/lib/packages-api"
+import {
+  approvePackageVideo,
+  getPackage,
+  rejectPackageVideo,
+  reviewPackageThumbnail,
+} from "@/lib/packages-api"
+import {
+  contentBrandPlaybackQualityActionsAvailable,
+  deliverableLabelsByVideoId,
+  getCurrentVideoAsset,
+  mergeVideoIntoPackage,
+  packageVideosSorted,
+  thumbnailsOnAsset,
+  videoAssetToPackageAsset,
+} from "@/lib/package-video-helpers"
 import type {
   FinalPackage,
-  PackageAsset,
   PackageItemFeedbackEntry,
-  PackageItemFeedbackField,
-  PackageStatus,
+  PackageThumbnailRecord,
+  PackageVideo,
 } from "@/types/package"
 import type { UserRole } from "@/types/auth"
 import {
-  PACKAGE_STATUS_LABELS,
   TRACK_STATUS_LABELS,
-  assetsOfType,
+  VIDEO_STATUS_LABELS,
   formatPackageDate,
-  formatPackageFileSize,
-  packageStatusBadgeClass,
-  thumbnailsForVideo,
-  videoAssets,
+  videoStatusBadgeClass,
 } from "@/lib/package-ui"
 import { PackageTatCard } from "@/components/packages/package-tat-card"
+import { PackageVideoMetadataProminent } from "@/components/packages/package-video-metadata-prominent"
 import { PackageInlineVideoCard } from "@/components/packages/package-inline-video-card"
-import { PackageListTabNav } from "@/components/packages/package-list-tab-nav"
 import { TrackStatusCallout } from "@/components/packages/track-status-callout"
+import { PackageListTabNav } from "@/components/packages/package-list-tab-nav"
 import {
   ArrowLeft,
-  Calendar,
-  Check,
-  CheckCircle,
   CheckCircle2,
   Clapperboard,
-  ExternalLink,
-  FileText,
-  Hash,
   ImageIcon,
   Info,
   Loader2,
   Smartphone,
-  User,
   XCircle,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import {
-  parseAgencyDeliverableBlockBody,
-  videoDeliverableBlocksFromPackage,
-} from "@/lib/package-composed-description"
 
-type PerVideoRejectDraft = {
-  title: string
-  description: string
-  tags: string
-  thumbnail: string
-  video: string
+type BrandReviewTab = "videos" | "metadata"
+
+type MetaRejectFieldState = { flag: boolean; comment: string }
+type MetaRejectThumbState = { reject: boolean; comment: string }
+
+type MetaRejectDraft = {
+  overallComments: string
+  title: MetaRejectFieldState
+  description: MetaRejectFieldState
+  tags: MetaRejectFieldState
+  thumbs: Record<string, MetaRejectThumbState>
 }
 
-const EMPTY_PER_VIDEO_REJECT: PerVideoRejectDraft = {
-  title: "",
-  description: "",
-  tags: "",
-  thumbnail: "",
-  video: "",
-}
-
-function initialRejectDraftsForAssets(
-  assets: PackageAsset[]
-): Record<string, PerVideoRejectDraft> {
-  const o: Record<string, PerVideoRejectDraft> = {}
-  for (const v of assets) {
-    o[v.id] = { ...EMPTY_PER_VIDEO_REJECT }
+function emptyMetaRejectDraft(): MetaRejectDraft {
+  return {
+    overallComments: "",
+    title: { flag: false, comment: "" },
+    description: { flag: false, comment: "" },
+    tags: { flag: false, comment: "" },
+    thumbs: {},
   }
-  return o
 }
 
-/** Brand sign-off on full video package (Postman: BRAND_REVIEW stage). */
-function contentBrandCanSignOffVideos(
-  pkg: FinalPackage,
-  canAccess: boolean
-): boolean {
-  if (!canAccess) return false
-  if (pkg.status === "BRAND_REVIEW") return true
-  return (
-    pkg.status === "MEDICAL_REVIEW" &&
-    pkg.videoTrackStatus === "APPROVED" &&
-    pkg.metadataTrackStatus === "APPROVED"
-  )
+function thumbBadgeClass(s: PackageThumbnailRecord["status"]) {
+  switch (s) {
+    case "APPROVED":
+      return "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200"
+    case "REJECTED":
+      return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200"
+    default:
+      return "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
+  }
+}
+
+function usePendingMap() {
+  const ref = useRef<Set<string>>(new Set())
+  const [, bump] = useState(0)
+  const snapshot = () => bump((n) => n + 1)
+
+  const run = useCallback(async (key: string, fn: () => Promise<void>) => {
+    if (ref.current.has(key)) return
+    ref.current.add(key)
+    snapshot()
+    try {
+      await fn()
+    } finally {
+      ref.current.delete(key)
+      snapshot()
+    }
+  }, [])
+
+  const isPending = useCallback((key: string) => ref.current.has(key), [])
+
+  return { run, isPending }
 }
 
 export default function ContentBrandPackageDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const id = params.id as string
   const token = useAuthStore((s) => s.token)
   const user = useAuthStore((s) => s.user)
@@ -130,28 +148,30 @@ export default function ContentBrandPackageDetailPage() {
   const [pkg, setPkg] = useState<FinalPackage | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  /** Video asset id → chosen thumbnail asset id (metadata approve). */
-  const [thumbnailSelectionByVideoId, setThumbnailSelectionByVideoId] =
-    useState<Record<string, string>>({})
-  const [metaApproveOpen, setMetaApproveOpen] = useState(false)
-  const [metaComments, setMetaComments] = useState("")
-  const [videoApproveOpen, setVideoApproveOpen] = useState(false)
-  const [videoComments, setVideoComments] = useState("")
-  const [rejectOpen, setRejectOpen] = useState(false)
-  /** Per video asset id — line-item feedback is not duplicated across deliverables. */
-  const [rejectDraftByVideoId, setRejectDraftByVideoId] = useState<
-    Record<string, PerVideoRejectDraft>
-  >({})
-  const [rejectMode, setRejectMode] = useState<"metadata" | "video" | null>(
+  const [reviewTab, setReviewTab] = useState<BrandReviewTab>("metadata")
+  const defaultTabAppliedForPkgId = useRef<string | null>(null)
+  const { run, isPending } = usePendingMap()
+
+  const [metaRejectVideo, setMetaRejectVideo] = useState<PackageVideo | null>(
     null
   )
-  /** Active deliverable in the reject dialog (pill tabs). */
-  const [rejectDeliverableTabIndex, setRejectDeliverableTabIndex] = useState(0)
-  const [busy, setBusy] = useState(false)
-  /** Videos first, then metadata — matches agency package detail tab order. */
-  const [brandPackageWorkTab, setBrandPackageWorkTab] = useState<
-    "videos" | "metadata"
-  >("videos")
+  const [metaRejectDraft, setMetaRejectDraft] = useState<MetaRejectDraft>(
+    emptyMetaRejectDraft
+  )
+
+  const [brandRejectVideo, setBrandRejectVideo] = useState<PackageVideo | null>(
+    null
+  )
+  const [brandRejectComment, setBrandRejectComment] = useState("")
+
+  const [metaApproveVideo, setMetaApproveVideo] = useState<PackageVideo | null>(
+    null
+  )
+  const [metaApproveComment, setMetaApproveComment] = useState("")
+
+  const [brandApproveVideo, setBrandApproveVideo] =
+    useState<PackageVideo | null>(null)
+  const [brandApproveComment, setBrandApproveComment] = useState("")
 
   const load = useCallback(async () => {
     if (!token || !id) return
@@ -172,298 +192,227 @@ export default function ContentBrandPackageDetailPage() {
   }, [load])
 
   useEffect(() => {
-    if (!pkg) return
-    const videos = [...videoAssets(pkg)].sort(
-      (a, b) => (a.order ?? 0) - (b.order ?? 0)
-    )
-    const next: Record<string, string> = {}
-    for (const v of videos) {
-      const tlist = thumbnailsForVideo(v)
-      if (tlist.length) {
-        const picked = tlist.find((t) => t.isSelected) ?? tlist[0]
-        if (picked) next[v.id] = picked.id
-      }
+    if (!metaRejectVideo) {
+      setMetaRejectDraft(emptyMetaRejectDraft())
+      return
     }
-    setThumbnailSelectionByVideoId(next)
-    // Re-sync when opening a package or when server bumps version — not on every pkg reference change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: avoid wiping in-progress thumbnail picks
-  }, [pkg?.id, pkg?.version])
+    const asset = getCurrentVideoAsset(metaRejectVideo)
+    const thumbs = thumbnailsOnAsset(asset)
+    setMetaRejectDraft({
+      overallComments: "",
+      title: { flag: false, comment: "" },
+      description: { flag: false, comment: "" },
+      tags: { flag: false, comment: "" },
+      thumbs: Object.fromEntries(
+        thumbs.map((t) => [t.id, { reject: false, comment: "" }])
+      ),
+    })
+  }, [metaRejectVideo])
 
-  const canApproveMetadata =
-    pkg?.status === "MEDICAL_REVIEW" &&
-    pkg.metadataTrackStatus === "PENDING" &&
-    canAccess
-
-  const longAssets = useMemo(
-    () => assetsOfType(pkg ?? ({} as FinalPackage), "LONG_FORM"),
-    [pkg]
-  )
-  const shortAssets = useMemo(() => {
-    const list = assetsOfType(pkg ?? ({} as FinalPackage), "SHORT_FORM")
-    return [...list].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-  }, [pkg])
-  const sortedVideoAssets = useMemo(() => {
-    if (!pkg) return []
-    return [...videoAssets(pkg)].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-  }, [pkg])
-
-  const videoRejectLabelById = useMemo(() => {
-    const m = new Map<string, string>()
-    let shortNum = 0
-    for (const v of sortedVideoAssets) {
-      m.set(
-        v.id,
-        v.type === "LONG_FORM" ? "Long-form (main)" : `Short-form ${++shortNum}`
-      )
-    }
-    return m
-  }, [sortedVideoAssets])
-
-  const openRejectDialog = useCallback(
-    (mode: "metadata" | "video") => {
-      setRejectMode(mode)
-      setRejectDeliverableTabIndex(0)
-      setRejectDraftByVideoId(initialRejectDraftsForAssets(sortedVideoAssets))
-      setRejectOpen(true)
-    },
-    [sortedVideoAssets]
-  )
-
-  const patchRejectDraft = useCallback(
-    (assetId: string, patch: Partial<PerVideoRejectDraft>) => {
-      setRejectDraftByVideoId((prev) => ({
-        ...prev,
-        [assetId]: {
-          ...EMPTY_PER_VIDEO_REJECT,
-          ...prev[assetId],
-          ...patch,
-        },
-      }))
-    },
-    []
-  )
-
-  const resetRejectDialog = useCallback(() => {
-    setRejectMode(null)
-    setRejectDeliverableTabIndex(0)
-    setRejectDraftByVideoId({})
-  }, [])
-
-  const videoDeliverableBlocks = useMemo(
-    () => (pkg ? videoDeliverableBlocksFromPackage(pkg) : []),
+  const sortedVideos = useMemo(
+    () => (pkg ? packageVideosSorted(pkg) : []),
     [pkg]
   )
 
-  /** Per deliverable: copy + preview thumb for stacked metadata sections. */
-  const metadataRows = useMemo(() => {
-    if (!pkg || sortedVideoAssets.length === 0) return []
-    return sortedVideoAssets.map((v, i) => {
-      const block =
-        videoDeliverableBlocks.length > 1
-          ? videoDeliverableBlocks[i]
-          : videoDeliverableBlocks[0]
-      const parsed = block
-        ? parseAgencyDeliverableBlockBody(block.body)
-        : { title: "", description: "", tags: [] as string[] }
-      const metadataVideoTitle =
-        v.title?.trim() ||
-        parsed.title.trim() ||
-        (videoDeliverableBlocks.length <= 1
-          ? (pkg.name ?? pkg.title)
-          : (block?.heading ?? "—"))
-      const metadataVideoDescription =
-        parsed.description.trim() ||
-        (!parsed.title.trim() &&
-        parsed.tags.length === 0 &&
-        block?.body?.trim()
-          ? block.body.trim()
-          : "") ||
-        (videoDeliverableBlocks.length <= 1
-          ? (pkg.description?.trim() ?? "")
-          : "") ||
-        "—"
-      const metadataVideoTags =
-        parsed.tags.length > 0
-          ? parsed.tags
-          : videoDeliverableBlocks.length <= 1
-            ? (pkg.tags ?? [])
-            : []
-      const thumbsForMetadataCtx = thumbnailsForVideo(v)
-      const selectedThumbIdForCtx = thumbnailSelectionByVideoId[v.id]
-      const thumbnailForCurrentDeliverable =
-        selectedThumbIdForCtx && thumbsForMetadataCtx.length
-          ? (thumbsForMetadataCtx.find((t) => t.id === selectedThumbIdForCtx) ??
-            null)
-          : null
-      const readOnlyThumbForDeliverable = !canApproveMetadata
-        ? (thumbsForMetadataCtx.find((t) => t.isSelected) ?? null)
-        : null
-      const previewThumbForDeliverable =
-        thumbnailForCurrentDeliverable ?? readOnlyThumbForDeliverable
-      return {
-        id: v.id,
-        blockHeading: block?.heading,
-        metadataVideoTitle,
-        metadataVideoDescription,
-        metadataVideoTags,
-        previewThumbForDeliverable,
-      }
-    })
-  }, [
-    pkg,
-    sortedVideoAssets,
-    videoDeliverableBlocks,
-    thumbnailSelectionByVideoId,
-    canApproveMetadata,
-  ])
+  const metaQueueCount = useMemo(
+    () =>
+      sortedVideos.filter(
+        (v) =>
+          v.status === "MEDICAL_REVIEW" && v.metadataTrackStatus === "PENDING"
+      ).length,
+    [sortedVideos]
+  )
 
-  const brandVideoReviewSteps = useMemo(() => {
-    const steps: Array<{
-      asset: PackageAsset
-      label: string
-      icon: ReactNode
-    }> = []
-    for (const a of longAssets) {
-      steps.push({
-        asset: a,
-        label: "Long-form (main)",
-        icon: <Clapperboard className="size-5" />,
-      })
-    }
-    shortAssets.forEach((a, i) => {
-      steps.push({
-        asset: a,
-        label: `Short-form ${i + 1}`,
-        icon: <Smartphone className="size-5" />,
-      })
-    })
-    return steps
-  }, [longAssets, shortAssets])
+  const videoQualityCount = useMemo(
+    () => sortedVideos.filter(contentBrandPlaybackQualityActionsAvailable).length,
+    [sortedVideos]
+  )
+
+  const deliverableLabels = useMemo(
+    () => deliverableLabelsByVideoId(sortedVideos),
+    [sortedVideos]
+  )
 
   useEffect(() => {
-    if (!pkg) return
-    const approveMeta =
-      pkg.status === "MEDICAL_REVIEW" &&
-      pkg.metadataTrackStatus === "PENDING" &&
-      canAccess
-    const approveVideo = contentBrandCanSignOffVideos(pkg, canAccess)
-    if (pkg.videoTrackStatus === "REJECTED") setBrandPackageWorkTab("videos")
-    else if (pkg.metadataTrackStatus === "REJECTED")
-      setBrandPackageWorkTab("metadata")
-    else if (approveVideo) setBrandPackageWorkTab("videos")
-    else if (approveMeta) setBrandPackageWorkTab("metadata")
-    else setBrandPackageWorkTab("videos")
-  }, [pkg, canAccess])
+    defaultTabAppliedForPkgId.current = null
+  }, [id])
+
+  useEffect(() => {
+    const q = searchParams.get("tab")
+    if (q === "videos" || q === "metadata") {
+      setReviewTab(q)
+      return
+    }
+    if (!pkg?.id) return
+    if (defaultTabAppliedForPkgId.current === pkg.id) return
+    defaultTabAppliedForPkgId.current = pkg.id
+    if (videoQualityCount > 0) setReviewTab("videos")
+    else setReviewTab("metadata")
+  }, [searchParams, pkg?.id, videoQualityCount, metaQueueCount])
 
   async function handleApproveMetadata() {
-    if (!token || !id) return
-    if (sortedVideoAssets.length === 0) {
-      toast.error("No video assets on this package")
-      return
-    }
-    const thumbnailSelections = sortedVideoAssets.map((v) => {
-      const thumbnailId = thumbnailSelectionByVideoId[v.id]
-      return thumbnailId ? { assetId: v.id, thumbnailId } : null
-    })
-    if (thumbnailSelections.some((x) => x == null)) {
-      toast.error("Select one thumbnail for each video")
-      return
-    }
-    setBusy(true)
-    try {
-      const res = await approvePackage(token, id, {
-        comments: metaComments.trim() || "Metadata approved.",
-        thumbnailSelections: thumbnailSelections as Array<{
-          assetId: string
-          thumbnailId: string
-        }>,
-      })
-      setPkg(res.package)
-      setMetaApproveOpen(false)
-      setMetaComments("")
-      toast.success(res.message ?? "Metadata approved")
-      router.push("/content-brand-packages")
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Approve failed")
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleApproveVideos() {
-    if (!token || !id) return
-    setBusy(true)
-    try {
-      const res = await approvePackage(token, id, {
-        comments: videoComments.trim() || "Videos approved.",
-      })
-      setPkg(res.package)
-      setVideoApproveOpen(false)
-      setVideoComments("")
-      toast.success(res.message ?? "Approved — sent to Content Approver")
-      router.push("/content-brand-packages")
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Approve failed")
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleReject() {
-    if (!token || !id) return
-    const itemFeedback: PackageItemFeedbackEntry[] = []
-    const pushField = (
-      videoAssetId: string,
-      field: PackageItemFeedbackField,
-      comment: string
-    ) => {
-      const c = comment.trim()
-      if (!c) return
-      itemFeedback.push({
-        videoAssetId,
-        field,
-        hasIssue: true,
-        comment: c,
-      })
-    }
-    if (rejectMode === "metadata") {
-      for (const v of sortedVideoAssets) {
-        const d = rejectDraftByVideoId[v.id] ?? EMPTY_PER_VIDEO_REJECT
-        pushField(v.id, "TITLE", d.title)
-        pushField(v.id, "DESCRIPTION", d.description)
-        pushField(v.id, "TAGS", d.tags)
-        pushField(v.id, "THUMBNAIL", d.thumbnail)
-      }
-    }
-    if (rejectMode === "video") {
-      for (const v of sortedVideoAssets) {
-        const d = rejectDraftByVideoId[v.id] ?? EMPTY_PER_VIDEO_REJECT
-        pushField(v.id, "VIDEO", d.video)
-      }
-    }
-    if (itemFeedback.length === 0) {
+    if (!token || !metaApproveVideo) return
+    const asset = getCurrentVideoAsset(metaApproveVideo)
+    if (!asset) return
+    const thumbs = thumbnailsOnAsset(asset)
+    if (thumbs.some((t) => t.status === "REJECTED")) {
       toast.error(
-        "Add at least one comment on a deliverable — rejection is per video / field."
+        "A thumbnail is already rejected. Reject the metadata track (or wait for Agency) before you can approve."
       )
       return
     }
-    setBusy(true)
+    const pending = thumbs.filter((t) => t.status === "PENDING")
+    await run(`meta-approve-${metaApproveVideo.id}`, async () => {
+      for (const t of pending) {
+        await reviewPackageThumbnail(token, t.id, {
+          status: "APPROVED",
+        })
+      }
+      const res = await approvePackageVideo(token, metaApproveVideo.id, {
+        comments: metaApproveComment.trim() || "Metadata approved.",
+      })
+      setPkg((p) => (p ? mergeVideoIntoPackage(p, res.video) : p))
+      setMetaApproveVideo(null)
+      setMetaApproveComment("")
+      toast.success(res.message ?? "Metadata approved")
+      await load()
+    })
+  }
+
+  async function handleRejectMetadata() {
+    if (!token || !metaRejectVideo) return
+    const asset = getCurrentVideoAsset(metaRejectVideo)
+    if (!asset?.id) return
+
+    const d = metaRejectDraft
+    const itemFeedback: PackageItemFeedbackEntry[] = []
+
+    const pushField = (
+      field: "TITLE" | "DESCRIPTION" | "TAGS",
+      state: MetaRejectFieldState
+    ) => {
+      if (!state.flag) return
+      if (!state.comment.trim()) {
+        throw new Error(
+          `Add a comment for ${field === "TITLE" ? "title" : field === "DESCRIPTION" ? "description" : "tags"}.`
+        )
+      }
+      itemFeedback.push({
+        videoAssetId: asset.id,
+        field,
+        hasIssue: true,
+        comment: state.comment.trim(),
+      })
+    }
+
     try {
-      const res = await rejectPackage(token, id, {
-        overallComments: "",
+      pushField("TITLE", d.title)
+      pushField("DESCRIPTION", d.description)
+      pushField("TAGS", d.tags)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Invalid feedback")
+      return
+    }
+
+    for (const t of thumbnailsOnAsset(asset)) {
+      const row = d.thumbs[t.id]
+      if (!row?.reject) continue
+      if (!row.comment.trim()) {
+        toast.error(
+          `Add a rejection comment for thumbnail${t.fileName ? ` “${t.fileName}”` : ""}.`
+        )
+        return
+      }
+      itemFeedback.push({
+        videoAssetId: asset.id,
+        thumbnailId: t.id,
+        field: "THUMBNAIL",
+        hasIssue: true,
+        comment: row.comment.trim(),
+      })
+    }
+
+    if (itemFeedback.length === 0) {
+      toast.error(
+        "Flag at least one of title, description, or tags, or mark at least one thumbnail for rejection — each needs a comment."
+      )
+      return
+    }
+
+    const overall =
+      d.overallComments.trim() ||
+      "Metadata track rejected — details are in the itemized feedback below."
+
+    await run(`meta-reject-${metaRejectVideo.id}`, async () => {
+      const res = await rejectPackageVideo(token, metaRejectVideo.id, {
+        overallComments: overall,
         itemFeedback,
       })
-      setPkg(res.package)
-      setRejectOpen(false)
-      resetRejectDialog()
-      toast.warning(res.message ?? "Package rejected")
-      router.push("/content-brand-packages")
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Reject failed")
-    } finally {
-      setBusy(false)
-    }
+      setPkg((p) => (p ? mergeVideoIntoPackage(p, res.video) : p))
+      setMetaRejectVideo(null)
+      setMetaRejectDraft(emptyMetaRejectDraft())
+      toast.warning(res.message ?? "Metadata rejected")
+      await load()
+    })
   }
+
+  async function handleApproveBrandVideo() {
+    if (!token || !brandApproveVideo) return
+    await run(`brand-approve-${brandApproveVideo.id}`, async () => {
+      const res = await approvePackageVideo(token, brandApproveVideo.id, {
+        comments: brandApproveComment.trim() || "Video quality approved.",
+      })
+      setPkg((p) => (p ? mergeVideoIntoPackage(p, res.video) : p))
+      setBrandApproveVideo(null)
+      setBrandApproveComment("")
+      toast.success(res.message ?? "Approved")
+      await load()
+    })
+  }
+
+  async function handleRejectBrandVideo() {
+    if (!token || !brandRejectVideo || !brandRejectComment.trim()) {
+      toast.error("Add feedback for the video.")
+      return
+    }
+    const asset = getCurrentVideoAsset(brandRejectVideo)
+    if (!asset?.id) return
+    await run(`brand-reject-${brandRejectVideo.id}`, async () => {
+      const res = await rejectPackageVideo(token, brandRejectVideo.id, {
+        overallComments: brandRejectComment.trim(),
+        itemFeedback: [
+          {
+            videoAssetId: asset.id,
+            field: "VIDEO",
+            hasIssue: true,
+            comment: brandRejectComment.trim(),
+          },
+        ],
+      })
+      setPkg((p) => (p ? mergeVideoIntoPackage(p, res.video) : p))
+      setBrandRejectVideo(null)
+      setBrandRejectComment("")
+      toast.warning(res.message ?? "Sent back for Medical video review")
+      await load()
+    })
+  }
+
+  const reviewTabs = useMemo(
+    () =>
+      [
+        {
+          key: "videos" as const,
+          label:
+            videoQualityCount > 0 ? `Videos (${videoQualityCount})` : "Videos",
+        },
+        {
+          key: "metadata" as const,
+          label:
+            metaQueueCount > 0 ? `Metadata (${metaQueueCount})` : "Metadata",
+        },
+      ] as const,
+    [videoQualityCount, metaQueueCount]
+  )
 
   if (!canAccess) {
     return (
@@ -496,901 +445,914 @@ export default function ContentBrandPackageDetailPage() {
     )
   }
 
-  const status = pkg.status as PackageStatus
-
-  const showBrandWorkTabs =
-    status === "MEDICAL_REVIEW" || status === "BRAND_REVIEW"
-
-  const canApproveBrandVideos = contentBrandCanSignOffVideos(pkg, canAccess)
-
   return (
-    <div className="min-h-full bg-linear-to-b from-muted/40 via-background to-background pb-12 md:pb-16">
-      <div className="mx-auto max-w-5xl space-y-10 px-4 py-6 md:px-6 md:py-8">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ml-2 text-muted-foreground hover:text-foreground"
-          asChild
-        >
+    <div className="min-h-full bg-background">
+      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
+        <Button variant="ghost" size="sm" className="mb-8 -ml-2" asChild>
           <Link href="/content-brand-packages">
-            <ArrowLeft className="mr-1 size-4" />
-            Final packages
+            <ArrowLeft className="mr-2 size-4" />
+            Content/Brand queue
           </Link>
         </Button>
 
-        <header className="flex flex-col gap-6 border-b border-border/80 pb-8 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 space-y-4">
-            <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-              Phase 6 · Final package
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge
-                variant="outline"
-                className={cn("uppercase", packageStatusBadgeClass(status))}
-              >
-                {PACKAGE_STATUS_LABELS[status] ?? status}
-              </Badge>
-              {showBrandWorkTabs ? (
-                <>
-                  <Badge variant="secondary" className="font-normal">
-                    Video track: {TRACK_STATUS_LABELS[pkg.videoTrackStatus]}
-                  </Badge>
-                  <Badge variant="outline" className="font-normal">
-                    Metadata track:{" "}
-                    {TRACK_STATUS_LABELS[pkg.metadataTrackStatus]}
-                  </Badge>
-                </>
-              ) : null}
-              <span className="text-xs text-muted-foreground">
-                Version {pkg.version} · Updated{" "}
-                {formatPackageDate(pkg.updatedAt)}
-              </span>
+        <header className="mb-8 space-y-3 border-b border-border pb-8">
+          <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+            Phase 6 · Content/Brand
+          </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 space-y-1">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+                {pkg.name ?? pkg.title}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Script:{" "}
+                <span className="font-medium text-foreground">
+                  {pkg.script?.title ?? "—"}
+                </span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Updated {formatPackageDate(pkg.updatedAt)}
+              </p>
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-balance text-foreground sm:text-3xl">
-              {pkg.name ?? pkg.title}
-            </h1>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-              <span>From script</span>
-              {pkg.script?.title ? (
-                <Link
-                  href={`/content-brand-reviewer/${pkg.scriptId}`}
-                  className="font-medium text-primary underline-offset-4 hover:underline"
-                >
-                  {pkg.script.title}
-                </Link>
-              ) : (
-                <Button variant="link" className="h-auto p-0 text-sm" asChild>
-                  <Link href={`/content-brand-reviewer/${pkg.scriptId}`}>
-                    Open script
-                    <ExternalLink className="ml-1 size-3.5" />
-                  </Link>
-                </Button>
-              )}
-            </div>
+            <Badge variant="secondary" className="w-fit shrink-0 font-normal">
+              {sortedVideos.length} deliverable
+              {sortedVideos.length === 1 ? "" : "s"}
+            </Badge>
           </div>
-          <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:items-end" />
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            <strong>Metadata</strong> holds title, description, tags, and all
+            thumbnails for every deliverable. <strong>Video quality</strong> is
+            only the playable file and approve/reject for brand playback review.
+            Each deliverable is independent — you can work across them at the
+            same time.
+          </p>
         </header>
 
-        <Card className="border-blue-200/60 bg-blue-50/60 shadow-none dark:border-blue-900/40 dark:bg-blue-950/25">
-          <CardContent className="flex gap-4 py-5 sm:py-6">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-blue-700 dark:text-blue-300">
-              <Info className="size-5" />
-            </div>
-            <div className="min-w-0 space-y-3 text-sm">
-              <p className="font-semibold text-foreground">
-                How this page is organized
-              </p>
-              <ul className="list-none space-y-2.5 text-muted-foreground">
-                <li className="flex gap-2">
-                  <span
-                    className="mt-2 size-1.5 shrink-0 rounded-full bg-primary"
-                    aria-hidden
-                  />
-                  <span>
-                    <span className="font-medium text-foreground">Videos</span>{" "}
-                    — Step 1: Medical Affairs reviews the{" "}
-                    <strong className="font-medium text-foreground">
-                      video files
-                    </strong>
-                    . Step 2: after metadata is approved and Medical has
-                    approved the video track, Content/Brand signs off on the
-                    full video package (same Videos tab — Approve / Reject
-                    appears then). If the video track is rejected, the Agency
-                    resubmits videos only.
-                  </span>
-                </li>
-                <li className="flex gap-2">
-                  <span
-                    className="mt-2 size-1.5 shrink-0 rounded-full bg-primary"
-                    aria-hidden
-                  />
-                  <span>
+        <section
+          aria-label="Content Brand review workspace"
+          className="space-y-4"
+        >
+          <Card className="border-blue-200/60 bg-blue-50/60 shadow-none dark:border-blue-900/40 dark:bg-blue-950/25">
+            <CardContent className="flex gap-4 py-5 sm:py-6">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-blue-700 dark:text-blue-300">
+                <Info className="size-5" />
+              </div>
+              <div className="min-w-0 space-y-2 text-sm text-muted-foreground">
+                <p className="font-semibold text-foreground">
+                  How this page is organized
+                </p>
+                <ul className="list-disc space-y-1 pl-4">
+                  <li>
                     <span className="font-medium text-foreground">
                       Metadata
                     </span>{" "}
-                    — In parallel with Medical video review, Content/Brand
-                    reviews{" "}
-                    <strong className="font-medium text-foreground">
-                      titles, descriptions, tags, and thumbnails
-                    </strong>{" "}
-                    (one selected thumbnail per video). If that track is
-                    rejected, the Agency updates only what was flagged.
-                  </span>
-                </li>
-                <li className="flex gap-2">
-                  <span
-                    className="mt-2 size-1.5 shrink-0 rounded-full bg-muted-foreground/50"
-                    aria-hidden
-                  />
-                  <span>
-                    The{" "}
-                    <strong className="font-medium text-foreground">
-                      timer
-                    </strong>{" "}
-                    under the tabs shows turnaround time (TAT) for this package.
-                  </span>
-                </li>
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
-
-        {status === "APPROVED" && pkg.lockedAt && (
-          <Card className="border-green-600/30 bg-green-50/50 shadow-none dark:border-green-700/40 dark:bg-green-950/30">
-            <CardContent className="flex items-center gap-3 py-4 text-sm text-green-900 dark:text-green-100">
-              <CheckCircle2 className="size-5 shrink-0" />
-              <span>
-                This package is <strong>approved and locked</strong> as of{" "}
-                {formatPackageDate(pkg.lockedAt)}.
-              </span>
+                    — Title, description, tags, and thumbnails. Reject metadata
+                    (including specific thumbnails) from the rejection flow;
+                    approving metadata auto-approves any still-pending thumbnails
+                    first. Parallel with Medical while the deliverable is in
+                    Medical review.
+                  </li>
+                  <li>
+                    <span className="font-medium text-foreground">
+                      Video quality
+                    </span>{" "}
+                    — Video file only (no thumbnails here). Approve or reject
+                    playback once <strong>this</strong> deliverable is in Brand
+                    quality review (both tracks approved for that deliverable).
+                    Other deliverables never block this one.
+                  </li>
+                </ul>
+              </div>
             </CardContent>
           </Card>
-        )}
 
-        {!showBrandWorkTabs ? <PackageTatCard pkg={pkg} /> : null}
+          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+            <div className="border-b border-border bg-muted/20 px-1">
+              <PackageListTabNav<BrandReviewTab>
+                tabs={reviewTabs}
+                active={reviewTab}
+                onChange={(k) => {
+                  setReviewTab(k)
+                  router.replace(
+                    `/content-brand-packages/${id}?tab=${encodeURIComponent(k)}`,
+                    { scroll: false }
+                  )
+                }}
+                ariaLabel="Metadata and video quality review"
+              />
+            </div>
+            <div className="space-y-6 p-4 sm:p-6">
+              <PackageTatCard pkg={pkg} />
 
-        {showBrandWorkTabs ? (
-          <>
-            <section aria-label="Revision by track" className="space-y-4">
-              <div>
-                <h2 className="text-lg font-semibold tracking-tight text-foreground">
-                  Work on this package
-                </h2>
-                <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                  Pick the tab that matches what reviewers asked you to change.
-                  Each tab shows status, any comments, then your files or edit
-                  form.
-                </p>
-              </div>
-              <div className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-sm">
-                <div className="border-b border-border bg-muted/20 px-1">
-                  <PackageListTabNav<"videos" | "metadata">
-                    tabs={[
-                      {
-                        key: "videos",
-                        label:
-                          pkg.videoTrackStatus === "REJECTED"
-                            ? "Videos — needs update"
-                            : canApproveBrandVideos
-                              ? "Videos (your review)"
-                              : "Videos",
-                      },
-                      {
-                        key: "metadata",
-                        label:
-                          pkg.metadataTrackStatus === "REJECTED"
-                            ? "Metadata — needs update"
-                            : "Metadata",
-                      },
-                    ]}
-                    active={brandPackageWorkTab}
-                    onChange={setBrandPackageWorkTab}
-                    ariaLabel="Video and metadata review"
-                  />
-                </div>
-                <div className="space-y-6 p-4 sm:p-6">
-                  <PackageTatCard pkg={pkg} />
-                  {brandPackageWorkTab === "metadata" &&
-                    pkg.metadataTrackStatus === "APPROVED" && (
-                      <TrackStatusCallout
-                        status="APPROVED"
-                        title="Metadata track (Content / Brand)"
-                      >
-                        <p className="text-foreground">
-                          Metadata is <strong>approved</strong> for this package.
-                          Titles, descriptions, tags, and thumbnail choices are
-                          set for this stage — the deliverable section below is
-                          read-only for reference.
-                        </p>
-                        {status === "MEDICAL_REVIEW" ? (
-                          <p className="mt-3 text-muted-foreground">
-                            Medical Affairs may still be reviewing the video
-                            track. Use the{" "}
-                            <strong className="font-medium text-foreground">
-                              Videos
-                            </strong>{" "}
-                            tab to preview cuts; you&apos;ll sign off on the full
-                            video package when this submission reaches Brand video
-                            review.
-                          </p>
-                        ) : null}
-                        {status === "BRAND_REVIEW" ? (
-                          <p className="mt-3 text-muted-foreground">
-                            Use the{" "}
-                            <strong className="font-medium text-foreground">
-                              Videos
-                            </strong>{" "}
-                            tab to approve or reject the full video package when
-                            you are ready.
-                          </p>
-                        ) : null}
-                      </TrackStatusCallout>
-                    )}
-                  {brandPackageWorkTab === "videos" ? (
-                    <>
-                      {canApproveBrandVideos && (
-                        <>
-                          <Card className="border-primary/25 bg-primary/5 dark:bg-primary/10">
-                            <CardContent className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center sm:justify-between">
-                              <div>
-                                <p className="font-medium text-foreground">
-                                  Full video package — action needed
-                                </p>
-                                <p className="mt-1 text-sm text-muted-foreground">
-                                  Review one video at a time (long-form, then
-                                  each short), then approve to send to Content
-                                  Approver or reject with feedback.
-                                </p>
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                <Button
-                                  onClick={() => setVideoApproveOpen(true)}
-                                  className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
-                                >
-                                  <CheckCircle className="mr-2 size-4" />
-                                  Approve videos
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  onClick={() => openRejectDialog("video")}
-                                  className="gap-1.5 text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-500/30 dark:text-red-500 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-                                >
-                                  <XCircle className="mr-2 size-4" />
-                                  Reject videos
-                                </Button>
-                              </div>
-                            </CardContent>
-                          </Card>
-
-                          {pkg.selectedThumbnail && (
-                            <Card className="overflow-hidden border-0 shadow-md ring-1 ring-border/60">
-                              <CardHeader className="border-b border-border bg-muted/20">
-                                <CardTitle className="text-base">
-                                  Selected thumbnail (locked)
-                                </CardTitle>
-                                <CardDescription>
-                                  Chosen at metadata approval —{" "}
-                                  {pkg.selectedThumbnail.fileName}
-                                </CardDescription>
-                              </CardHeader>
-                              <CardContent className="p-4 sm:p-6">
-                                <div className="mx-auto max-w-xl overflow-hidden rounded-xl border border-border bg-muted/20">
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img
-                                    src={pkg.selectedThumbnail.fileUrl}
-                                    alt=""
-                                    className="aspect-video w-full object-cover"
-                                  />
-                                </div>
-                              </CardContent>
-                            </Card>
-                          )}
-                        </>
-                      )}
-
-                      {status === "MEDICAL_REVIEW" &&
-                        !canApproveBrandVideos && (
-                          <Card className="border-muted/60 bg-muted/15 shadow-none">
-                            <CardContent className="flex gap-3 py-4">
-                              <Info className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-                              <div className="text-sm">
-                                <p className="font-medium text-foreground">
-                                  Medical Affairs is reviewing the video track
-                                </p>
-                                <p className="mt-1 text-muted-foreground">
-                                  Preview each cut below for context. When the
-                                  package reaches Brand video review,
-                                  you&apos;ll approve or reject the full video
-                                  package here.
-                                </p>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-
-                      <section className="space-y-4">
-                        <h2 className="text-base font-semibold tracking-wide text-muted-foreground uppercase">
-                          {canApproveBrandVideos
-                            ? "Videos to review"
-                            : "Video cuts (preview)"}
-                        </h2>
-
-                        {brandVideoReviewSteps.length > 0 ? (
-                          <div className="space-y-10">
-                            {brandVideoReviewSteps.map((s) => (
-                              <PackageInlineVideoCard
-                                key={s.asset.id}
-                                asset={s.asset}
-                                label={s.label}
-                                icon={s.icon}
-                                videoOnly
-                              />
-                            ))}
-                          </div>
-                        ) : (
-                          <Card>
-                            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                              No video assets on this package.
-                            </CardContent>
-                          </Card>
-                        )}
-                        {brandVideoReviewSteps.length > 0 ? (
-                          <p className="text-center text-xs text-muted-foreground sm:text-left">
-                            {canApproveBrandVideos
-                              ? "Review each cut above before approving the full package."
-                              : "Preview only — Medical Affairs owns the video track until Brand video review."}
-                          </p>
-                        ) : null}
-                      </section>
-                    </>
-                  ) : (
-                    <>
-                      {canApproveMetadata && (
-                        <Card className="border-primary/25 bg-primary/5 dark:bg-primary/10">
-                          <CardContent className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                              <p className="font-medium text-foreground">
-                                Metadata review — action needed
-                              </p>
-                              <p className="mt-1 text-sm text-muted-foreground">
-                                Review each deliverable below, then choose one
-                                thumbnail per video for publication. Approve
-                                sends your choice to the API; Medical may still
-                                be reviewing videos in parallel.
-                              </p>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              <Button
-                                onClick={() => setMetaApproveOpen(true)}
-                                className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
-                              >
-                                <CheckCircle className="mr-2 size-4" />
-                                Approve metadata
-                              </Button>
-                              <Button
-                                variant="outline"
-                                onClick={() => openRejectDialog("metadata")}
-                                className="gap-1.5 text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-500/30 dark:text-red-500 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-                              >
-                                <XCircle className="mr-2 size-4" />
-                                Reject metadata
-                              </Button>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      )}
-
-                      <div className="space-y-6">
-                        <div className="rounded-lg border border-border/80 bg-muted/15 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
-                          {canApproveMetadata ? (
-                            <>
-                              Each card is one deliverable. Title, description,
-                              and tags come from the Agency. After reviewing all
-                              cards, pick one thumbnail per video for publication
-                              (see{" "}
-                              <code className="rounded bg-muted px-1 text-xs">
-                                thumbnailId
-                              </code>{" "}
-                              in the approve API).
-                            </>
-                          ) : (
-                            <>
-                              Read-only reference — one card per deliverable.
-                              Thumbnails show the option selected for publication
-                              where the API marks{" "}
-                              <code className="rounded bg-muted px-1 text-xs">
-                                isSelected
-                              </code>
-                              .
-                            </>
-                          )}
-                        </div>
-
-                        {metadataRows.length === 0 ? (
-                          <Card className="border-dashed border-border bg-muted/10">
-                            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                              No deliverable metadata to show.
-                            </CardContent>
-                          </Card>
-                        ) : (
-                          metadataRows.map((row) => {
-                            const deliverableLabel =
-                              videoRejectLabelById.get(row.id) ??
-                              row.blockHeading ??
-                              "Deliverable"
-                            return (
-                              <Card
-                                key={row.id}
-                                className="overflow-hidden border-0 shadow-md ring-1 ring-border/60"
-                              >
-                                <CardHeader className="border-b border-border bg-muted/20">
-                                  <div className="flex flex-wrap items-start gap-3">
-                                    <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                                      <FileText className="size-5" />
-                                    </div>
-                                    <div className="min-w-0 flex-1 space-y-1">
-                                      <CardTitle className="text-lg">
-                                        {deliverableLabel}
-                                      </CardTitle>
-                                      {row.blockHeading &&
-                                      row.blockHeading !== deliverableLabel ? (
-                                        <CardDescription>
-                                          {row.blockHeading}
-                                        </CardDescription>
-                                      ) : null}
-                                    </div>
-                                  </div>
-                                </CardHeader>
-                                <CardContent className="space-y-6 p-5 sm:p-6">
-                                  <section className="space-y-3">
-                                    <div className="flex items-center gap-2">
-                                      <FileText className="size-4 text-muted-foreground" />
-                                      <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                                        Video title
-                                      </Label>
-                                    </div>
-                                    <p className="text-xl leading-snug font-semibold text-foreground sm:text-2xl">
-                                      {row.metadataVideoTitle}
-                                    </p>
-                                  </section>
-
-                                  <section className="space-y-3 border-t border-border pt-6">
-                                    <div className="flex items-center gap-2">
-                                      <FileText className="size-4 text-muted-foreground" />
-                                      <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                                        Description
-                                      </Label>
-                                    </div>
-                                    <div className="max-h-[min(70vh,28rem)] overflow-y-auto rounded-xl border border-border bg-muted/15 p-4 text-sm leading-relaxed whitespace-pre-wrap text-foreground sm:p-5 sm:text-base">
-                                      {row.metadataVideoDescription}
-                                    </div>
-                                  </section>
-
-                                  <section className="space-y-3 border-t border-border pt-6">
-                                    <div className="flex items-center gap-2">
-                                      <Hash className="size-4 text-muted-foreground" />
-                                      <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                                        Tags
-                                      </Label>
-                                    </div>
-                                    {row.metadataVideoTags.length ? (
-                                      <div className="flex flex-wrap gap-2">
-                                        {row.metadataVideoTags.map((t) => (
-                                          <Badge
-                                            key={`${row.id}-tag-${t}`}
-                                            variant="secondary"
-                                            className="px-3 py-1.5 text-sm font-normal"
-                                          >
-                                            {t}
-                                          </Badge>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <p className="text-sm text-muted-foreground">
-                                        {videoDeliverableBlocks.length > 1
-                                          ? "No tags listed for this deliverable."
-                                          : "No tags on this package."}
-                                      </p>
-                                    )}
-                                  </section>
-
-                                  {row.previewThumbForDeliverable ? (
-                                    <section className="space-y-3 border-t border-border pt-6">
-                                      <div className="flex items-center gap-2">
-                                        <ImageIcon className="size-4 text-muted-foreground" />
-                                        <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                                          Selected thumbnail for this cut
-                                        </Label>
-                                      </div>
-                                      <p className="text-sm text-muted-foreground">
-                                        {canApproveMetadata
-                                          ? "Preview of your current choice for this video."
-                                          : "Thumbnail marked for publication for this deliverable (read-only)."}
-                                      </p>
-                                      <div className="mx-auto max-w-md overflow-hidden rounded-xl border border-border bg-muted/20">
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img
-                                          src={
-                                            row.previewThumbForDeliverable
-                                              .fileUrl
-                                          }
-                                          alt=""
-                                          className="aspect-video w-full object-cover"
-                                        />
-                                      </div>
-                                      <p className="truncate font-mono text-[11px] text-muted-foreground">
-                                        {
-                                          row.previewThumbForDeliverable
-                                            .fileName
-                                        }
-                                      </p>
-                                    </section>
-                                  ) : null}
-                                </CardContent>
-                              </Card>
-                            )
-                          })
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            </section>
-          </>
-        ) : null}
-
-        {!showBrandWorkTabs &&
-          !canApproveMetadata &&
-          !canApproveBrandVideos && (
-            <Card className="border-dashed border-border bg-muted/10">
-              <CardContent className="flex gap-3 py-6">
-                <Info className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  No Content/Brand action is required for this package in its
-                  current state. Return to the queue or use the reference IDs
-                  below if you need support context.
-                </p>
-              </CardContent>
-            </Card>
-          )}
-
-        {/* <Card className="shadow-sm">
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-              <Hash className="size-5 text-muted-foreground" />
-              Reference · IDs &amp; submission
-            </CardTitle>
-            <CardDescription className="text-sm leading-relaxed">
-              Use these when talking to Practo support or your internal team.
-              They do not change when you resubmit tracks.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <dl className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <dt className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                  Package ID
-                </dt>
-                <dd className="mt-1 font-mono text-sm break-all">{pkg.id}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                  Script ID
-                </dt>
-                <dd className="mt-1 font-mono text-sm break-all">
-                  <Link
-                    href={`/content-brand-reviewer/${pkg.scriptId}`}
-                    className="text-primary underline-offset-4 hover:underline"
-                  >
-                    {pkg.scriptId}
-                  </Link>
-                </dd>
-              </div>
-              <div>
-                <dt className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                  <Calendar className="size-3.5" />
-                  Created
-                </dt>
-                <dd className="mt-1 text-sm">
-                  {formatPackageDate(pkg.createdAt)}
-                </dd>
-              </div>
-              <div>
-                <dt className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                  <Calendar className="size-3.5" />
-                  Last updated
-                </dt>
-                <dd className="mt-1 text-sm">
-                  {formatPackageDate(pkg.updatedAt)}
-                </dd>
-              </div>
-              {pkg.uploadedBy ? (
-                <div className="sm:col-span-2">
-                  <dt className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                    <User className="size-3.5" />
-                    Submitted by
-                  </dt>
-                  <dd className="mt-1 text-sm">
-                    {pkg.uploadedBy.firstName} {pkg.uploadedBy.lastName}
-                    {pkg.uploadedBy.role ? ` · ${pkg.uploadedBy.role}` : ""}
-                  </dd>
-                </div>
-              ) : null}
-            </dl>
-          </CardContent>
-        </Card> */}
+              {reviewTab === "metadata" ? (
+                <BrandMetadataPanel
+                  sortedVideos={sortedVideos}
+                  deliverableLabels={deliverableLabels}
+                  canAccess={canAccess}
+                  setMetaApproveVideo={setMetaApproveVideo}
+                  setMetaRejectVideo={setMetaRejectVideo}
+                  isPending={isPending}
+                />
+              ) : (
+                <BrandVideoQualityPanel
+                  sortedVideos={sortedVideos}
+                  deliverableLabels={deliverableLabels}
+                  canAccess={canAccess}
+                  setBrandApproveVideo={setBrandApproveVideo}
+                  setBrandRejectVideo={setBrandRejectVideo}
+                  isPending={isPending}
+                />
+              )}
+            </div>
+          </div>
+        </section>
       </div>
 
-      <Dialog open={metaApproveOpen} onOpenChange={setMetaApproveOpen}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog
+        open={metaApproveVideo != null}
+        onOpenChange={() => setMetaApproveVideo(null)}
+      >
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Approve metadata</DialogTitle>
+            <DialogTitle>Approve metadata track</DialogTitle>
             <DialogDescription>
-              Confirms title, description, tags, and your thumbnail selection.
-              Medical Affairs may still be reviewing the video track in
-              parallel.
+              Any thumbnails still pending will be approved first (same as the
+              per-thumbnail approve API), then the metadata track is approved.
+              Thumbnails already marked rejected on this version cannot be
+              approved here.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="meta-c">Comments</Label>
-            <Textarea
-              id="meta-c"
-              value={metaComments}
-              onChange={(e) => setMetaComments(e.target.value)}
-              placeholder="Brand sign-off notes…"
-              rows={3}
-            />
-          </div>
+          <Textarea
+            value={metaApproveComment}
+            onChange={(e) => setMetaApproveComment(e.target.value)}
+            rows={3}
+          />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMetaApproveOpen(false)}>
+            <Button variant="outline" onClick={() => setMetaApproveVideo(null)}>
               Cancel
             </Button>
-            <Button onClick={handleApproveMetadata} disabled={busy}>
-              {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
-              Submit approval
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={videoApproveOpen} onOpenChange={setVideoApproveOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Approve full video package</DialogTitle>
-            <DialogDescription>
-              Sends the package to Content Approver for final sign-off.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="vid-c">Comments</Label>
-            <Textarea
-              id="vid-c"
-              value={videoComments}
-              onChange={(e) => setVideoComments(e.target.value)}
-              placeholder="Video / brand alignment notes…"
-              rows={3}
-            />
-          </div>
-          <DialogFooter>
             <Button
-              variant="outline"
-              onClick={() => setVideoApproveOpen(false)}
+              onClick={() => void handleApproveMetadata()}
+              disabled={
+                !metaApproveVideo ||
+                isPending(`meta-approve-${metaApproveVideo.id}`)
+              }
             >
-              Cancel
-            </Button>
-            <Button onClick={handleApproveVideos} disabled={busy}>
-              {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
-              Submit approval
+              {metaApproveVideo &&
+                isPending(`meta-approve-${metaApproveVideo.id}`) && (
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                )}
+              Confirm
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog
-        open={rejectOpen}
-        onOpenChange={(o) => {
-          setRejectOpen(o)
-          if (!o) resetRejectDialog()
+        open={metaRejectVideo != null}
+        onOpenChange={(open) => {
+          if (!open) setMetaRejectVideo(null)
         }}
       >
-        <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
-          <DialogHeader className="space-y-1 border-b border-border px-6 py-4">
-            <DialogTitle>Reject package</DialogTitle>
+        <DialogContent
+          showCloseButton
+          className="flex max-h-[min(90vh,44rem)] w-[calc(100vw-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+        >
+          {metaRejectVideo ? (
+            <RejectMetadataDialogBody
+              video={metaRejectVideo}
+              draft={metaRejectDraft}
+              setDraft={setMetaRejectDraft}
+              deliverableLabel={
+                deliverableLabels.get(metaRejectVideo.id) ?? "Deliverable"
+              }
+              onCancel={() => setMetaRejectVideo(null)}
+              onSubmit={() => void handleRejectMetadata()}
+              isPending={isPending(`meta-reject-${metaRejectVideo.id}`)}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={brandApproveVideo != null}
+        onOpenChange={() => setBrandApproveVideo(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Approve video</DialogTitle>
             <DialogDescription>
-              {rejectMode === "metadata"
-                ? "Add feedback per video — comments apply only to that video."
-                : rejectMode === "video"
-                  ? "Add video feedback per deliverable (long-form and each short are separate)."
-                  : "Add feedback below."}
+              If approved, this deliverable will move to content approver for finalreview.
+              <br />
+              Comments are optional.
             </DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
-            {(rejectMode === "metadata" || rejectMode === "video") &&
-            sortedVideoAssets.length > 0 ? (
-              <>
-                {sortedVideoAssets.length > 1 ? (
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div
-                      className="flex flex-wrap gap-2"
-                      role="tablist"
-                      aria-label="Deliverable for rejection feedback"
-                    >
-                      {sortedVideoAssets.map((v, i) => {
-                        const tabLabel =
-                          videoRejectLabelById.get(v.id) ?? "Video"
-                        return (
-                          <button
-                            key={v.id}
-                            type="button"
-                            role="tab"
-                            aria-selected={i === rejectDeliverableTabIndex}
-                            className={cn(
-                              "max-w-[min(100%,16rem)] truncate rounded-full px-3 py-1.5 text-left text-xs font-medium transition-colors",
-                              i === rejectDeliverableTabIndex
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
-                            )}
-                            title={tabLabel}
-                            onClick={() => setRejectDeliverableTabIndex(i)}
-                          >
-                            {tabLabel}
-                          </button>
-                        )
-                      })}
-                    </div>
-                    <Badge variant="outline" className="shrink-0 tabular-nums">
-                      {rejectDeliverableTabIndex + 1} of{" "}
-                      {sortedVideoAssets.length}
-                    </Badge>
-                  </div>
-                ) : null}
-
-                {(() => {
-                  const safeIdx = Math.min(
-                    rejectDeliverableTabIndex,
-                    sortedVideoAssets.length - 1
-                  )
-                  const v = sortedVideoAssets[safeIdx]!
-                  const label = videoRejectLabelById.get(v.id) ?? "Video"
-                  const d = rejectDraftByVideoId[v.id] ?? EMPTY_PER_VIDEO_REJECT
-
-                  if (rejectMode === "metadata") {
-                    return (
-                      <Card key={v.id} className="border-border/80 shadow-none">
-                        <CardHeader className="space-y-0 pt-2 pb-2 sm:pt-4">
-                          <CardTitle className="text-base">{label}</CardTitle>
-                          <CardDescription className="text-xs">
-                            Metadata feedback for this cut only (title,
-                            description, tags, thumbnails). Switch cuts with the
-                            pills above when there is more than one deliverable.
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-3 pb-4">
-                          <div className="space-y-2">
-                            <Label htmlFor={`rej-title-${v.id}`}>
-                              Title (optional)
-                            </Label>
-                            <Textarea
-                              id={`rej-title-${v.id}`}
-                              value={d.title}
-                              onChange={(e) =>
-                                patchRejectDraft(v.id, {
-                                  title: e.target.value,
-                                })
-                              }
-                              rows={2}
-                              placeholder={`Issues with title for ${label}…`}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor={`rej-desc-${v.id}`}>
-                              Description (optional)
-                            </Label>
-                            <Textarea
-                              id={`rej-desc-${v.id}`}
-                              value={d.description}
-                              onChange={(e) =>
-                                patchRejectDraft(v.id, {
-                                  description: e.target.value,
-                                })
-                              }
-                              rows={2}
-                              placeholder={`Issues with description for ${label}…`}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor={`rej-tags-${v.id}`}>
-                              Tags (optional)
-                            </Label>
-                            <Textarea
-                              id={`rej-tags-${v.id}`}
-                              value={d.tags}
-                              onChange={(e) =>
-                                patchRejectDraft(v.id, {
-                                  tags: e.target.value,
-                                })
-                              }
-                              rows={2}
-                              placeholder={`Issues with tags for ${label}…`}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor={`rej-thumb-${v.id}`}>
-                              Thumbnails (optional)
-                            </Label>
-                            <Textarea
-                              id={`rej-thumb-${v.id}`}
-                              value={d.thumbnail}
-                              onChange={(e) =>
-                                patchRejectDraft(v.id, {
-                                  thumbnail: e.target.value,
-                                })
-                              }
-                              rows={2}
-                              placeholder={`Issues with thumbnail options for ${label}…`}
-                            />
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )
-                  }
-
-                  return (
-                    <Card key={v.id} className="border-border/80 shadow-none">
-                      <CardHeader className="space-y-0 pt-2 pb-2 sm:pt-4">
-                        <CardTitle className="text-base">{label}</CardTitle>
-                        <CardDescription className="text-xs">
-                          Video file / encoding / brand quality — this
-                          deliverable only. Switch cuts with the pills above
-                          when there is more than one deliverable.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="pb-4">
-                        <div className="space-y-2">
-                          <Label htmlFor={`rej-vid-${v.id}`}>
-                            Video feedback (required)
-                          </Label>
-                          <Textarea
-                            id={`rej-vid-${v.id}`}
-                            value={d.video}
-                            onChange={(e) =>
-                              patchRejectDraft(v.id, {
-                                video: e.target.value,
-                              })
-                            }
-                            rows={3}
-                            placeholder={`What must change for ${label}?`}
-                          />
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )
-                })()}
-              </>
-            ) : null}
-            {sortedVideoAssets.length === 0 &&
-            (rejectMode === "metadata" || rejectMode === "video") ? (
-              <p className="text-sm text-muted-foreground">
-                No video deliverables on this package.
-              </p>
-            ) : null}
-          </div>
-          <DialogFooter className="border-t border-border px-6 py-4">
-            <Button variant="outline" onClick={() => setRejectOpen(false)}>
+          <Textarea
+            value={brandApproveComment}
+            onChange={(e) => setBrandApproveComment(e.target.value)}
+            rows={3}
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setBrandApproveVideo(null)}
+            >
               Cancel
             </Button>
             <Button
-              variant="destructive"
-              onClick={handleReject}
-              disabled={busy}
+              onClick={() => void handleApproveBrandVideo()}
+              disabled={
+                !brandApproveVideo ||
+                isPending(`brand-approve-${brandApproveVideo.id}`)
+              }
             >
-              {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
-              Reject package
+              {brandApproveVideo &&
+                isPending(`brand-approve-${brandApproveVideo.id}`) && (
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                )}
+              Confirm
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={brandRejectVideo != null}
+        onOpenChange={() => setBrandRejectVideo(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject video</DialogTitle>
+            <DialogDescription>
+              Add a comment to send the video back to Agency for changes.
+              <br />
+              Comments are required.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={brandRejectComment}
+            onChange={(e) => setBrandRejectComment(e.target.value)}
+            rows={4}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBrandRejectVideo(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void handleRejectBrandVideo()}
+              disabled={
+                !brandRejectVideo ||
+                isPending(`brand-reject-${brandRejectVideo.id}`)
+              }
+            >
+              {brandRejectVideo &&
+                isPending(`brand-reject-${brandRejectVideo.id}`) && (
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                )}
+              Reject & send feedback
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function RejectMetadataDialogBody({
+  video,
+  draft,
+  setDraft,
+  deliverableLabel,
+  onCancel,
+  onSubmit,
+  isPending,
+}: {
+  video: PackageVideo
+  draft: MetaRejectDraft
+  setDraft: Dispatch<SetStateAction<MetaRejectDraft>>
+  deliverableLabel: string
+  onCancel: () => void
+  onSubmit: () => void
+  isPending: boolean
+}) {
+  const asset = getCurrentVideoAsset(video)
+  const thumbs = thumbnailsOnAsset(asset)
+  const titlePreview = (asset?.title ?? "").trim() || "—"
+  const descPreview = (asset?.description ?? "").trim() || "—"
+  const tagsPreview =
+    asset?.tags && asset.tags.length > 0 ? asset.tags.join(", ") : "—"
+
+  return (
+    <>
+      <DialogHeader className="shrink-0 space-y-2 border-b border-border px-6 py-4 pr-14">
+        <DialogTitle>Reject metadata track</DialogTitle>
+        <DialogDescription>
+          {deliverableLabel} — flag each problem area and add a comment. The API
+          needs at least one issue with a comment. Submitting rejects the whole
+          metadata track for Agency to resubmit.
+        </DialogDescription>
+      </DialogHeader>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="meta-reject-overall">Overall summary (optional)</Label>
+            <Textarea
+              id="meta-reject-overall"
+              value={draft.overallComments}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, overallComments: e.target.value }))
+              }
+              rows={2}
+              placeholder="High-level note for the rejection record…"
+              className="resize-y"
+            />
+          </div>
+
+          <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
+            <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+              Metadata fields
+            </p>
+
+            <label className="flex cursor-pointer gap-3 rounded-md border border-transparent p-2 hover:bg-muted/40 has-checked:border-border has-checked:bg-background">
+              <input
+                type="checkbox"
+                checked={draft.title.flag}
+                onChange={(e) =>
+                  setDraft((d) => ({
+                    ...d,
+                    title: { ...d.title, flag: e.target.checked },
+                  }))
+                }
+                className="mt-1 size-4 shrink-0 rounded border-input"
+              />
+              <div className="min-w-0 flex-1 space-y-2">
+                <span className="text-sm font-medium">Title</span>
+                <p className="text-xs text-muted-foreground line-clamp-3">
+                  {titlePreview}
+                </p>
+                {draft.title.flag ? (
+                  <Textarea
+                    value={draft.title.comment}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        title: { ...d.title, comment: e.target.value },
+                      }))
+                    }
+                    rows={2}
+                    placeholder="What should change in the title?"
+                    className="resize-y text-sm"
+                  />
+                ) : null}
+              </div>
+            </label>
+
+            <label className="flex cursor-pointer gap-3 rounded-md border border-transparent p-2 hover:bg-muted/40 has-checked:border-border has-checked:bg-background">
+              <input
+                type="checkbox"
+                checked={draft.description.flag}
+                onChange={(e) =>
+                  setDraft((d) => ({
+                    ...d,
+                    description: {
+                      ...d.description,
+                      flag: e.target.checked,
+                    },
+                  }))
+                }
+                className="mt-1 size-4 shrink-0 rounded border-input"
+              />
+              <div className="min-w-0 flex-1 space-y-2">
+                <span className="text-sm font-medium">Description</span>
+                <p className="text-xs text-muted-foreground line-clamp-4 whitespace-pre-wrap">
+                  {descPreview}
+                </p>
+                {draft.description.flag ? (
+                  <Textarea
+                    value={draft.description.comment}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        description: {
+                          ...d.description,
+                          comment: e.target.value,
+                        },
+                      }))
+                    }
+                    rows={3}
+                    placeholder="What should change in the description?"
+                    className="resize-y text-sm"
+                  />
+                ) : null}
+              </div>
+            </label>
+
+            <label className="flex cursor-pointer gap-3 rounded-md border border-transparent p-2 hover:bg-muted/40 has-checked:border-border has-checked:bg-background">
+              <input
+                type="checkbox"
+                checked={draft.tags.flag}
+                onChange={(e) =>
+                  setDraft((d) => ({
+                    ...d,
+                    tags: { ...d.tags, flag: e.target.checked },
+                  }))
+                }
+                className="mt-1 size-4 shrink-0 rounded border-input"
+              />
+              <div className="min-w-0 flex-1 space-y-2">
+                <span className="text-sm font-medium">Tags</span>
+                <p className="text-xs text-muted-foreground">{tagsPreview}</p>
+                {draft.tags.flag ? (
+                  <Textarea
+                    value={draft.tags.comment}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        tags: { ...d.tags, comment: e.target.value },
+                      }))
+                    }
+                    rows={2}
+                    placeholder="What should change in the tags?"
+                    className="resize-y text-sm"
+                  />
+                ) : null}
+              </div>
+            </label>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+              Thumbnails
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Check thumbnails to include in this rejection and add a comment for
+              each selected image.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {thumbs.map((t) => {
+                const row = draft.thumbs[t.id] ?? {
+                  reject: false,
+                  comment: "",
+                }
+                return (
+                  <div
+                    key={t.id}
+                    className="overflow-hidden rounded-lg border border-border bg-card"
+                  >
+                    <a
+                      href={t.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block aspect-video bg-muted"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={t.fileUrl}
+                        alt={t.fileName ?? "Thumbnail"}
+                        className="size-full object-cover"
+                      />
+                    </a>
+                    <div className="space-y-2 p-3">
+                      <p className="truncate text-xs text-muted-foreground">
+                        {t.fileName ?? t.id.slice(0, 8)}
+                      </p>
+                      <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+                        <input
+                          type="checkbox"
+                          checked={row.reject}
+                          onChange={(e) =>
+                            setDraft((d) => ({
+                              ...d,
+                              thumbs: {
+                                ...d.thumbs,
+                                [t.id]: {
+                                  reject: e.target.checked,
+                                  comment: e.target.checked
+                                    ? d.thumbs[t.id]?.comment ?? ""
+                                    : "",
+                                },
+                              },
+                            }))
+                          }
+                          className="size-4 shrink-0 rounded border-input"
+                        />
+                        Reject this thumbnail
+                      </label>
+                      {row.reject ? (
+                        <Textarea
+                          value={row.comment}
+                          onChange={(e) =>
+                            setDraft((d) => ({
+                              ...d,
+                              thumbs: {
+                                ...d.thumbs,
+                                [t.id]: {
+                                  ...row,
+                                  comment: e.target.value,
+                                },
+                              },
+                            }))
+                          }
+                          rows={2}
+                          placeholder="What is wrong with this thumbnail?"
+                          className="resize-y text-xs"
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <DialogFooter className="mx-0 mb-0 shrink-0 border-t border-border bg-muted/30 px-6 py-4 sm:mx-0">
+        <Button variant="outline" onClick={onCancel} disabled={isPending}>
+          Cancel
+        </Button>
+        <Button variant="destructive" onClick={onSubmit} disabled={isPending}>
+          {isPending ? (
+            <Loader2 className="mr-2 size-4 animate-spin" />
+          ) : (
+            <XCircle className="mr-2 size-4" />
+          )}
+          Reject metadata track
+        </Button>
+      </DialogFooter>
+    </>
+  )
+}
+
+function BrandMetadataPanel({
+  sortedVideos,
+  deliverableLabels,
+  canAccess,
+  setMetaApproveVideo,
+  setMetaRejectVideo,
+  isPending,
+}: {
+  sortedVideos: PackageVideo[]
+  deliverableLabels: Map<string, string>
+  canAccess: boolean
+  setMetaApproveVideo: (v: PackageVideo | null) => void
+  setMetaRejectVideo: (v: PackageVideo | null) => void
+  isPending: (key: string) => boolean
+}) {
+  return (
+    <div className="space-y-8">
+      {sortedVideos.map((video) => {
+        const asset = getCurrentVideoAsset(video)
+        if (!asset) return null
+        const label = deliverableLabels.get(video.id) ?? "Deliverable"
+        const thumbs = thumbnailsOnAsset(asset)
+        const anyRejected = thumbs.some((t) => t.status === "REJECTED")
+        const pendingThumbCount = thumbs.filter(
+          (t) => t.status === "PENDING"
+        ).length
+        const canMeta =
+          video.status === "MEDICAL_REVIEW" &&
+          video.metadataTrackStatus === "PENDING" &&
+          canAccess
+        const inMetaStage = video.status === "MEDICAL_REVIEW"
+
+        return (
+          <Card
+            key={video.id}
+            id={`video-${video.id}-metadata`}
+            className="scroll-mt-24 overflow-hidden border-border shadow-sm"
+          >
+            <CardHeader className="border-b border-border bg-muted/15 py-5 sm:py-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle className="text-base font-semibold">
+                    {label}
+                  </CardTitle>
+                  <CardDescription className="mt-1">
+                    Title, description, tags & thumbnails —{" "}
+                    {VIDEO_STATUS_LABELS[video.status]}
+                  </CardDescription>
+                </div>
+                <div className="flex flex-wrap gap-2 sm:justify-end">
+                  <Badge
+                    variant="outline"
+                    className={videoStatusBadgeClass(video.status)}
+                  >
+                    {VIDEO_STATUS_LABELS[video.status]}
+                  </Badge>
+                  <Badge variant="secondary" className="text-xs font-normal">
+                    Meta: {TRACK_STATUS_LABELS[video.metadataTrackStatus]}
+                  </Badge>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6 px-4 py-6 sm:px-6">
+              <PackageVideoMetadataProminent
+                variant="embedded"
+                deliverableLabel={label}
+                title={asset.title}
+                description={asset.description}
+                tags={asset.tags ?? undefined}
+              />
+
+              {!inMetaStage && (
+                <p className="rounded-lg border border-dashed border-border bg-muted/25 px-4 py-3 text-sm text-muted-foreground">
+                  Thumbnails and copy stay on this tab for reference. Open the{" "}
+                  <strong>Video quality</strong> tab to play the file and
+                  approve or reject video quality when this deliverable is in
+                  brand video review.
+                </p>
+              )}
+
+              {inMetaStage && (
+                <TrackStatusCallout
+                  status={video.metadataTrackStatus}
+                  title="Metadata & thumbnails"
+                >
+                  <p>
+                    Use <strong>Reject metadata</strong> to flag copy and/or
+                    thumbnails in one place. <strong>Approve metadata</strong>{" "}
+                    approves any pending thumbnails automatically, then the
+                    metadata track.
+                  </p>
+                  {!canMeta && (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      No metadata action from you on this version (already
+                      approved or not pending).
+                    </p>
+                  )}
+                </TrackStatusCallout>
+              )}
+
+              <div>
+                <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                  <ImageIcon className="size-4" />
+                  Thumbnails
+                  {(!inMetaStage || !canMeta) && (
+                    <span className="font-normal text-muted-foreground normal-case">
+                      (read-only)
+                    </span>
+                  )}
+                </h3>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {thumbs.map((t) => (
+                    <Card key={t.id} className="overflow-hidden">
+                      <a
+                        href={t.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block aspect-video bg-muted"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={t.fileUrl}
+                          alt={t.fileName}
+                          className="size-full object-cover"
+                        />
+                      </a>
+                      <CardContent className="space-y-2 p-3">
+                        <Badge
+                          className={thumbBadgeClass(t.status)}
+                          variant="secondary"
+                        >
+                          {t.status}
+                        </Badge>
+                        {t.status === "REJECTED" && t.comment && (
+                          <p className="text-xs text-destructive">
+                            {t.comment}
+                          </p>
+                        )}
+                        {t.status === "PENDING" && canMeta ? (
+                          <p className="text-xs text-muted-foreground">
+                            Will be approved when you confirm{" "}
+                            <span className="font-medium text-foreground">
+                              Approve metadata
+                            </span>
+                            .
+                          </p>
+                        ) : null}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+
+              {inMetaStage && (
+                <div className="space-y-3 border-t border-border pt-5">
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      disabled={
+                        !canMeta ||
+                        anyRejected ||
+                        isPending(`meta-approve-${video.id}`)
+                      }
+                      className="bg-green-600 text-white hover:bg-green-700"
+                      onClick={() => setMetaApproveVideo(video)}
+                    >
+                      {isPending(`meta-approve-${video.id}`) ? (
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="mr-2 size-4" />
+                      )}
+                      Approve metadata
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-destructive hover:bg-destructive/10"
+                      disabled={
+                        !canMeta || isPending(`meta-reject-${video.id}`)
+                      }
+                      onClick={() => setMetaRejectVideo(video)}
+                    >
+                      {isPending(`meta-reject-${video.id}`) ? (
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                      ) : (
+                        <XCircle className="mr-2 size-4" />
+                      )}
+                      Reject metadata
+                    </Button>
+                  </div>
+                  {anyRejected && (
+                    <p className="text-sm text-amber-700 dark:text-amber-400">
+                      Rejected thumbnails block metadata approval — reject the
+                      metadata track so Agency can resubmit.
+                    </p>
+                  )}
+                  {canMeta && !anyRejected && pendingThumbCount > 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      {pendingThumbCount} thumbnail
+                      {pendingThumbCount === 1 ? "" : "s"} still pending — they
+                      are approved automatically when you use Approve metadata.
+                    </p>
+                  ) : null}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )
+      })}
+    </div>
+  )
+}
+
+function BrandVideoQualityPanel({
+  sortedVideos,
+  deliverableLabels,
+  canAccess,
+  setBrandApproveVideo,
+  setBrandRejectVideo,
+  isPending,
+}: {
+  sortedVideos: PackageVideo[]
+  deliverableLabels: Map<string, string>
+  canAccess: boolean
+  setBrandApproveVideo: (v: PackageVideo | null) => void
+  setBrandRejectVideo: (v: PackageVideo | null) => void
+  isPending: (key: string) => boolean
+}) {
+  return (
+    <div className="space-y-8">
+      {sortedVideos.map((video) => {
+        const asset = getCurrentVideoAsset(video)
+        if (!asset) return null
+        const pa = videoAssetToPackageAsset(asset)
+        const label = deliverableLabels.get(video.id) ?? "Deliverable"
+        const icon: ReactNode =
+          video.type === "LONG_FORM" ? (
+            <Clapperboard className="size-5" />
+          ) : (
+            <Smartphone className="size-5" />
+          )
+        const showQualityUi = contentBrandPlaybackQualityActionsAvailable(video)
+        const canBrandQuality = showQualityUi && canAccess
+        const waitingMetaForBrandQuality =
+          video.status === "MEDICAL_REVIEW" &&
+          video.videoTrackStatus === "APPROVED" &&
+          video.metadataTrackStatus === "PENDING"
+
+        return (
+          <Card
+            key={video.id}
+            id={`video-${video.id}-quality`}
+            className="scroll-mt-24 overflow-hidden border-border shadow-sm"
+          >
+            <CardHeader className="border-b border-border bg-muted/15 py-5 sm:py-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle className="text-base font-semibold">
+                    {label}
+                  </CardTitle>
+                  <CardDescription className="mt-1">
+                    Video file only — thumbnails and copy are on the Metadata
+                    tab.
+                  </CardDescription>
+                </div>
+                <Badge
+                  variant="outline"
+                  className={videoStatusBadgeClass(video.status)}
+                >
+                  {VIDEO_STATUS_LABELS[video.status]}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6 px-4 py-6 sm:px-6">
+              {!showQualityUi && (
+                <p className="rounded-lg border border-dashed border-border bg-muted/25 px-4 py-3 text-sm text-muted-foreground">
+                  Preview the file below for context. Playback-quality
+                  approve/reject uses the same API as Brand quality review and is
+                  only available per deliverable once it reaches that stage.
+                  {!waitingMetaForBrandQuality ? (
+                    <>
+                      {" "}
+                      Stage: {VIDEO_STATUS_LABELS[video.status]}.
+                    </>
+                  ) : (
+                    <>
+                      {" "}
+                      Medical has approved the video file for this deliverable;
+                      approve the metadata track on the <strong>Metadata</strong>{" "}
+                      tab (thumbnails and copy) so this deliverable can move to
+                      Brand quality review. Other deliverables in the package do
+                      not block this one.
+                    </>
+                  )}
+                </p>
+              )}
+
+              {showQualityUi ? (
+                <TrackStatusCallout
+                  status="PENDING"
+                  title="Video quality"
+                  appearanceStatus="PENDING"
+                  badgeLabel={
+                    video.status === "MEDICAL_REVIEW"
+                      ? "Ready for playback review (recovered)"
+                      : "Both tracks approved"
+                  }
+                  headerDescription="Review playback and technical quality before final approver."
+                >
+                  <p>
+                    Approve to send to Content Approver, or reject to return to
+                    Medical / Agency for a new file.
+                  </p>
+                  {!canBrandQuality && (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      You do not have permission to act on this deliverable.
+                    </p>
+                  )}
+                </TrackStatusCallout>
+              ) : null}
+
+              <PackageInlineVideoCard
+                asset={pa}
+                label={label}
+                icon={icon}
+                videoOnly
+              />
+
+              {showQualityUi ? (
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    className="bg-green-600 text-white hover:bg-green-700"
+                    disabled={
+                      !canBrandQuality || isPending(`brand-approve-${video.id}`)
+                    }
+                    onClick={() => setBrandApproveVideo(video)}
+                  >
+                    {isPending(`brand-approve-${video.id}`) ? (
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="mr-2 size-4" />
+                    )}
+                    Approve video
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive hover:bg-destructive/10"
+                    disabled={
+                      !canBrandQuality || isPending(`brand-reject-${video.id}`)
+                    }
+                    onClick={() => setBrandRejectVideo(video)}
+                  >
+                    {isPending(`brand-reject-${video.id}`) ? (
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                    ) : (
+                      <XCircle className="mr-2 size-4" />
+                    )}
+                    Reject video
+                  </Button>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        )
+      })}
     </div>
   )
 }

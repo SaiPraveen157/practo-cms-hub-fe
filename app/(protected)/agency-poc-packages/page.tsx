@@ -11,12 +11,11 @@ import { ScriptListPagination } from "@/components/ui/pagination"
 import { PackageListTabNav } from "@/components/packages/package-list-tab-nav"
 import { useAuthStore } from "@/store"
 import type { UserRole } from "@/types/auth"
-import { buildSubmitPackageBodyFromPackage } from "@/lib/build-submit-package-body"
 import {
-  clearPackageSubmitDraft,
-  userMessageForClearDraftFailure,
-} from "@/lib/package-submit-draft-idb"
-import { getPackageQueue, getPackageStats, submitPackage } from "@/lib/packages-api"
+  getPackageByScriptId,
+  getPackageQueue,
+  getPackageStats,
+} from "@/lib/packages-api"
 import { getScriptQueue } from "@/lib/scripts-api"
 import { getVideoQueue } from "@/lib/videos-api"
 import {
@@ -25,11 +24,14 @@ import {
 } from "@/lib/video-phase-gates"
 import { filterScriptsBySearch } from "@/lib/script-search"
 import {
-  agencyPackageNeedsSubmitWizard,
   dedupePackages,
   filterPackagesBySearch,
   splitAgencyPackagesByTab,
 } from "@/lib/package-list-utils"
+import {
+  aggregatePackageDisplayStatus,
+  groupQueueVideosIntoPackages,
+} from "@/lib/package-video-helpers"
 import type { FinalPackage, PackageStatus } from "@/types/package"
 import type { Script } from "@/types/script"
 import type { Video } from "@/types/video"
@@ -41,7 +43,6 @@ import {
 import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import { ArrowRight, Loader2, Package, Search, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { toast } from "sonner"
 
 const PAGE_SIZE = 10
 
@@ -63,8 +64,6 @@ export default function AgencyPocPackagesPage() {
   const [stats, setStats] = useState<Awaited<
     ReturnType<typeof getPackageStats>
   > | null>(null)
-  const [submittingDraftId, setSubmittingDraftId] = useState<string | null>(null)
-
   const role = user?.role as UserRole | undefined
   const isAgency = role === "AGENCY_POC" || role === "SUPER_ADMIN"
 
@@ -78,12 +77,6 @@ export default function AgencyPocPackagesPage() {
         getScriptQueue(token),
         getVideoQueue(token),
       ])
-      setAvailable(pkgRes.available ?? [])
-      setMyReviews(pkgRes.myReviews ?? [])
-      setVideos([
-        ...(videoRes.available ?? []),
-        ...(videoRes.myReviews ?? []),
-      ])
       const scriptsCombined = [
         ...(scriptRes.available ?? []),
         ...(scriptRes.myReviews ?? []),
@@ -92,9 +85,36 @@ export default function AgencyPocPackagesPage() {
       for (const s of scriptsCombined) {
         if (!byId.has(s.id)) byId.set(s.id, s)
       }
-      setLockedScripts(
-        [...byId.values()].filter((s) => s.status === "LOCKED")
+      const locked = [...byId.values()].filter((s) => s.status === "LOCKED")
+
+      /**
+       * Some backend deployments do not return Agency submissions in
+       * GET /api/packages/queue. To keep Agency lists reliable, fetch packages
+       * by scriptId and merge them with queue-derived packages.
+       */
+      const pkgByScriptResults = await Promise.allSettled(
+        locked.map((s) => getPackageByScriptId(token, s.id))
       )
+      const pkgByScript = pkgByScriptResults
+        .filter(
+          (r): r is PromiseFulfilledResult<{
+            success?: boolean
+            package: FinalPackage
+          }> => r.status === "fulfilled"
+        )
+        .map((r) => r.value.package)
+        .filter((p) => p?.id)
+
+      const merged = dedupePackages(
+        groupQueueVideosIntoPackages(pkgRes.videos ?? [])
+      )
+      setAvailable(dedupePackages([...merged, ...pkgByScript]))
+      setMyReviews([])
+      setVideos([
+        ...(videoRes.available ?? []),
+        ...(videoRes.myReviews ?? []),
+      ])
+      setLockedScripts(locked)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load packages")
       setVideos([])
@@ -102,44 +122,6 @@ export default function AgencyPocPackagesPage() {
       setLoading(false)
     }
   }, [token, isAgency])
-
-  const handleSubmitDraftFromList = useCallback(
-    async (p: FinalPackage) => {
-      if (!token) return
-      const body = buildSubmitPackageBodyFromPackage(p)
-      if (!body) {
-        toast.error("Cannot submit from saved files", {
-          description:
-            "Open the package for details, or use the full wizard if videos, thumbnails, or tags are incomplete.",
-        })
-        return
-      }
-      setSubmittingDraftId(p.id)
-      try {
-        const res = await submitPackage(token, body)
-        toast.success(res.message ?? "Package submitted", {
-          description: "Medical and Brand parallel review has started.",
-        })
-        const clearResult = await clearPackageSubmitDraft(p.scriptId)
-        if (!clearResult.ok) {
-          const { title, description } = userMessageForClearDraftFailure()
-          toast.info(title, {
-            description,
-            id: "package-draft-clear-failed-list",
-          })
-        }
-        router.push(`/agency-poc-packages/${res.package.id}`)
-        await load()
-      } catch (e) {
-        toast.error("Could not submit package", {
-          description: e instanceof Error ? e.message : "Submit failed",
-        })
-      } finally {
-        setSubmittingDraftId(null)
-      }
-    },
-    [token, router, load]
-  )
 
   useEffect(() => {
     load()
@@ -257,15 +239,16 @@ export default function AgencyPocPackagesPage() {
           </div>
         </div>
 
-        {stats && (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {stats?.stats && (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
             {(
               [
-                ["draft", stats.draft, "Draft"],
-                ["inReview", stats.inReview, "In review"],
-                ["overdue", stats.overdue, "Overdue"],
-                ["approved", stats.approved, "Approved"],
-                ["rejected", stats.rejected, "Rejected"],
+                ["t", stats.stats.total, "Total videos"],
+                ["mr", stats.stats.byStatus?.MEDICAL_REVIEW ?? 0, "Medical stage"],
+                ["br", stats.stats.byStatus?.BRAND_VIDEO_REVIEW ?? 0, "Brand quality"],
+                ["ap", stats.stats.byStatus?.AWAITING_APPROVER ?? 0, "Final approval"],
+                ["ok", stats.stats.byStatus?.APPROVED ?? 0, "Approved"],
+                ["wd", stats.stats.byStatus?.WITHDRAWN ?? 0, "Withdrawn"],
               ] as const
             ).map(([key, val, label]) => (
               <Card key={key}>
@@ -412,20 +395,6 @@ export default function AgencyPocPackagesPage() {
                   <PackageRowCard
                     pkg={p}
                     href={`/agency-poc-packages/${p.id}`}
-                    draftQuickSubmit={
-                      p.status === "DRAFT"
-                        ? () => {
-                            void handleSubmitDraftFromList(p)
-                          }
-                        : undefined
-                    }
-                    draftSubmitting={submittingDraftId === p.id}
-                    submitWizardHref={
-                      agencyPackageNeedsSubmitWizard(p) &&
-                      p.status !== "DRAFT"
-                        ? `/agency-poc-packages/new?scriptId=${encodeURIComponent(p.scriptId)}`
-                        : undefined
-                    }
                     emphasizeFeedback={tab === "revision"}
                   />
                 </li>
@@ -491,21 +460,14 @@ function Phase6EligibleScriptCard({ script }: { script: Script }) {
 function PackageRowCard({
   pkg,
   href,
-  draftQuickSubmit,
-  draftSubmitting,
-  submitWizardHref,
   emphasizeFeedback,
 }: {
   pkg: FinalPackage
   href: string
-  /** DRAFT: submit with existing server files (POST /api/packages) without opening the wizard. */
-  draftQuickSubmit?: () => void
-  draftSubmitting?: boolean
-  /** Rejection paths: open full wizard. */
-  submitWizardHref?: string
   emphasizeFeedback?: boolean
 }) {
-  const status = pkg.status as PackageStatus
+  const status = aggregatePackageDisplayStatus(pkg)
+  const nVideos = pkg.videos?.length ?? 0
   return (
     <Card>
       <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -517,22 +479,18 @@ function PackageRowCard({
             >
               {PACKAGE_STATUS_LABELS[status]}
             </Badge>
-            {status === "MEDICAL_REVIEW" ? (
-              <span className="text-xs text-muted-foreground">
-                Video {pkg.videoTrackStatus} · Metadata{" "}
-                {pkg.metadataTrackStatus} · v{pkg.version}
-              </span>
-            ) : null}
+            <span className="text-xs text-muted-foreground">
+              {nVideos} video{nVideos === 1 ? "" : "s"} · Updated{" "}
+              {formatPackageDate(pkg.updatedAt)}
+            </span>
           </div>
           <p className="mt-1 font-medium">{pkg.title}</p>
           <p className="text-sm text-muted-foreground">
             {pkg.script?.title ?? "Script"} ·{" "}
-            {status === "MEDICAL_REVIEW"
-              ? formatPackageDate(pkg.updatedAt)
-              : `v${pkg.version} · ${formatPackageDate(pkg.updatedAt)}`}
+            {formatPackageDate(pkg.updatedAt)}
           </p>
           {(emphasizeFeedback || status === "REJECTED") &&
-            pkg.latestRejection?.overallComments && (
+            pkg.latestRejection?.overallComments ? (
               <div
                 className={cn(
                   "mt-2 rounded-md border px-3 py-2 text-xs",
@@ -546,7 +504,7 @@ function PackageRowCard({
                   {pkg.latestRejection.overallComments}
                 </span>
               </div>
-            )}
+            ) : null}
         </div>
         <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
           {pkg.tat && status !== "REJECTED" && status !== "APPROVED" && (
@@ -561,41 +519,9 @@ function PackageRowCard({
             </p>
           )}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            {draftQuickSubmit ? (
-              <Button
-                type="button"
-                size="sm"
-                className="shrink-0 gap-1"
-                disabled={draftSubmitting}
-                onClick={draftQuickSubmit}
-              >
-                {draftSubmitting ? (
-                  <>
-                    <Loader2 className="size-4 shrink-0 animate-spin" />
-                    Submitting…
-                  </>
-                ) : (
-                  <>
-                    Submit package
-                    <ArrowRight className="size-4 shrink-0" />
-                  </>
-                )}
-              </Button>
-            ) : submitWizardHref ? (
-              <Button size="sm" asChild className="shrink-0">
-                <Link href={submitWizardHref} className="gap-1">
-                  Resubmit package
-                  <ArrowRight className="size-4" />
-                </Link>
-              </Button>
-            ) : null}
             <Button size="sm" variant="outline" asChild className="shrink-0">
               <Link href={href} className="gap-1">
-                {status === "REJECTED"
-                  ? "Review & resubmit"
-                  : draftQuickSubmit || submitWizardHref
-                    ? "Details"
-                    : "Open"}
+                {status === "REJECTED" ? "Review & resubmit" : "Open"}
                 <ArrowRight className="size-4" />
               </Link>
             </Button>

@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
@@ -12,20 +11,25 @@ import { ScriptListPagination } from "@/components/ui/pagination"
 import { PackageListTabNav } from "@/components/packages/package-list-tab-nav"
 import { useAuthStore } from "@/store"
 import {
-  getPackageQueue,
+  getPackage,
   getPackageMyReviews,
+  getPackageQueue,
   getPackageStats,
 } from "@/lib/packages-api"
 import {
-  dedupePackages,
-  filterPackagesBySearch,
-} from "@/lib/package-list-utils"
-import type { FinalPackage, PackageStatus } from "@/types/package"
+  deliverableLabelsForQueueVideos,
+  filterQueueVideosBySearch,
+  groupQueueVideosByPackage,
+  packageReadyForContentApproverFullView,
+  type QueuePackageGroup,
+} from "@/lib/package-video-helpers"
+import type { PackageVideo } from "@/types/package"
 import type { UserRole } from "@/types/auth"
 import {
-  PACKAGE_STATUS_LABELS,
+  TRACK_STATUS_LABELS,
+  VIDEO_STATUS_LABELS,
   formatPackageDate,
-  packageStatusBadgeClass,
+  videoStatusBadgeClass,
 } from "@/lib/package-ui"
 import { ArrowRight, Loader2, Package, Search } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -40,9 +44,8 @@ export default function ContentApproverPackagesPage() {
   const user = useAuthStore((s) => s.user)
   const [tab, setTab] = useState<TabKey>("queue")
   const [page, setPage] = useState(1)
-  const [available, setAvailable] = useState<FinalPackage[]>([])
-  const [queueMyReviews, setQueueMyReviews] = useState<FinalPackage[]>([])
-  const [historyPackages, setHistoryPackages] = useState<FinalPackage[]>([])
+  const [queueVideos, setQueueVideos] = useState<PackageVideo[]>([])
+  const [historyVideos, setHistoryVideos] = useState<PackageVideo[]>([])
   const [historyTotal, setHistoryTotal] = useState(0)
   const [historyTotalPages, setHistoryTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
@@ -55,30 +58,64 @@ export default function ContentApproverPackagesPage() {
   const role = user?.role as UserRole | undefined
   const canAccess = role === "CONTENT_APPROVER" || role === "SUPER_ADMIN"
 
-  const queueCombined = useMemo(
-    () => dedupePackages([...available, ...queueMyReviews]),
-    [available, queueMyReviews]
+  const [approverPackageReadiness, setApproverPackageReadiness] = useState<{
+    readyIds: Set<string>
+    loading: boolean
+  } | null>(null)
+
+  const queueSearchFiltered = useMemo(
+    () => filterQueueVideosBySearch(queueVideos, searchQuery),
+    [queueVideos, searchQuery]
   )
 
-  const queueFiltered = useMemo(
-    () => filterPackagesBySearch(queueCombined, searchQuery),
-    [queueCombined, searchQuery]
+  const queueFiltered = useMemo(() => {
+    if (role !== "CONTENT_APPROVER" || tab !== "queue") {
+      return queueSearchFiltered
+    }
+    if (
+      approverPackageReadiness === null ||
+      approverPackageReadiness.loading
+    ) {
+      return []
+    }
+    return queueSearchFiltered.filter((v) =>
+      approverPackageReadiness.readyIds.has(v.packageId)
+    )
+  }, [role, tab, queueSearchFiltered, approverPackageReadiness])
+
+  const queuePackageGroups = useMemo(
+    () => groupQueueVideosByPackage(queueFiltered),
+    [queueFiltered]
   )
 
   const queueTotalPages = Math.max(
     1,
-    Math.ceil(queueFiltered.length / PAGE_SIZE)
+    Math.ceil(queuePackageGroups.length / PAGE_SIZE)
   )
   const queuePageSlice = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE
-    return queueFiltered.slice(start, start + PAGE_SIZE)
-  }, [queueFiltered, page])
+    return queuePackageGroups.slice(start, start + PAGE_SIZE)
+  }, [queuePackageGroups, page])
+
+  const queueDeliverableLabels = useMemo(
+    () => deliverableLabelsForQueueVideos(queueFiltered),
+    [queueFiltered]
+  )
+
+  const historyPackageGroups = useMemo(
+    () => groupQueueVideosByPackage(historyVideos),
+    [historyVideos]
+  )
+
+  const historyDeliverableLabels = useMemo(
+    () => deliverableLabelsForQueueVideos(historyVideos),
+    [historyVideos]
+  )
 
   const loadQueue = useCallback(async () => {
     if (!token || !canAccess) return
     const res = await getPackageQueue(token)
-    setAvailable(res.available ?? [])
-    setQueueMyReviews(res.myReviews ?? [])
+    setQueueVideos(res.videos ?? [])
   }, [token, canAccess])
 
   useEffect(() => {
@@ -109,7 +146,7 @@ export default function ContentApproverPackagesPage() {
       })
         .then((res) => {
           if (!cancelled) {
-            setHistoryPackages(res.packages ?? [])
+            setHistoryVideos(res.videos ?? [])
             setHistoryTotal(res.total ?? 0)
             setHistoryTotalPages(Math.max(1, res.totalPages ?? 1))
           }
@@ -132,10 +169,50 @@ export default function ContentApproverPackagesPage() {
     getPackageStats(token).then(setStats).catch(() => setStats(null))
   }, [token, canAccess])
 
-  const historyFiltered = useMemo(
-    () => filterPackagesBySearch(historyPackages, searchQuery),
-    [historyPackages, searchQuery]
-  )
+  useEffect(() => {
+    if (!token || tab !== "queue" || role !== "CONTENT_APPROVER") {
+      setApproverPackageReadiness(null)
+      return
+    }
+    const ids = [
+      ...new Set(
+        queueVideos.map((v) => v.packageId).filter((id): id is string => !!id)
+      ),
+    ]
+    if (ids.length === 0) {
+      setApproverPackageReadiness({ readyIds: new Set(), loading: false })
+      return
+    }
+    let cancelled = false
+    setApproverPackageReadiness((prev) => ({
+      readyIds: prev?.readyIds ?? new Set(),
+      loading: true,
+    }))
+    Promise.all(ids.map((packageId) => getPackage(token, packageId)))
+      .then((results) => {
+        if (cancelled) return
+        const ready = new Set<string>()
+        for (const res of results) {
+          const p = res.package
+          if (
+            p?.id &&
+            packageReadyForContentApproverFullView(p.videos ?? [])
+          ) {
+            ready.add(p.id)
+          }
+        }
+        setApproverPackageReadiness({ readyIds: ready, loading: false })
+      })
+      .catch(() => {
+        if (cancelled) return
+        setApproverPackageReadiness({ readyIds: new Set(ids), loading: false })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token, tab, role, queueVideos])
+
+  const byStatus = stats?.stats?.byStatus ?? {}
 
   if (!canAccess) {
     return (
@@ -162,17 +239,21 @@ export default function ContentApproverPackagesPage() {
             Final packages — Final approval
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Last sign-off before lock. History lists packages you approved.
+            You can open a package and see videos, metadata, and thumbnails only
+            after <strong>every</strong> deliverable in that package has left
+            Medical and Content/Brand review. Then you can final-approve (no
+            reject) each video that is awaiting you.
           </p>
         </div>
 
-        {stats && (
+        {stats?.stats && (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {(
               [
-                ["inReview", stats.inReview, "In review"],
-                ["approved", stats.approved, "Approved"],
-                ["overdue", stats.overdue, "Overdue"],
+                ["total", stats.stats.total, "Total"],
+                ["ap", byStatus.AWAITING_APPROVER ?? 0, "Your queue"],
+                ["ok", byStatus.APPROVED ?? 0, "Approved"],
+                ["mr", byStatus.MEDICAL_REVIEW ?? 0, "Earlier stages"],
               ] as const
             ).map(([k, v, label]) => (
               <Card key={k}>
@@ -212,6 +293,15 @@ export default function ContentApproverPackagesPage() {
 
         {error && <p className="text-sm text-destructive">{error}</p>}
 
+        {role === "CONTENT_APPROVER" &&
+          tab === "queue" &&
+          (approverPackageReadiness === null ||
+            approverPackageReadiness.loading) && (
+            <p className="text-sm text-muted-foreground">
+              Checking which packages are ready for full review…
+            </p>
+          )}
+
         {loading ? (
           <div className="flex justify-center py-16">
             <Loader2 className="size-8 animate-spin text-muted-foreground" />
@@ -223,47 +313,63 @@ export default function ContentApproverPackagesPage() {
                 <CardContent className="flex flex-col items-center py-10 text-center">
                   <Package className="size-10 text-muted-foreground" />
                   <p className="mt-3 text-sm text-muted-foreground">
-                    Nothing in your queue.
+                    {role === "CONTENT_APPROVER" &&
+                    tab === "queue" &&
+                    (approverPackageReadiness === null ||
+                      approverPackageReadiness.loading) ? (
+                      <span className="inline-flex items-center gap-2">
+                        <Loader2 className="size-4 animate-spin" />
+                        Verifying package readiness…
+                      </span>
+                    ) : role === "CONTENT_APPROVER" &&
+                      !approverPackageReadiness?.loading &&
+                      queueSearchFiltered.length > 0 ? (
+                      "Nothing ready to open yet. Some queue items are hidden until every deliverable in those packages has cleared Medical and Content/Brand review."
+                    ) : (
+                      "Nothing in your queue."
+                    )}
                   </p>
                 </CardContent>
               </Card>
             ) : (
-              <ul className="space-y-3">
-                {queuePageSlice.map((p) => (
-                  <li key={p.id}>
-                    <QueueRow pkg={p} href={`/content-approver-packages/${p.id}`} />
+              <ul className="space-y-4">
+                {queuePageSlice.map((group) => (
+                  <li key={group.packageId}>
+                    <PackageQueueCard
+                      group={group}
+                      deliverableLabels={queueDeliverableLabels}
+                    />
                   </li>
                 ))}
               </ul>
             )}
-            {queueFiltered.length > PAGE_SIZE && (
+            {queuePackageGroups.length > PAGE_SIZE && (
               <ScriptListPagination
                 page={page}
                 totalPages={queueTotalPages}
-                total={queueFiltered.length}
+                total={queuePackageGroups.length}
                 limit={PAGE_SIZE}
                 onPageChange={setPage}
               />
             )}
           </>
-        ) : historyFiltered.length === 0 ? (
+        ) : historyVideos.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center py-10 text-center">
               <Package className="size-10 text-muted-foreground" />
               <p className="mt-3 text-sm text-muted-foreground">
-                No approved packages in your history yet.
+                No approved videos in your history yet.
               </p>
             </CardContent>
           </Card>
         ) : (
           <>
-            <ul className="space-y-3">
-              {historyFiltered.map((p) => (
-                <li key={p.id}>
-                  <QueueRow
-                    pkg={p}
-                    href={`/content-approver-packages/${p.id}`}
-                    // showRejectionHint={tab === "rejected"}
+            <ul className="space-y-4">
+              {historyPackageGroups.map((group) => (
+                <li key={group.packageId}>
+                  <PackageQueueCard
+                    group={group}
+                    deliverableLabels={historyDeliverableLabels}
                   />
                 </li>
               ))}
@@ -282,30 +388,82 @@ export default function ContentApproverPackagesPage() {
   )
 }
 
-function QueueRow({ pkg, href }: { pkg: FinalPackage; href: string }) {
-  const status = pkg.status as PackageStatus
+function PackageQueueCard({
+  group,
+  deliverableLabels,
+}: {
+  group: QueuePackageGroup
+  deliverableLabels: Map<string, string>
+}) {
+  const { packageId, videos, packageName, scriptTitle } = group
+  const awaiting = videos.filter((v) => v.status === "AWAITING_APPROVER").length
+  const base = "/content-approver-packages"
+
   return (
     <Card>
-      <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <Badge
-            variant="outline"
-            className={cn("text-xs", packageStatusBadgeClass(status))}
-          >
-            {PACKAGE_STATUS_LABELS[status]}
-          </Badge>
-          <p className="mt-1 font-medium">{pkg.title}</p>
-          <p className="text-sm text-muted-foreground">
-            {pkg.script?.title ?? "Script"} · v{pkg.version} ·{" "}
-            {formatPackageDate(pkg.updatedAt)}
-          </p>
+      <CardContent className="space-y-4 py-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-lg font-semibold leading-tight">{packageName}</p>
+            {scriptTitle ? (
+              <p className="mt-1 text-sm text-muted-foreground">{scriptTitle}</p>
+            ) : null}
+            <p className="mt-2 text-xs text-muted-foreground">
+              {videos.length} deliverable{videos.length === 1 ? "" : "s"}
+              {awaiting > 0
+                ? ` · ${awaiting} awaiting final approval`
+                : null}
+            </p>
+          </div>
+          <Button size="sm" variant="default" asChild className="shrink-0">
+            <Link href={`${base}/${packageId}`} className="gap-1">
+              Open package
+              <ArrowRight className="size-4" />
+            </Link>
+          </Button>
         </div>
-        <Button size="sm" variant="outline" asChild className="shrink-0">
-          <Link href={href} className="gap-1">
-            Open
-            <ArrowRight className="size-4" />
-          </Link>
-        </Button>
+
+        <ul className="divide-y rounded-lg border bg-muted/20">
+          {videos.map((v) => {
+            const label =
+              deliverableLabels.get(v.id)?.trim() || v.type.replace("_", " ")
+            return (
+              <li
+                key={v.id}
+                className="flex flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "text-xs",
+                        videoStatusBadgeClass(v.status)
+                      )}
+                    >
+                      {VIDEO_STATUS_LABELS[v.status]}
+                    </Badge>
+                    <span className="text-sm font-medium">{label}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {TRACK_STATUS_LABELS[v.videoTrackStatus]} /{" "}
+                    {TRACK_STATUS_LABELS[v.metadataTrackStatus]} · v
+                    {v.currentVersion} · {formatPackageDate(v.updatedAt ?? "")}
+                  </p>
+                </div>
+                <Button size="sm" variant="outline" asChild className="shrink-0">
+                  <Link
+                    href={`${base}/${packageId}?video=${encodeURIComponent(v.id)}`}
+                    className="gap-1"
+                  >
+                    Open
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </Button>
+              </li>
+            )
+          })}
+        </ul>
       </CardContent>
     </Card>
   )
