@@ -1,6 +1,5 @@
-import { Hash } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { TagPillList } from "@/components/packages/tag-pill-list"
 import { cn } from "@/lib/utils"
 
 export function PackageVideoMetadataProminent({
@@ -19,8 +18,6 @@ export function PackageVideoMetadataProminent({
   /** `embedded` sits inside a parent Card — avoids double borders. */
   variant?: "card" | "embedded"
 }) {
-  const tagList = tags?.filter((t) => t.trim() !== "") ?? []
-
   const titleBlock = (
     <div className="space-y-1">
       <p className="text-[11px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
@@ -42,22 +39,9 @@ export function PackageVideoMetadataProminent({
       </div>
       <div>
         <p className="text-xs font-medium text-muted-foreground">Tags</p>
-        {tagList.length > 0 ? (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {tagList.map((t) => (
-              <Badge
-                key={t}
-                variant="secondary"
-                className="px-2.5 py-0.5 text-xs font-medium sm:text-sm"
-              >
-                <Hash className="mr-1 size-3.5 opacity-70" aria-hidden />
-                {t}
-              </Badge>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-1.5 text-sm text-muted-foreground">—</p>
-        )}
+        <div className="mt-2">
+          <TagPillList tags={tags} />
+        </div>
       </div>
     </div>
   )

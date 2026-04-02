@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { TagPillList } from "@/components/packages/tag-pill-list"
 import { Label } from "@/components/ui/label"
 import type { PackageAsset } from "@/types/package"
 import { parseAgencyDeliverableBlockBody } from "@/lib/package-composed-description"
@@ -145,17 +146,7 @@ export function PackageInlineVideoCard({
           <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Tags
           </Label>
-          <div className="flex flex-wrap gap-2">
-            {metaTags.map((t) => (
-              <Badge
-                key={t}
-                variant="secondary"
-                className="rounded-full px-3 py-1.5 text-sm font-normal"
-              >
-                {t}
-              </Badge>
-            ))}
-          </div>
+          <TagPillList tags={metaTags} />
         </div>
       ) : null}
       {!metaTitle && !metaDescription && metaTags.length === 0 ? (
