@@ -30,6 +30,9 @@ export const ROUTES = {
   MEDICAL_AFFAIRS_PACKAGES: "/medical-affairs-packages",
   CONTENT_BRAND_PACKAGES: "/content-brand-packages",
   CONTENT_APPROVER_PACKAGES: "/content-approver-packages",
+  AGENCY_POC_LANGUAGE_PACKAGES: "/agency-poc-language-packages",
+  CONTENT_BRAND_LANGUAGE_PACKAGES: "/content-brand-language-packages",
+  CONTENT_APPROVER_LANGUAGE_PACKAGES: "/content-approver-language-packages",
   PUBLISHER: "/publisher",
   // DOCTOR_PROFILE: "/doctor-profile",
   CONTENT_LIBRARY: "/content-library",
@@ -88,6 +91,18 @@ export const ROUTE_META: Record<
   MEDICAL_AFFAIRS_PACKAGES: { label: "Final packages", icon: "package" },
   CONTENT_BRAND_PACKAGES: { label: "Final packages", icon: "package" },
   CONTENT_APPROVER_PACKAGES: { label: "Final packages", icon: "package" },
+  AGENCY_POC_LANGUAGE_PACKAGES: {
+    label: "Language packages",
+    icon: "package",
+  },
+  CONTENT_BRAND_LANGUAGE_PACKAGES: {
+    label: "Language packages",
+    icon: "package",
+  },
+  CONTENT_APPROVER_LANGUAGE_PACKAGES: {
+    label: "Language packages",
+    icon: "package",
+  },
   PUBLISHER: { label: "Publisher", icon: "layout-dashboard" },
   // DOCTOR_PROFILE: { label: "Doctor Profile", icon: "user" },
   CONTENT_LIBRARY: { label: "Content Library", icon: "folder-open" },

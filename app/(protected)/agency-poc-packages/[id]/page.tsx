@@ -71,6 +71,10 @@ import { PackageListTabNav } from "@/components/packages/package-list-tab-nav"
 import { PackageVideoMetadataProminent } from "@/components/packages/package-video-metadata-prominent"
 import { TrackStatusCallout } from "@/components/packages/track-status-callout"
 import {
+  TagPillList,
+  parseTagsFromCommaInput,
+} from "@/components/packages/tag-pill-list"
+import {
   ArrowLeft,
   CheckCircle2,
   Clapperboard,
@@ -1293,6 +1297,19 @@ function MetadataResubmitFields({
               value={tagsInput}
               onChange={(e) => setTagsInput(e.target.value)}
                         />
+            <div className="space-y-1 pt-1">
+              <p className="text-xs font-medium text-muted-foreground">
+                Preview
+              </p>
+              <TagPillList
+                tags={parseTagsFromCommaInput(tagsInput)}
+                emptyLabel={
+                  <span className="text-xs text-muted-foreground">
+                    No tags parsed yet — separate with commas.
+                  </span>
+                }
+              />
+            </div>
                       </div>
         </section>
 

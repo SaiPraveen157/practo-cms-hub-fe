@@ -63,6 +63,7 @@ import {
 import { PackageVideoTatInline } from "@/components/packages/package-video-tat-inline"
 import { PackageVideoMetadataProminent } from "@/components/packages/package-video-metadata-prominent"
 import { PackageInlineVideoCard } from "@/components/packages/package-inline-video-card"
+import { TagPillList } from "@/components/packages/tag-pill-list"
 import { TrackStatusCallout } from "@/components/packages/track-status-callout"
 import { PackageListTabNav } from "@/components/packages/package-list-tab-nav"
 import {
@@ -738,9 +739,6 @@ function RejectMetadataDialogBody({
   const thumbs = thumbnailsOnAsset(asset)
   const titlePreview = (asset?.title ?? "").trim() || "—"
   const descPreview = (asset?.description ?? "").trim() || "—"
-  const tagsPreview =
-    asset?.tags && asset.tags.length > 0 ? asset.tags.join(", ") : "—"
-
   return (
     <>
       <DialogHeader className="shrink-0 space-y-2 border-b border-border px-6 py-4 pr-14">
@@ -861,7 +859,12 @@ function RejectMetadataDialogBody({
               />
               <div className="min-w-0 flex-1 space-y-2">
                 <span className="text-sm font-medium">Tags</span>
-                <p className="text-xs text-muted-foreground">{tagsPreview}</p>
+                <TagPillList
+                  tags={asset?.tags ?? []}
+                  emptyLabel={
+                    <span className="text-xs text-muted-foreground">—</span>
+                  }
+                />
                 {draft.tags.flag ? (
                   <Textarea
                     value={draft.tags.comment}
