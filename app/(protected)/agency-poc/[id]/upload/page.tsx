@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { useAuthStore } from "@/store"
 import { getScriptQueue } from "@/lib/scripts-api"
 import { scriptNeedsAgencyFirstLineUpUpload } from "@/lib/agency-first-line-up"
+import { getScriptFluStatus } from "@/lib/script-flu-status"
 import {
   getUploadUrl,
   uploadFileToPresignedUrl,
@@ -72,11 +73,15 @@ export default function AgencyPocUploadPage() {
 
   const needsFirstLineUpUpload = useMemo(
     () =>
-      script
-        ? scriptNeedsAgencyFirstLineUpUpload(script.id, videos)
-        : false,
+      script ? scriptNeedsAgencyFirstLineUpUpload(script, videos) : false,
     [script, videos]
   )
+
+  /** Video queue only needed for FLU gate when API omits `fluStatus`. */
+  const fluGateNeedsVideoQueue = useMemo(() => {
+    if (!script || script.status !== "LOCKED") return false
+    return getScriptFluStatus(script) === undefined
+  }, [script])
 
   useEffect(() => {
     if (!token || !id) return
@@ -216,7 +221,7 @@ export default function AgencyPocUploadPage() {
     return <ScriptDetailSkeleton />
   }
 
-  if (isLocked && !videosReady) {
+  if (isLocked && fluGateNeedsVideoQueue && !videosReady) {
     return <ScriptDetailSkeleton />
   }
 
