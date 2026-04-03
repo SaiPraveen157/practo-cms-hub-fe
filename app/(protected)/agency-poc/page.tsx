@@ -54,7 +54,7 @@ export default function AgencyPocPage() {
   const [finalPackageIdByScriptId, setFinalPackageIdByScriptId] = useState<
     Map<string, string>
   >(() => new Map())
-  /** For locked scripts: video queue rows (Phase 4/5) — used to hide First Line Up upload when FLU is approved. */
+  /** Video queue rows — FLU upload visibility uses `script.fluStatus` when present; videos are fallback only. */
   const [videos, setVideos] = useState<Video[]>([])
 
   const isAgencyPoc = user?.role === "AGENCY_POC"
@@ -299,7 +299,7 @@ export default function AgencyPocPage() {
             {displayedScripts.map((script) => {
               const finalPackageId = finalPackageIdByScriptId.get(script.id)
               const needsFirstLineUpUpload =
-                scriptNeedsAgencyFirstLineUpUpload(script.id, videos)
+                scriptNeedsAgencyFirstLineUpUpload(script, videos)
               return (
                 <ScriptListingCard
                   key={script.id}

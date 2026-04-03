@@ -1,23 +1,30 @@
-import {
-  getLatestVideoForScriptPhase,
-} from "@/lib/video-phase-gates"
+import { getScriptFluStatus } from "@/lib/script-flu-status"
+import { getLatestVideoForScriptPhase } from "@/lib/video-phase-gates"
+import type { Script } from "@/types/script"
 import type { Video } from "@/types/video"
 
 /**
  * Whether Agency should see the First Line Up upload entry (`/agency-poc/[id]/upload`).
  *
- * - No `FIRST_LINE_UP` row yet → Phase 4 not started; show upload.
- * - Latest FLU `APPROVED` → Content/Brand approved First Line Up; Phase 4 done — hide FLU upload (use First Cut / video queue).
- * - Latest FLU `AGENCY_UPLOAD_PENDING` → initial upload or re-upload after reject; show upload.
- * - Latest FLU in `MEDICAL_REVIEW` or `CONTENT_BRAND_REVIEW` → in flight; hide upload until rejected back to Agency.
+ * When `GET /api/scripts/queue` includes `fluStatus`, that is authoritative:
+ * - `null` → not uploaded yet → show upload
+ * - `AGENCY_UPLOAD_PENDING` → show upload
+ * - `MEDICAL_REVIEW` | `CONTENT_BRAND_REVIEW` | `APPROVED` → hide upload
+ *
+ * If `fluStatus` is omitted, fall back to the latest `FIRST_LINE_UP` video row.
  */
 export function scriptNeedsAgencyFirstLineUpUpload(
-  scriptId: string,
+  script: Script,
   videos: Video[]
 ): boolean {
+  const flu = getScriptFluStatus(script)
+  if (flu !== undefined) {
+    return flu === null || flu === "AGENCY_UPLOAD_PENDING"
+  }
+
   const latestFlu = getLatestVideoForScriptPhase(
     videos,
-    scriptId,
+    script.id,
     "FIRST_LINE_UP"
   )
   if (!latestFlu) return true
