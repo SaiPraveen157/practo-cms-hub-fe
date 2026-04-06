@@ -66,11 +66,15 @@ import {
   packageStatusBadgeClass,
   videoStatusBadgeClass,
 } from "@/lib/package-ui"
-import { PackageTatCard } from "@/components/packages/package-tat-card"
+import { PackageVideoTatInline } from "@/components/packages/package-video-tat-inline"
 import { PackageItemFeedbackHumanizedList } from "@/components/packages/package-item-feedback-humanized"
 import { PackageListTabNav } from "@/components/packages/package-list-tab-nav"
 import { PackageVideoMetadataProminent } from "@/components/packages/package-video-metadata-prominent"
 import { TrackStatusCallout } from "@/components/packages/track-status-callout"
+import {
+  TagPillList,
+  parseTagsFromCommaInput,
+} from "@/components/packages/tag-pill-list"
 import {
   ArrowLeft,
   CheckCircle2,
@@ -767,8 +771,6 @@ export default function AgencyPackageDetailPage() {
               />
             </div>
             <div className="space-y-6 p-4 sm:p-6">
-              <PackageTatCard pkg={pkg} />
-
               {revisionTab === "videos" ? (
                 <VideoRevisionPanel
                   pkg={pkg}
@@ -978,6 +980,10 @@ function VideoRevisionPanel({
                   </Button>
                 ) : null}
               </div>
+              <PackageVideoTatInline
+                video={video}
+                className="border-t border-border/60 pt-3"
+              />
             </CardHeader>
             <CardContent className="space-y-4 p-4 sm:p-6">
       <TrackStatusCallout
@@ -1281,6 +1287,19 @@ function MetadataResubmitFields({
               value={tagsInput}
               onChange={(e) => setTagsInput(e.target.value)}
                         />
+            <div className="space-y-1 pt-1">
+              <p className="text-xs font-medium text-muted-foreground">
+                Preview
+              </p>
+              <TagPillList
+                tags={parseTagsFromCommaInput(tagsInput)}
+                emptyLabel={
+                  <span className="text-xs text-muted-foreground">
+                    No tags parsed yet — separate with commas.
+                  </span>
+                }
+              />
+            </div>
                       </div>
         </section>
 
@@ -1548,6 +1567,10 @@ function MetadataRevisionPanel({
                   </Button>
                 ) : null}
               </div>
+              <PackageVideoTatInline
+                video={video}
+                className="border-t border-border/60 pt-3"
+              />
             </CardHeader>
             <CardContent className="space-y-8 p-4 sm:p-6">
               <TrackStatusCallout

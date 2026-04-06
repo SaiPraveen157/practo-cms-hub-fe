@@ -1,0 +1,414 @@
+{
+  "info": {
+    "name": "Phase 7 — Language Packages",
+    "_postman_id": "c7e3d1f2-a741-4b87-9e02-phase7-2026",
+    "description": "Phase 7 — Localized language packages under a LOCKED script.\n\n── WORKFLOW ─────────────────────────────────────────\n• Single track per language video:\n  BRAND_REVIEW → AWAITING_APPROVER → APPROVED (or WITHDRAWN)\n• No Medical Affairs. Brand reviews video + metadata + optional thumbnails.\n• Content Approver: approve only at AWAITING_APPROVER.\n• Super Admin: can approve at both stages, reject at BRAND_REVIEW, withdraw anytime.\n• Thumbnails optional; if present, all must be APPROVED before Brand approve (or reject video if any REJECTED).\n\n── VARIABLES ─────────────────────────────────────────\nRun Login folder first. Set scriptId to a LOCKED script UUID.\nRun 1.1 Create — saves langPackageId, langVideoId, langThumbId (if thumbnails sent).\n\n── FILE LOCATION ─────────────────────────────────────\nSame folder as Phase6_Final_Package_Postman.json (workspace / repo root).\n\n── BACKEND ROUTES ────────────────────────────────────\nPrefix: /api/language-packages",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://164.52.204.34:5001", "type": "string" },
+    { "key": "adminToken", "value": "", "type": "string" },
+    { "key": "brandToken", "value": "", "type": "string" },
+    { "key": "agencyToken", "value": "", "type": "string" },
+    { "key": "approverToken", "value": "", "type": "string" },
+    { "key": "scriptId", "value": "PASTE_A_LOCKED_SCRIPT_ID", "type": "string" },
+    { "key": "langPackageId", "value": "", "type": "string" },
+    { "key": "langVideoId", "value": "", "type": "string" },
+    { "key": "langThumbId", "value": "", "type": "string" },
+    { "key": "langAssetId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0 — Login",
+      "item": [
+        {
+          "name": "0.1 Login — Agency",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.token) { pm.collectionVariables.set('agencyToken', j.token); console.log('agencyToken saved'); }",
+                  "else console.error('Login failed', j);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"agency@practo.com\",\n  \"password\": \"Admin@123\"\n}" },
+            "url": "{{baseUrl}}/api/auth/login",
+            "description": "Saves {{agencyToken}}. Agency: submit_package."
+          },
+          "response": []
+        },
+        {
+          "name": "0.2 Login — Brand",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.token) { pm.collectionVariables.set('brandToken', j.token); console.log('brandToken saved'); }",
+                  "else console.error('Login failed', j);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"brand@practo.com\",\n  \"password\": \"Admin@123\"\n}" },
+            "url": "{{baseUrl}}/api/auth/login",
+            "description": "Saves {{brandToken}}. Brand: review_package."
+          },
+          "response": []
+        },
+        {
+          "name": "0.3 Login — Content Approver",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.token) { pm.collectionVariables.set('approverToken', j.token); console.log('approverToken saved'); }",
+                  "else console.error('Login failed', j);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"approver@practo.com\",\n  \"password\": \"Admin@123\"\n}" },
+            "url": "{{baseUrl}}/api/auth/login",
+            "description": "Saves {{approverToken}}. approve_package only at AWAITING_APPROVER."
+          },
+          "response": []
+        },
+        {
+          "name": "0.4 Login — Super Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.token) { pm.collectionVariables.set('adminToken', j.token); console.log('adminToken saved'); }",
+                  "else console.error('Login failed', j);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@practo.com\",\n  \"password\": \"Admin@123\"\n}" },
+            "url": "{{baseUrl}}/api/auth/login",
+            "description": "Saves {{adminToken}} for withdraw / override tests."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "1 — Agency",
+      "item": [
+        {
+          "name": "1.0 POST upload-url (video)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{agencyToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileName\": \"lang-sample.mp4\",\n  \"fileType\": \"video/mp4\",\n  \"assetType\": \"video\"\n}"
+            },
+            "url": "{{baseUrl}}/api/language-packages/upload-url",
+            "description": "200: { success, uploadUrl, key, fileUrl, expiresIn }. PUT file to uploadUrl, then use fileUrl in create body."
+          },
+          "response": []
+        },
+        {
+          "name": "1.1 POST / — Create package + first video",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.success && j.data) {",
+                  "  pm.collectionVariables.set('langPackageId', j.data.id);",
+                  "  var vids = j.data.videos || [];",
+                  "  if (vids[0]) {",
+                  "    pm.collectionVariables.set('langVideoId', vids[0].id);",
+                  "    var assets = vids[0].assets || [];",
+                  "    if (assets[0]) {",
+                  "      pm.collectionVariables.set('langAssetId', assets[0].id);",
+                  "      var th = assets[0].thumbnails || [];",
+                  "      if (th[0]) pm.collectionVariables.set('langThumbId', th[0].id);",
+                  "    }",
+                  "  }",
+                  "  console.log('Saved langPackageId, langVideoId, langThumbId');",
+                  "} else console.error(j);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{agencyToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scriptId\": \"{{scriptId}}\",\n  \"name\": \"Hindi localized pack\",\n  \"language\": \"HINDI\",\n  \"video\": {\n    \"fileUrl\": \"https://YOUR_BUCKET/path/lang-sample.mp4\",\n    \"fileName\": \"lang-sample.mp4\",\n    \"fileType\": \"video/mp4\",\n    \"fileSize\": 1048576,\n    \"title\": \"Localized title\",\n    \"description\": \"Optional description\",\n    \"tags\": [\"health\", \"hindi\"],\n    \"thumbnails\": []\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/language-packages",
+            "description": "201: { success, data: LanguagePackage with videos[].status BRAND_REVIEW }.\n422 if script not LOCKED. Replace fileUrl with real URL from 1.0.\nEmpty thumbnails[] is valid for Phase 7."
+          },
+          "response": []
+        },
+        {
+          "name": "1.2 GET script/:scriptId",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{agencyToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/language-packages/script/{{scriptId}}",
+            "description": "200: { success, data: LanguagePackage[] }"
+          },
+          "response": []
+        },
+        {
+          "name": "1.3 GET package by id",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{agencyToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/language-packages/{{langPackageId}}",
+            "description": "200: { success, data } with nested videos."
+          },
+          "response": []
+        },
+        {
+          "name": "1.4 PATCH package name",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{agencyToken}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Hindi pack (renamed)\"\n}" },
+            "url": "{{baseUrl}}/api/language-packages/{{langPackageId}}",
+            "description": "200: { success, data }"
+          },
+          "response": []
+        },
+        {
+          "name": "1.5 POST package/:id/videos (add 2nd video)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.success && j.data && j.data.id) {",
+                  "  pm.collectionVariables.set('langVideoId', j.data.id);",
+                  "  console.log('langVideoId -> second video', j.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{agencyToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"video\": {\n    \"fileUrl\": \"https://YOUR_BUCKET/path/lang-short.mp4\",\n    \"fileName\": \"lang-short.mp4\",\n    \"fileType\": \"video/mp4\",\n    \"title\": \"Short variant\",\n    \"tags\": [],\n    \"thumbnails\": []\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/language-packages/{{langPackageId}}/videos",
+            "description": "201: { success, data: LanguageVideo }. Overwrites langVideoId in tests — use separate collection vars if you need both IDs."
+          },
+          "response": []
+        },
+        {
+          "name": "1.6 GET video by id",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{agencyToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/language-packages/videos/{{langVideoId}}",
+            "description": "200: { success, data } includes package { id, name, language, scriptId }."
+          },
+          "response": []
+        },
+        {
+          "name": "1.7 GET video versions",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{agencyToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/language-packages/videos/{{langVideoId}}/versions",
+            "description": "200: { success, data: LanguageAsset[] } ordered by version desc."
+          },
+          "response": []
+        },
+        {
+          "name": "1.8 POST resubmit-video (after Brand reject)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{agencyToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileUrl\": \"https://YOUR_BUCKET/path/lang-sample-v2.mp4\",\n  \"fileName\": \"lang-sample-v2.mp4\",\n  \"fileType\": \"video/mp4\"\n}"
+            },
+            "url": "{{baseUrl}}/api/language-packages/videos/{{langVideoId}}/resubmit-video",
+            "description": "Only at BRAND_REVIEW. Bumps currentVersion."
+          },
+          "response": []
+        },
+        {
+          "name": "1.9 POST resubmit-metadata",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{agencyToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Updated localized title\",\n  \"description\": \"Fixed copy\",\n  \"tags\": [\"v2\"]\n}"
+            },
+            "url": "{{baseUrl}}/api/language-packages/videos/{{langVideoId}}/resubmit-metadata",
+            "description": "Only at BRAND_REVIEW. New asset row; keeps previous video file unless you also resubmit video."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2 — Brand",
+      "item": [
+        {
+          "name": "2.1 GET queue",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{brandToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/language-packages/queue",
+            "description": "200: { success, data: videos in BRAND_REVIEW }"
+          },
+          "response": []
+        },
+        {
+          "name": "2.2 PATCH thumbnail review APPROVED",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{brandToken}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"APPROVED\"\n}" },
+            "url": "{{baseUrl}}/api/language-packages/thumbnails/{{langThumbId}}/review",
+            "description": "Requires valid langThumbId. Skip if no thumbnails on video."
+          },
+          "response": []
+        },
+        {
+          "name": "2.3 POST video approve (Brand → AWAITING_APPROVER)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{brandToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"overallComments\": \"Looks good for publication\"\n}" },
+            "url": "{{baseUrl}}/api/language-packages/videos/{{langVideoId}}/approve",
+            "description": "Fails if thumbnails exist and any still PENDING or REJECTED."
+          },
+          "response": []
+        },
+        {
+          "name": "2.4 POST video reject",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{brandToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"overallComments\": \"Please fix title and re-upload\",\n  \"itemFeedback\": [\n    {\n      \"field\": \"title\",\n      \"hasIssue\": true,\n      \"comment\": \"Typo in headline\",\n      \"videoAssetId\": \"{{langAssetId}}\"\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/language-packages/videos/{{langVideoId}}/reject",
+            "description": "overallComments required. Stays BRAND_REVIEW. Agency can resubmit after."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3 — Content Approver",
+      "item": [
+        {
+          "name": "3.1 GET queue",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{approverToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/language-packages/queue",
+            "description": "Role-filtered videos. Content Approver UI groups by package: In queue = any AWAITING_APPROVER; Approved = all videos in package APPROVED (same payload). Backend may return both statuses so both tabs can populate."
+          },
+          "response": []
+        },
+        {
+          "name": "3.2 POST video approve (→ APPROVED)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{approverToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": "{{baseUrl}}/api/language-packages/videos/{{langVideoId}}/approve",
+            "description": "Video must be AWAITING_APPROVER. No reject endpoint for CA."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4 — Super Admin",
+      "item": [
+        {
+          "name": "4.1 PATCH withdraw video",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/api/language-packages/videos/{{langVideoId}}/withdraw",
+            "description": "Sets status WITHDRAWN. Only Super Admin passes business check."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5 — Stats",
+      "item": [
+        {
+          "name": "5.1 GET stats",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{brandToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/language-packages/stats",
+            "description": "200: { success, data: { BRAND_REVIEW: n, ... } }"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

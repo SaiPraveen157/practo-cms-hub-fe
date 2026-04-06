@@ -55,7 +55,7 @@ import {
   formatPackageFileSize,
   videoStatusBadgeClass,
 } from "@/lib/package-ui"
-import { PackageTatCard } from "@/components/packages/package-tat-card"
+import { PackageVideoTatInline } from "@/components/packages/package-video-tat-inline"
 import { PackageFeedbackAndRevisionsPanel } from "@/components/packages/package-detail-subtabs"
 import { PackageListTabNav } from "@/components/packages/package-list-tab-nav"
 import {
@@ -360,8 +360,6 @@ export default function MedicalPackageDetailPage() {
         </header>
 
         <div className="space-y-10">
-          <PackageTatCard pkg={pkg} />
-
           <section className="space-y-8">
             {sortedVideos.map((video) => {
               const asset = getCurrentVideoAsset(video)
@@ -414,6 +412,10 @@ export default function MedicalPackageDetailPage() {
                         </span>
                       </div>
                     </div>
+                    <PackageVideoTatInline
+                      video={video}
+                      className="border-t border-border/60 pt-4"
+                    />
                   </CardHeader>
                   <CardContent className="space-y-6 px-4 py-6 sm:px-6">
                     <div>
