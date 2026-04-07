@@ -47,6 +47,7 @@ import type {
   PackageVideo,
 } from "@/types/package"
 import type { UserRole } from "@/types/auth"
+import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
 import {
   TRACK_STATUS_LABELS,
   VIDEO_STATUS_LABELS,
@@ -92,7 +93,7 @@ function PackageVideoPlayerCard({
             </div>
             <div className="min-w-0 space-y-1">
               <CardTitle className="text-base leading-snug">{label}</CardTitle>
-              <CardDescription className="break-all font-mono text-xs">
+              <CardDescription className="font-mono text-xs break-all">
                 {asset.fileName}
                 {size ? ` · ${size}` : ""}
               </CardDescription>
@@ -106,17 +107,13 @@ function PackageVideoPlayerCard({
       <CardContent className="space-y-4 p-4 sm:p-6">
         {asset.fileUrl && !videoError ? (
           <div className="overflow-hidden rounded-xl border border-border bg-black shadow-inner">
-            <video
-              key={asset.fileUrl}
+            <VideoPlayerTimeline
               src={asset.fileUrl}
-              controls
-              playsInline
-              preload="metadata"
-              className="max-h-[min(72vh,32rem)] w-full object-contain"
-              onError={() => setVideoError(true)}
-            >
-              Your browser cannot play this video inline.
-            </video>
+              mediaKey={asset.id}
+              showCommentsUi={false}
+              videoClassName="max-h-[min(72vh,32rem)] w-full object-contain"
+              onVideoError={() => setVideoError(true)}
+            />
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
@@ -202,7 +199,9 @@ export default function MedicalPackageDetailPage() {
     if (!pkg) return
     const vids = pkg.videos ?? []
     const pick =
-      (focusVideoId && vids.find((v) => v.id === focusVideoId)) || vids[0] || null
+      (focusVideoId && vids.find((v) => v.id === focusVideoId)) ||
+      vids[0] ||
+      null
     setActiveVideo(pick)
     if (pick) setRejectVideoTab(pick.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: avoid resetting dialog selection on in-place merges
@@ -406,11 +405,14 @@ export default function MedicalPackageDetailPage() {
                         >
                           {VIDEO_STATUS_LABELS[video.status]}
                         </Badge>
-                        <Badge variant="secondary" className="text-xs font-normal">
+                        <Badge
+                          variant="secondary"
+                          className="text-xs font-normal"
+                        >
                           Video track:{" "}
                           {TRACK_STATUS_LABELS[video.videoTrackStatus]}
                         </Badge>
-                        <span className="text-xs tabular-nums text-muted-foreground">
+                        <span className="text-xs text-muted-foreground tabular-nums">
                           v{video.currentVersion}
                         </span>
                       </div>
@@ -471,15 +473,15 @@ export default function MedicalPackageDetailPage() {
                     ) : (
                       video.status === "MEDICAL_REVIEW" &&
                       (video.videoTrackStatus === "APPROVED" ? (
-                        <p className="flex items-center rounded-lg border border-success bg-green-950/20 px-4 py-3 text-sm text-green-400 border-green-600">
+                        <p className="border-success flex items-center rounded-lg border border-green-600 bg-green-950/20 px-4 py-3 text-sm text-green-400">
                           <CheckCircle className="mr-2 size-4" />
                           Video track approved for this version.
                         </p>
                       ) : (
                         <p className="rounded-lg border border-dashed border-border bg-muted/25 px-4 py-3 text-sm text-muted-foreground">
                           <Clock className="mr-2 size-4" />
-                          No video track action for you on this deliverable right
-                          now.
+                          No video track action for you on this deliverable
+                          right now.
                         </p>
                       ))
                     )}
@@ -554,9 +556,7 @@ export default function MedicalPackageDetailPage() {
                   label: deliverableLabels.get(v.id) ?? "Deliverable",
                 }))}
                 active={
-                  rejectVideoTab ||
-                  activeVideo?.id ||
-                  sortedVideos[0]!.id
+                  rejectVideoTab || activeVideo?.id || sortedVideos[0]!.id
                 }
                 onChange={(k) => {
                   setRejectVideoTab(k)
@@ -594,7 +594,11 @@ export default function MedicalPackageDetailPage() {
             <Button variant="outline" onClick={() => setRejectOpen(false)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleReject} disabled={busy}>
+            <Button
+              variant="destructive"
+              onClick={handleReject}
+              disabled={busy}
+            >
               {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
               Reject
             </Button>

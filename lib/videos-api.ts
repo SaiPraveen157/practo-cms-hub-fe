@@ -4,6 +4,7 @@
  */
 
 import { apiRequest } from "@/lib/api"
+import { normalizeVideoComment } from "@/lib/video-comment"
 import type {
   Video,
   VideoPhase,
@@ -158,23 +159,37 @@ export async function getVideoComments(
 ): Promise<VideoComment[]> {
   checkToken(token)
   const data = await apiRequest<
-    { comments?: VideoComment[] } & Record<string, unknown>
+    { comments?: Record<string, unknown>[] } & Record<string, unknown>
   >(`/api/videos/${videoId}/comments`, { token })
-  return data.comments ?? []
+  const list = data.comments ?? []
+  return list.map((c) => normalizeVideoComment(c as Record<string, unknown>))
 }
 
-/** POST /api/videos/:id/comments. */
+/** POST /api/videos/:id/comments — optional timestampSeconds for timeline-scoped feedback. */
 export async function addVideoComment(
   token: string | null,
   videoId: string,
-  content: string
+  body: { content: string; timestampSeconds?: number | null }
 ): Promise<{ success: boolean; comment: VideoComment }> {
   checkToken(token)
-  return apiRequest(`/api/videos/${videoId}/comments`, {
+  const payload: { content: string; timestampSeconds?: number } = {
+    content: body.content,
+  }
+  if (body.timestampSeconds != null && Number.isFinite(body.timestampSeconds)) {
+    payload.timestampSeconds = body.timestampSeconds
+  }
+  const res = await apiRequest<{
+    success: boolean
+    comment: Record<string, unknown>
+  }>(`/api/videos/${videoId}/comments`, {
     method: "POST",
-    body: { content },
+    body: payload,
     token,
   })
+  return {
+    success: res.success,
+    comment: normalizeVideoComment(res.comment ?? {}),
+  }
 }
 
 /** Step A → B → C — POST /api/videos body matches Postman (scriptId, phase, file metadata). */

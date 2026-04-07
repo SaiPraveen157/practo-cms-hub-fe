@@ -127,5 +127,7 @@ export interface VideoComment {
   id: string
   content: string
   createdAt: string
+  /** Playback position in seconds (normalized from API: `timestampSeconds`, `timeStamp`, snake_case variants). */
+  timestampSeconds?: number | null
   author?: { id: string; firstName: string; lastName: string; role: string }
 }

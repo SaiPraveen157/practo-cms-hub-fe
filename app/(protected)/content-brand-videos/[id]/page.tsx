@@ -39,13 +39,8 @@ import type {
   VideoStatsResponse,
 } from "@/types/video"
 import { VideoTatBar, resolveVideoTat } from "@/components/video-tat-bar"
-import {
-  ArrowLeft,
-  CheckCircle,
-  Loader2,
-  MessageSquare,
-  XCircle,
-} from "lucide-react"
+import { ArrowLeft, CheckCircle, Loader2, XCircle } from "lucide-react"
+import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -93,8 +88,6 @@ export default function ContentBrandVideoDetailPage() {
   const [rejectComments, setRejectComments] = useState("")
   const [approving, setApproving] = useState(false)
   const [rejecting, setRejecting] = useState(false)
-  const [newComment, setNewComment] = useState("")
-  const [addingComment, setAddingComment] = useState(false)
   const [videoStats, setVideoStats] = useState<VideoStatsResponse | null>(null)
 
   const isContentBrand = user?.role === "CONTENT_BRAND"
@@ -201,21 +194,6 @@ export default function ContentBrandVideoDetailPage() {
     }
   }
 
-  async function handleAddComment() {
-    if (!token || !id || !newComment.trim()) return
-    setAddingComment(true)
-    try {
-      await addVideoComment(token, id, newComment.trim())
-      setNewComment("")
-      fetchComments()
-      toast.success("Comment added")
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to add comment")
-    } finally {
-      setAddingComment(false)
-    }
-  }
-
   if (!isContentBrand) {
     return (
       <div className="p-6 md:p-8">
@@ -306,13 +284,20 @@ export default function ContentBrandVideoDetailPage() {
                 No file uploaded yet
               </p>
             ) : fileCategory === "video" ? (
-              <video
+              <VideoPlayerTimeline
                 src={video.fileUrl!}
-                controls
-                className="w-full rounded-lg border bg-black"
-              >
-                Your browser does not support the video tag.
-              </video>
+                mediaKey={video.id}
+                comments={comments}
+                onAddComment={async ({ content, timestampSeconds }) => {
+                  if (!token || !id) return
+                  await addVideoComment(token, id, {
+                    content,
+                    timestampSeconds,
+                  })
+                  await fetchComments()
+                  toast.success("Comment added")
+                }}
+              />
             ) : fileCategory === "image" ? (
               <img
                 src={video.fileUrl!}
@@ -381,62 +366,6 @@ export default function ContentBrandVideoDetailPage() {
             </CardContent>
           </Card>
         )}
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MessageSquare className="size-5" />
-              Comments
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Textarea
-                placeholder="Add a comment..."
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                rows={2}
-                className="min-h-[80px] resize-y"
-                disabled={addingComment}
-              />
-              <Button
-                onClick={handleAddComment}
-                disabled={!newComment.trim() || addingComment}
-                className="shrink-0 border-0 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
-              >
-                {addingComment ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  "Post"
-                )}
-              </Button>
-            </div>
-            <ul className="space-y-2">
-              {comments.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No comments yet.
-                </p>
-              ) : (
-                comments.map((c) => (
-                  <li
-                    key={c.id}
-                    className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-sm"
-                  >
-                    <p className="font-medium">
-                      {c.author
-                        ? `${c.author.firstName} ${c.author.lastName}`
-                        : "Unknown"}
-                    </p>
-                    <p className="mt-1 text-muted-foreground">{c.content}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {formatDate(c.createdAt)}
-                    </p>
-                  </li>
-                ))
-              )}
-            </ul>
-          </CardContent>
-        </Card>
 
         {canApprove && (
           <div className="flex flex-wrap gap-2 border-t pt-6">

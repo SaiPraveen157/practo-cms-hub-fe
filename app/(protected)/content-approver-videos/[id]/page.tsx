@@ -12,11 +12,16 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Textarea } from "@/components/ui/textarea"
 import { useAuthStore } from "@/store"
+import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
 import { getVideo, getVideoComments, addVideoComment } from "@/lib/videos-api"
-import type { Video, VideoPhase, VideoStatus, VideoComment } from "@/types/video"
-import { ArrowLeft, CheckCircle, Loader2, MessageSquare, XCircle } from "lucide-react"
+import type {
+  Video,
+  VideoPhase,
+  VideoStatus,
+  VideoComment,
+} from "@/types/video"
+import { ArrowLeft, CheckCircle, Loader2, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -57,9 +62,6 @@ export default function ContentApproverVideoDetailPage() {
   const [comments, setComments] = useState<VideoComment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [newComment, setNewComment] = useState("")
-  const [addingComment, setAddingComment] = useState(false)
-
   const isContentApprover = user?.role === "CONTENT_APPROVER"
 
   const fetchVideo = useCallback(async () => {
@@ -94,25 +96,12 @@ export default function ContentApproverVideoDetailPage() {
     if (video) fetchComments()
   }, [video?.id, fetchComments])
 
-  async function handleAddComment() {
-    if (!token || !id || !newComment.trim()) return
-    setAddingComment(true)
-    try {
-      await addVideoComment(token, id, newComment.trim())
-      setNewComment("")
-      fetchComments()
-      toast.success("Comment added")
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to add comment")
-    } finally {
-      setAddingComment(false)
-    }
-  }
-
   if (!isContentApprover) {
     return (
       <div className="p-6 md:p-8">
-        <p className="text-muted-foreground">Only Content Approver can access this page.</p>
+        <p className="text-muted-foreground">
+          Only Content Approver can access this page.
+        </p>
         <Button variant="link" asChild className="mt-2 pl-0">
           <Link href={LIST_PATH}>Back to videos</Link>
         </Button>
@@ -151,7 +140,10 @@ export default function ContentApproverVideoDetailPage() {
               <span className="text-xs text-muted-foreground">
                 Version {video.version}
                 {video.uploadedBy && (
-                  <> · {video.uploadedBy.firstName} {video.uploadedBy.lastName}</>
+                  <>
+                    {" "}
+                    · {video.uploadedBy.firstName} {video.uploadedBy.lastName}
+                  </>
                 )}
               </span>
             </div>
@@ -184,13 +176,20 @@ export default function ContentApproverVideoDetailPage() {
                 No file uploaded yet
               </p>
             ) : fileCategory === "video" ? (
-              <video
+              <VideoPlayerTimeline
                 src={video.fileUrl!}
-                controls
-                className="w-full rounded-lg border bg-black"
-              >
-                Your browser does not support the video tag.
-              </video>
+                mediaKey={video.id}
+                comments={comments}
+                onAddComment={async ({ content, timestampSeconds }) => {
+                  if (!token || !id) return
+                  await addVideoComment(token, id, {
+                    content,
+                    timestampSeconds,
+                  })
+                  await fetchComments()
+                  toast.success("Comment added")
+                }}
+              />
             ) : fileCategory === "image" ? (
               <img
                 src={video.fileUrl!}
@@ -220,7 +219,9 @@ export default function ContentApproverVideoDetailPage() {
           <Card>
             <CardHeader>
               <CardTitle>Review history</CardTitle>
-              <CardDescription>Decisions and comments from reviewers</CardDescription>
+              <CardDescription>
+                Decisions and comments from reviewers
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {video.reviews.map((r) => (
@@ -250,61 +251,15 @@ export default function ContentApproverVideoDetailPage() {
                     )}
                   </div>
                   {r.comments && (
-                    <p className="mt-2 text-sm text-muted-foreground">{r.comments}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {r.comments}
+                    </p>
                   )}
                 </div>
               ))}
             </CardContent>
           </Card>
         )}
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MessageSquare className="size-5" />
-              Comments
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Textarea
-                placeholder="Add a comment..."
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                rows={2}
-                className="min-h-[80px] resize-y"
-                disabled={addingComment}
-              />
-              <Button
-                onClick={handleAddComment}
-                disabled={!newComment.trim() || addingComment}
-                className="shrink-0 border-0 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
-              >
-                {addingComment ? <Loader2 className="size-4 animate-spin" /> : "Post"}
-              </Button>
-            </div>
-            <ul className="space-y-2">
-              {comments.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No comments yet.</p>
-              ) : (
-                comments.map((c) => (
-                  <li
-                    key={c.id}
-                    className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-sm"
-                  >
-                    <p className="font-medium">
-                      {c.author ? `${c.author.firstName} ${c.author.lastName}` : "Unknown"}
-                    </p>
-                    <p className="mt-1 text-muted-foreground">{c.content}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {formatDate(c.createdAt)}
-                    </p>
-                  </li>
-                ))
-              )}
-            </ul>
-          </CardContent>
-        </Card>
       </div>
     </div>
   )

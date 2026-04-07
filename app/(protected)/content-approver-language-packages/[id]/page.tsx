@@ -4,12 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useParams, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
@@ -82,10 +77,7 @@ export default function ContentApproverLanguagePackageDetailPage() {
     load()
   }, [load])
 
-  const sorted = useMemo(
-    () => (pkg ? languageVideosSorted(pkg) : []),
-    [pkg]
-  )
+  const sorted = useMemo(() => (pkg ? languageVideosSorted(pkg) : []), [pkg])
 
   /** Optional deep link: ?video=uuid scrolls that card into view. */
   useEffect(() => {
@@ -113,9 +105,7 @@ export default function ContentApproverLanguagePackageDetailPage() {
   const allVideosTerminal = useMemo(
     () =>
       sorted.length > 0 &&
-      sorted.every(
-        (v) => v.status === "APPROVED" || v.status === "WITHDRAWN"
-      ),
+      sorted.every((v) => v.status === "APPROVED" || v.status === "WITHDRAWN"),
     [sorted]
   )
 
@@ -203,7 +193,9 @@ export default function ContentApproverLanguagePackageDetailPage() {
             </div>
 
             {sorted.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No videos in package.</p>
+              <p className="text-sm text-muted-foreground">
+                No videos in package.
+              </p>
             ) : (
               <div className="space-y-10">
                 {sorted.map((video, index) => {
@@ -318,7 +310,9 @@ export default function ContentApproverLanguagePackageDetailPage() {
             {sorted.length > 0 ? (
               <Card className="border-primary/25 bg-muted/20 shadow-sm">
                 <CardHeader className="border-b bg-muted/30 py-4">
-                  <CardTitle className="text-lg">Package final approval</CardTitle>
+                  <CardTitle className="text-lg">
+                    Package final approval
+                  </CardTitle>
                   <p className="text-sm font-normal text-muted-foreground">
                     One action finalizes every video that is ready for your
                     sign-off. The API approves each video in sequence.
@@ -347,8 +341,8 @@ export default function ContentApproverLanguagePackageDetailPage() {
                     </>
                   ) : (
                     <p className="text-sm text-muted-foreground">
-                      Final approval unlocks when every video has left Content/Brand
-                      review.{" "}
+                      Final approval unlocks when every video has left
+                      Content/Brand review.{" "}
                       {blockingBrandReview.length > 0
                         ? `${blockingBrandReview.length} still in brand review.`
                         : null}
@@ -374,8 +368,8 @@ export default function ContentApproverLanguagePackageDetailPage() {
             <DialogDescription>
               This will approve {awaitingApproverVideos.length} video
               {awaitingApproverVideos.length === 1 ? "" : "s"} in &ldquo;
-              {pkg?.name ?? "this package"}&rdquo; for publication.
-              Optional comments are applied to each approval request.
+              {pkg?.name ?? "this package"}&rdquo; for publication. Optional
+              comments are applied to each approval request.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">

@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useAuthStore } from "@/store"
+import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
 import type { UserRole } from "@/types/auth"
 import {
   getPackage,
@@ -150,7 +151,9 @@ function AgencyMetadataThumbnailsGrid({
               {t.fileName}
             </p>
             {t.status === "REJECTED" && t.comment ? (
-              <p className="text-xs leading-snug text-destructive">{t.comment}</p>
+              <p className="text-xs leading-snug text-destructive">
+                {t.comment}
+              </p>
             ) : null}
           </div>
         </li>
@@ -184,17 +187,13 @@ function SubmittedVideoPlayerPaneInner({
   if (asset.fileUrl && !videoError) {
     return (
       <div className={submittedVideoShellClass()}>
-        <video
-          key={asset.fileUrl}
+        <VideoPlayerTimeline
           src={asset.fileUrl}
-          controls
-          playsInline
-          preload="metadata"
-          className={VIDEO_INLINE_CLASS}
-          onError={() => setVideoError(true)}
-        >
-          Your browser cannot play this video inline.
-        </video>
+          mediaKey={asset.id}
+          showCommentsUi={false}
+          videoClassName={VIDEO_INLINE_CLASS}
+          onVideoError={() => setVideoError(true)}
+        />
       </div>
     )
   }
@@ -301,20 +300,13 @@ function ReplacementBlobVideoPlayer({
   return (
     <div className="flex w-full flex-col gap-2">
       <div className={submittedVideoShellClass()}>
-        <video
-          controls
-          playsInline
-          preload="metadata"
-          className={VIDEO_INLINE_CLASS}
-          onError={() => setVideoError(true)}
-        >
-          {file.type ? (
-            <source src={objectUrl} type={file.type} />
-          ) : (
-            <source src={objectUrl} />
-          )}
-          Your browser cannot play this video inline.
-        </video>
+        <VideoPlayerTimeline
+          src={objectUrl}
+          mediaKey={objectUrl}
+          showCommentsUi={false}
+          videoClassName={VIDEO_INLINE_CLASS}
+          onVideoError={() => setVideoError(true)}
+        />
       </div>
       <p className="shrink-0 font-mono text-xs wrap-break-word text-muted-foreground">
         {file.name} · {formatPackageFileSize(file.size)}
@@ -678,12 +670,12 @@ export default function AgencyPackageDetailPage() {
           <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:items-end">
             <Button asChild variant="default" className="w-full sm:w-auto">
               <Upload className="mr-2 size-4" />
-                  <Link
-                    href={`/agency-poc-packages/new?scriptId=${encodeURIComponent(pkg.scriptId)}`}
-                  >
+              <Link
+                href={`/agency-poc-packages/new?scriptId=${encodeURIComponent(pkg.scriptId)}`}
+              >
                 Add videos
-                  </Link>
-                </Button>
+              </Link>
+            </Button>
           </div>
         </header>
 
@@ -799,7 +791,7 @@ export default function AgencyPackageDetailPage() {
             </div>
           </div>
         </section>
-              </div>
+      </div>
     </div>
   )
 }
@@ -819,10 +811,7 @@ function RejectionContextBlock({
     itemFeedbackForDedup &&
     itemFeedbackForDedup.length > 0 &&
     isOverallCommentsRedundantWithItemFeedback(overall, itemFeedbackForDedup)
-  const showSummary =
-    showOverall &&
-    Boolean(overall) &&
-    !redundant
+  const showSummary = showOverall && Boolean(overall) && !redundant
 
   return (
     <div className="rounded-lg border border-border bg-muted/40 px-4 py-4 text-sm dark:bg-muted/20">
@@ -851,7 +840,8 @@ function RejectionContextBlock({
         </div>
       ) : redundant ? (
         <p className="mt-4 text-xs text-muted-foreground">
-          Summary matches the detailed list below — see each field for specifics.
+          Summary matches the detailed list below — see each field for
+          specifics.
         </p>
       ) : null}
     </div>
@@ -886,16 +876,16 @@ function VideoRevisionPanel({
     }
     if (!f) {
       toast.error("Choose a replacement video file")
-        return
-      }
+      return
+    }
     setBusyVideoId(videoId)
     try {
       const meta = await uploadPackageVideoFile(token, f)
       const res = await resubmitPackageVideoFile(token, videoId, {
-            fileUrl: meta.fileUrl,
-            fileName: meta.fileName,
-            fileType: meta.fileType,
-            fileSize: meta.fileSize,
+        fileUrl: meta.fileUrl,
+        fileName: meta.fileName,
+        fileType: meta.fileType,
+        fileSize: meta.fileSize,
       })
       onPackageUpdated(mergeVideoIntoPackage(pkg, res.video))
       setReplaceFileByVideoId((prev) => ({ ...prev, [videoId]: null }))
@@ -996,8 +986,8 @@ function VideoRevisionPanel({
               />
             </CardHeader>
             <CardContent className="space-y-4 p-4 sm:p-6">
-      <TrackStatusCallout
-        status={vts}
+              <TrackStatusCallout
+                status={vts}
                 title="Video file (Medical Affairs)"
               >
                 {video.status === "MEDICAL_REVIEW" && vts === "PENDING" ? (
@@ -1009,13 +999,13 @@ function VideoRevisionPanel({
                 {video.status === "MEDICAL_REVIEW" &&
                 vts === "APPROVED" &&
                 video.metadataTrackStatus === "PENDING" ? (
-            <p className="text-foreground">
+                  <p className="text-foreground">
                     This video file is approved. Content/Brand is still
                     reviewing metadata — see the Metadata tab.
                   </p>
                 ) : null}
                 {video.status === "BRAND_VIDEO_REVIEW" ? (
-            <p className="text-foreground">
+                  <p className="text-foreground">
                     Content/Brand is reviewing overall video quality for this
                     deliverable.
                   </p>
@@ -1030,36 +1020,36 @@ function VideoRevisionPanel({
                   <p>This video was withdrawn.</p>
                 ) : null}
                 {needsVideoResubmit ? (
-          <p className="text-foreground">
+                  <p className="text-foreground">
                     Upload a new video file below. Use the Metadata tab if
                     titles, tags, or thumbnails need changes.
                   </p>
                 ) : null}
-      </TrackStatusCallout>
+              </TrackStatusCallout>
 
               {needsVideoResubmit && latest ? (
-        <Card className="border-destructive/40 bg-destructive/5 shadow-none">
-          <CardHeader className="space-y-1 pb-3">
-            <CardTitle className="text-lg font-semibold text-destructive">
+                <Card className="border-destructive/40 bg-destructive/5 shadow-none">
+                  <CardHeader className="space-y-1 pb-3">
+                    <CardTitle className="text-lg font-semibold text-destructive">
                       Reviewer feedback (video file)
-            </CardTitle>
-          </CardHeader>
+                    </CardTitle>
+                  </CardHeader>
                   <CardContent className="space-y-4 border-t border-border/60 pt-4">
-            <RejectionContextBlock
+                    <RejectionContextBlock
                       latestRejection={latest}
                       showOverall={Boolean(latest.overallComments?.trim())}
                       itemFeedbackForDedup={feedbackItems}
                     />
                     {feedbackItems.length > 0 ? (
-              <PackageItemFeedbackHumanizedList
-                pkg={pkg}
+                      <PackageItemFeedbackHumanizedList
+                        pkg={pkg}
                         items={feedbackItems}
-                className="border-t-0 pt-0"
-              />
-            ) : null}
-          </CardContent>
-        </Card>
-          ) : null}
+                        className="border-t-0 pt-0"
+                      />
+                    ) : null}
+                  </CardContent>
+                </Card>
+              ) : null}
 
               {asset ? (
                 needsVideoResubmit ? (
@@ -1069,33 +1059,33 @@ function VideoRevisionPanel({
                         Current file
                       </p>
                       <SubmittedVideoPlayerPane compact asset={asset} />
-                  </div>
+                    </div>
                     <div className="space-y-2">
                       <p className="text-xs font-semibold tracking-wide text-primary uppercase">
                         Replacement
                       </p>
-                          <LocalReplacementVideoPreview
-                            compact
+                      <LocalReplacementVideoPreview
+                        compact
                         file={replaceFileByVideoId[video.id] ?? null}
-                          />
-                          <VideoReplacementUploadCell
+                      />
+                      <VideoReplacementUploadCell
                         assetId={video.id}
                         file={replaceFileByVideoId[video.id] ?? null}
-                            onFileChange={(f) =>
+                        onFileChange={(f) =>
                           setReplaceFileByVideoId((prev) => ({
-                                ...prev,
+                            ...prev,
                             [video.id]: f,
-                              }))
-                            }
-                          />
-                        </div>
-                    </div>
-                  ) : (
-                      <AgencyPackageVideoPreview
-                        asset={asset}
-                        label={label}
-                        icon={icon}
+                          }))
+                        }
                       />
+                    </div>
+                  </div>
+                ) : (
+                  <AgencyPackageVideoPreview
+                    asset={asset}
+                    label={label}
+                    icon={icon}
+                  />
                 )
               ) : (
                 <p className="text-sm text-muted-foreground">
@@ -1104,19 +1094,19 @@ function VideoRevisionPanel({
               )}
 
               {needsVideoResubmit ? (
-            <Button
+                <Button
                   type="button"
                   onClick={() => void handleResubmitVideoFile(video.id)}
                   disabled={busyVideoId === video.id || !token}
                 >
                   {busyVideoId === video.id ? (
-                <Loader2 className="mr-2 size-4 animate-spin" />
-              ) : (
-                <Upload className="mr-2 size-4" />
-              )}
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <Upload className="mr-2 size-4" />
+                  )}
                   Resubmit video file
-            </Button>
-        ) : null}
+                </Button>
+              ) : null}
             </CardContent>
           </Card>
         )
@@ -1262,24 +1252,24 @@ function MetadataResubmitFields({
           <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             Title & description
           </h3>
-                    <div className="space-y-2">
+          <div className="space-y-2">
             <Label htmlFor={`mt-title-${video.id}`}>Title</Label>
-                        <Input
+            <Input
               id={`mt-title-${video.id}`}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-2">
+            />
+          </div>
+          <div className="space-y-2">
             <Label htmlFor={`mt-desc-${video.id}`}>Description</Label>
-                        <Textarea
+            <Textarea
               id={`mt-desc-${video.id}`}
               rows={5}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="min-h-[120px] resize-y text-sm leading-relaxed"
-                        />
-                      </div>
+            />
+          </div>
         </section>
 
         <section className="space-y-4 rounded-lg border border-border bg-background/80 p-4 shadow-sm dark:bg-background/40">
@@ -1289,14 +1279,14 @@ function MetadataResubmitFields({
           <p className="text-xs text-muted-foreground">
             Separate with commas. Empty segments are ignored.
           </p>
-                      <div className="space-y-2">
+          <div className="space-y-2">
             <Label htmlFor={`mt-tags-${video.id}`}>Tag list</Label>
-                        <Input
+            <Input
               id={`mt-tags-${video.id}`}
               placeholder="e.g. cardiology, awareness, campaign"
               value={tagsInput}
               onChange={(e) => setTagsInput(e.target.value)}
-                        />
+            />
             <div className="space-y-1 pt-1">
               <p className="text-xs font-medium text-muted-foreground">
                 Preview
@@ -1310,7 +1300,7 @@ function MetadataResubmitFields({
                 }
               />
             </div>
-                      </div>
+          </div>
         </section>
 
         <section className="space-y-4 rounded-lg border border-border bg-background/80 p-4 shadow-sm dark:bg-background/40">
@@ -1439,19 +1429,19 @@ function MetadataResubmitFields({
           </ul>
         </section>
 
-          <Button
+        <Button
           type="button"
           className="w-full sm:w-auto"
           onClick={() => void handleResubmitMetadata()}
-            disabled={busy || !token}
-          >
-            {busy ? (
-              <Loader2 className="mr-2 size-4 animate-spin" />
-            ) : (
-              <Upload className="mr-2 size-4" />
-            )}
+          disabled={busy || !token}
+        >
+          {busy ? (
+            <Loader2 className="mr-2 size-4 animate-spin" />
+          ) : (
+            <Upload className="mr-2 size-4" />
+          )}
           Resubmit metadata for review
-          </Button>
+        </Button>
       </CardContent>
     </Card>
   )
@@ -1588,13 +1578,13 @@ function MetadataRevisionPanel({
                 title="Metadata & thumbnails (Content / Brand)"
               >
                 {video.status === "MEDICAL_REVIEW" && mts === "PENDING" ? (
-          <p>
-            Content/Brand is reviewing titles, descriptions, tags, and
+                  <p>
+                    Content/Brand is reviewing titles, descriptions, tags, and
                     each thumbnail for this video.
-          </p>
+                  </p>
                 ) : null}
                 {mts === "APPROVED" && video.status === "MEDICAL_REVIEW" ? (
-          <p className="text-foreground">
+                  <p className="text-foreground">
                     Metadata is approved for this video at the medical stage. If
                     the video file is still pending, wait on the Videos tab.
                   </p>
@@ -1616,41 +1606,42 @@ function MetadataRevisionPanel({
                 {video.status === "WITHDRAWN" ? (
                   <p>This video was withdrawn.</p>
                 ) : null}
-      </TrackStatusCallout>
+              </TrackStatusCallout>
 
               {needsMetadataResubmit && latest ? (
-        <Card className="border-destructive/40 bg-destructive/5 shadow-none">
-          <CardHeader className="space-y-1 pb-3">
-            <CardTitle className="text-lg font-semibold text-destructive">
-              Reviewer feedback (metadata)
-            </CardTitle>
+                <Card className="border-destructive/40 bg-destructive/5 shadow-none">
+                  <CardHeader className="space-y-1 pb-3">
+                    <CardTitle className="text-lg font-semibold text-destructive">
+                      Reviewer feedback (metadata)
+                    </CardTitle>
                     <CardDescription>
-                      Use this together with the snapshot below when you resubmit.
-            </CardDescription>
-          </CardHeader>
+                      Use this together with the snapshot below when you
+                      resubmit.
+                    </CardDescription>
+                  </CardHeader>
                   <CardContent className="space-y-4 border-t border-border/60 pt-4">
-            <RejectionContextBlock
+                    <RejectionContextBlock
                       latestRejection={latest}
                       showOverall={Boolean(latest.overallComments?.trim())}
                       itemFeedbackForDedup={metaFeedback}
                     />
                     {metaFeedback.length > 0 ? (
-              <PackageItemFeedbackHumanizedList
-                pkg={pkg}
+                      <PackageItemFeedbackHumanizedList
+                        pkg={pkg}
                         items={metaFeedback}
-                className="border-t-0 pt-0"
-              />
-            ) : null}
-          </CardContent>
-        </Card>
-          ) : null}
+                        className="border-t-0 pt-0"
+                      />
+                    ) : null}
+                  </CardContent>
+                </Card>
+              ) : null}
 
               {needsMetadataResubmit && asset && va ? (
                 <div className="space-y-4">
                   <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 sm:p-5">
                     <h3 className="mb-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                       What&apos;s live now (reference before you change it)
-            </h3>
+                    </h3>
                     <div className="space-y-6">
                       <PackageVideoMetadataProminent
                         variant="embedded"
@@ -1671,9 +1662,9 @@ function MetadataRevisionPanel({
                           thumbs={thumbs}
                           headingId={thumbsHeadingId}
                         />
-                            </div>
-                            </div>
-                              </div>
+                      </div>
+                    </div>
+                  </div>
                   <MetadataResubmitFields
                     video={video}
                     pkg={pkg}
@@ -1684,7 +1675,7 @@ function MetadataRevisionPanel({
                     onUpdated={onPackageUpdated}
                   />
                 </div>
-                                      ) : null}
+              ) : null}
 
               {asset && !needsMetadataResubmit && va ? (
                 <div className="space-y-6">
@@ -1700,8 +1691,8 @@ function MetadataRevisionPanel({
                         description={asset.description}
                         tags={asset.tags ?? undefined}
                       />
-                                  </div>
-                            </div>
+                    </div>
+                  </div>
                   <div>
                     <h3
                       id={thumbsHeadingId}
@@ -1718,13 +1709,13 @@ function MetadataRevisionPanel({
                       thumbs={thumbs}
                       headingId={thumbsHeadingId}
                     />
-                        </div>
-                      </div>
+                  </div>
+                </div>
               ) : null}
-                    </CardContent>
-                  </Card>
-                )
-              })}
+            </CardContent>
+          </Card>
+        )
+      })}
     </div>
   )
 }

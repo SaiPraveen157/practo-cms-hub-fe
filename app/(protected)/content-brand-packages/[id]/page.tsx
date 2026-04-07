@@ -156,9 +156,8 @@ export default function ContentBrandPackageDetailPage() {
   const [metaRejectVideo, setMetaRejectVideo] = useState<PackageVideo | null>(
     null
   )
-  const [metaRejectDraft, setMetaRejectDraft] = useState<MetaRejectDraft>(
-    emptyMetaRejectDraft
-  )
+  const [metaRejectDraft, setMetaRejectDraft] =
+    useState<MetaRejectDraft>(emptyMetaRejectDraft)
 
   const [brandRejectVideo, setBrandRejectVideo] = useState<PackageVideo | null>(
     null
@@ -225,7 +224,8 @@ export default function ContentBrandPackageDetailPage() {
   )
 
   const videoQualityCount = useMemo(
-    () => sortedVideos.filter(contentBrandPlaybackQualityActionsAvailable).length,
+    () =>
+      sortedVideos.filter(contentBrandPlaybackQualityActionsAvailable).length,
     [sortedVideos]
   )
 
@@ -509,9 +509,9 @@ export default function ContentBrandPackageDetailPage() {
                     </span>{" "}
                     — Title, description, tags, and thumbnails. Reject metadata
                     (including specific thumbnails) from the rejection flow;
-                    approving metadata auto-approves any still-pending thumbnails
-                    first. Parallel with Medical while the deliverable is in
-                    Medical review.
+                    approving metadata auto-approves any still-pending
+                    thumbnails first. Parallel with Medical while the
+                    deliverable is in Medical review.
                   </li>
                   <li>
                     <span className="font-medium text-foreground">
@@ -641,7 +641,8 @@ export default function ContentBrandPackageDetailPage() {
           <DialogHeader>
             <DialogTitle>Approve video</DialogTitle>
             <DialogDescription>
-              If approved, this deliverable will move to content approver for finalreview.
+              If approved, this deliverable will move to content approver for
+              finalreview.
               <br />
               Comments are optional.
             </DialogDescription>
@@ -753,7 +754,9 @@ function RejectMetadataDialogBody({
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         <div className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="meta-reject-overall">Overall summary (optional)</Label>
+            <Label htmlFor="meta-reject-overall">
+              Overall summary (optional)
+            </Label>
             <Textarea
               id="meta-reject-overall"
               value={draft.overallComments}
@@ -785,7 +788,7 @@ function RejectMetadataDialogBody({
               />
               <div className="min-w-0 flex-1 space-y-2">
                 <span className="text-sm font-medium">Title</span>
-                <p className="text-xs text-muted-foreground line-clamp-3">
+                <p className="line-clamp-3 text-xs text-muted-foreground">
                   {titlePreview}
                 </p>
                 {draft.title.flag ? (
@@ -822,7 +825,7 @@ function RejectMetadataDialogBody({
               />
               <div className="min-w-0 flex-1 space-y-2">
                 <span className="text-sm font-medium">Description</span>
-                <p className="text-xs text-muted-foreground line-clamp-4 whitespace-pre-wrap">
+                <p className="line-clamp-4 text-xs whitespace-pre-wrap text-muted-foreground">
                   {descPreview}
                 </p>
                 {draft.description.flag ? (
@@ -888,8 +891,8 @@ function RejectMetadataDialogBody({
               Thumbnails
             </p>
             <p className="text-xs text-muted-foreground">
-              Check thumbnails to include in this rejection and add a comment for
-              each selected image.
+              Check thumbnails to include in this rejection and add a comment
+              for each selected image.
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               {thumbs.map((t) => {
@@ -931,7 +934,7 @@ function RejectMetadataDialogBody({
                                 [t.id]: {
                                   reject: e.target.checked,
                                   comment: e.target.checked
-                                    ? d.thumbs[t.id]?.comment ?? ""
+                                    ? (d.thumbs[t.id]?.comment ?? "")
                                     : "",
                                 },
                               },
@@ -1272,21 +1275,18 @@ function BrandVideoQualityPanel({
               {!showQualityUi && (
                 <p className="rounded-lg border border-dashed border-border bg-muted/25 px-4 py-3 text-sm text-muted-foreground">
                   Preview the file below for context. Playback-quality
-                  approve/reject uses the same API as Brand quality review and is
-                  only available per deliverable once it reaches that stage.
+                  approve/reject uses the same API as Brand quality review and
+                  is only available per deliverable once it reaches that stage.
                   {!waitingMetaForBrandQuality ? (
-                    <>
-                      {" "}
-                      Stage: {VIDEO_STATUS_LABELS[video.status]}.
-                    </>
+                    <> Stage: {VIDEO_STATUS_LABELS[video.status]}.</>
                   ) : (
                     <>
                       {" "}
                       Medical has approved the video file for this deliverable;
-                      approve the metadata track on the <strong>Metadata</strong>{" "}
-                      tab (thumbnails and copy) so this deliverable can move to
-                      Brand quality review. Other deliverables in the package do
-                      not block this one.
+                      approve the metadata track on the{" "}
+                      <strong>Metadata</strong> tab (thumbnails and copy) so
+                      this deliverable can move to Brand quality review. Other
+                      deliverables in the package do not block this one.
                     </>
                   )}
                 </p>
