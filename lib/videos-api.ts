@@ -175,10 +175,7 @@ export async function addVideoComment(
   const payload: { content: string; timestampSeconds?: number } = {
     content: body.content,
   }
-  if (
-    body.timestampSeconds != null &&
-    Number.isFinite(body.timestampSeconds)
-  ) {
+  if (body.timestampSeconds != null && Number.isFinite(body.timestampSeconds)) {
     payload.timestampSeconds = body.timestampSeconds
   }
   const res = await apiRequest<{

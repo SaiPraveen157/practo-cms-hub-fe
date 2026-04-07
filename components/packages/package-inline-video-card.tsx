@@ -65,11 +65,7 @@ export function PackageInlineVideoCard({
           </p>
           {asset.fileUrl ? (
             <Button variant="outline" size="sm" asChild>
-              <a
-                href={asset.fileUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a href={asset.fileUrl} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="mr-2 size-4" />
                 Open video
               </a>
@@ -90,7 +86,7 @@ export function PackageInlineVideoCard({
               {icon}
             </div>
             <div className="min-w-0">
-              <h3 className="text-lg font-semibold leading-snug tracking-tight text-foreground sm:text-xl">
+              <h3 className="text-lg leading-snug font-semibold tracking-tight text-foreground sm:text-xl">
                 {displayTitle}
               </h3>
             </div>
@@ -115,22 +111,22 @@ export function PackageInlineVideoCard({
 
   const metadataBlock = (
     <div className="flex h-full min-h-0 flex-col space-y-5 rounded-xl border border-border bg-muted/20 p-4 sm:p-6">
-      <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+      <p className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
         Video Metadata
       </p>
       {metaTitle ? (
         <div className="space-y-1.5">
-          <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <Label className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             Title
           </Label>
-          <p className="text-xl font-semibold leading-snug text-foreground sm:text-2xl">
+          <p className="text-xl leading-snug font-semibold text-foreground sm:text-2xl">
             {metaTitle}
           </p>
         </div>
       ) : null}
       {metaDescription ? (
         <div className="space-y-1.5">
-          <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <Label className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             Description
           </Label>
           <div className="max-h-56 overflow-y-auto rounded-lg border border-border/80 bg-background/80 p-4 text-base leading-relaxed whitespace-pre-wrap text-foreground">
@@ -140,7 +136,7 @@ export function PackageInlineVideoCard({
       ) : null}
       {metaTags.length > 0 ? (
         <div className="space-y-2.5">
-          <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <Label className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             Tags
           </Label>
           <TagPillList tags={metaTags} />
@@ -158,15 +154,12 @@ export function PackageInlineVideoCard({
   const thumbsColumnInner =
     nestedThumbs.length > 0 ? (
       <div className="flex h-full min-h-0 flex-col space-y-4 rounded-xl border border-border bg-muted/20 p-4 sm:p-6">
-        <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
           Thumbnail
         </p>
         <div className="flex min-h-0 flex-1 flex-col gap-3">
           {nestedThumbs.map((t) => (
-            <div
-              key={t.id}
-              className="overflow-hidden rounded-lg bg-muted/30"
-            >
+            <div key={t.id} className="overflow-hidden rounded-lg bg-muted/30">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={t.fileUrl}
@@ -179,7 +172,7 @@ export function PackageInlineVideoCard({
       </div>
     ) : (
       <div className="flex h-full min-h-0 flex-col space-y-4 rounded-xl border border-border bg-muted/20 p-4 sm:p-6">
-        <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
           Thumbnail
         </p>
         <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-border bg-muted/10 p-6 text-base text-muted-foreground">
@@ -191,10 +184,10 @@ export function PackageInlineVideoCard({
   const agencyCopyBlock =
     deliverableAgencyCopy && !unifiedMetadata ? (
       <div className="space-y-2 rounded-xl border border-border bg-muted/20 p-4 sm:p-5">
-        <Label className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        <Label className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
           Agency copy (this video only)
         </Label>
-        <div className="max-h-64 overflow-y-auto whitespace-pre-wrap text-base leading-relaxed text-foreground">
+        <div className="max-h-64 overflow-y-auto text-base leading-relaxed whitespace-pre-wrap text-foreground">
           {deliverableAgencyCopy}
         </div>
       </div>
@@ -212,7 +205,7 @@ export function PackageInlineVideoCard({
               <CardTitle className="text-lg leading-snug sm:text-xl">
                 {label}
               </CardTitle>
-              <CardDescription className="break-all font-mono text-sm">
+              <CardDescription className="font-mono text-sm break-all">
                 {asset.fileName}
                 {size ? ` · ${size}` : ""}
               </CardDescription>

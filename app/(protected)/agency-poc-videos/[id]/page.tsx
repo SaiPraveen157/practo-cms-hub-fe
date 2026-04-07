@@ -15,7 +15,12 @@ import { Badge } from "@/components/ui/badge"
 import { useAuthStore } from "@/store"
 import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
 import { getVideo, getVideoComments, addVideoComment } from "@/lib/videos-api"
-import type { Video, VideoPhase, VideoStatus, VideoComment } from "@/types/video"
+import type {
+  Video,
+  VideoPhase,
+  VideoStatus,
+  VideoComment,
+} from "@/types/video"
 import { ArrowLeft, CheckCircle, Loader2, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -94,7 +99,9 @@ export default function AgencyPocVideoDetailPage() {
   if (!isAgency) {
     return (
       <div className="p-6 md:p-8">
-        <p className="text-muted-foreground">Only Agency POC can access this page.</p>
+        <p className="text-muted-foreground">
+          Only Agency POC can access this page.
+        </p>
         <Button variant="link" asChild className="mt-2 pl-0">
           <Link href={LIST_PATH}>Back to videos</Link>
         </Button>
@@ -133,7 +140,10 @@ export default function AgencyPocVideoDetailPage() {
               <span className="text-xs text-muted-foreground">
                 Version {video.version}
                 {video.uploadedBy && (
-                  <> · {video.uploadedBy.firstName} {video.uploadedBy.lastName}</>
+                  <>
+                    {" "}
+                    · {video.uploadedBy.firstName} {video.uploadedBy.lastName}
+                  </>
                 )}
               </span>
             </div>
@@ -209,7 +219,9 @@ export default function AgencyPocVideoDetailPage() {
           <Card>
             <CardHeader>
               <CardTitle>Review history</CardTitle>
-              <CardDescription>Decisions and comments from reviewers</CardDescription>
+              <CardDescription>
+                Decisions and comments from reviewers
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {video.reviews.map((r) => (
@@ -239,7 +251,9 @@ export default function AgencyPocVideoDetailPage() {
                     )}
                   </div>
                   {r.comments && (
-                    <p className="mt-2 text-sm text-muted-foreground">{r.comments}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {r.comments}
+                    </p>
                   )}
                 </div>
               ))}

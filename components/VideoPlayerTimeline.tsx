@@ -419,8 +419,7 @@ export default function VideoPlayerTimeline({
   }
 
   const timestamped = React.useMemo(
-    () =>
-      comments.filter((c) => getVideoCommentTimestampSeconds(c) != null),
+    () => comments.filter((c) => getVideoCommentTimestampSeconds(c) != null),
     [comments]
   )
 

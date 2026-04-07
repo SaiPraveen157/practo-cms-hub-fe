@@ -11,12 +11,7 @@ import {
 import Link from "next/link"
 import { useParams, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
@@ -171,10 +166,7 @@ export default function ContentBrandLanguagePackageDetailPage() {
     })
   }, [pkg])
 
-  const sorted = useMemo(
-    () => (pkg ? languageVideosSorted(pkg) : []),
-    [pkg]
-  )
+  const sorted = useMemo(() => (pkg ? languageVideosSorted(pkg) : []), [pkg])
 
   const rejectAsset = useMemo(
     () =>
@@ -226,9 +218,7 @@ export default function ContentBrandLanguagePackageDetailPage() {
       const res = await approveLanguageVideo(token, approveVideoId, {
         overallComments: approveComment.trim() || undefined,
       })
-      setPkg((p) =>
-        p ? mergeLanguageVideoIntoPackage(p, res.data) : p
-      )
+      setPkg((p) => (p ? mergeLanguageVideoIntoPackage(p, res.data) : p))
       setBrandRejectedAssetVersion((prev) => {
         if (!approveVideoId || !(approveVideoId in prev)) return prev
         const next = { ...prev }
@@ -346,9 +336,7 @@ export default function ContentBrandLanguagePackageDetailPage() {
       const vid = rejectTargetVideo.id
       const ver = rejectTargetVideo.currentVersion
       setBrandRejectedAssetVersion((prev) => ({ ...prev, [vid]: ver }))
-      setPkg((p) =>
-        p ? mergeLanguageVideoIntoPackage(p, res.data) : p
-      )
+      setPkg((p) => (p ? mergeLanguageVideoIntoPackage(p, res.data) : p))
       toast.warning(res.message ?? "Video rejected — Agency can resubmit")
       setRejectOpen(false)
       setRejectTargetVideo(null)
@@ -366,7 +354,9 @@ export default function ContentBrandLanguagePackageDetailPage() {
       <div className="p-6 md:p-8">
         <Card>
           <CardContent className="pt-6">
-            <p className="text-muted-foreground">Content/Brand or Super Admin only.</p>
+            <p className="text-muted-foreground">
+              Content/Brand or Super Admin only.
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -415,7 +405,9 @@ export default function ContentBrandLanguagePackageDetailPage() {
             </div>
 
             {sorted.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No videos in package.</p>
+              <p className="text-sm text-muted-foreground">
+                No videos in package.
+              </p>
             ) : (
               <div className="space-y-10">
                 {sorted.map((video, index) => {
@@ -686,17 +678,19 @@ function RejectLanguageVideoDialogBody({
         <DialogTitle>Reject language video</DialogTitle>
         <DialogDescription>
           <span className="font-medium text-foreground">{videoLabel}</span> —
-          Flag each problem area and add a comment. For thumbnails, check only the
-          images to reject and add a comment for each (same as Phase 6). At least
-          one issue is required. Thumbnail reviews are saved first, then the
-          video rejection is sent.
+          Flag each problem area and add a comment. For thumbnails, check only
+          the images to reject and add a comment for each (same as Phase 6). At
+          least one issue is required. Thumbnail reviews are saved first, then
+          the video rejection is sent.
         </DialogDescription>
       </DialogHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         <div className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="lang-reject-overall">Overall summary (optional)</Label>
+            <Label htmlFor="lang-reject-overall">
+              Overall summary (optional)
+            </Label>
             <Textarea
               id="lang-reject-overall"
               value={draft.overallComments}
@@ -726,7 +720,9 @@ function RejectLanguageVideoDialogBody({
                 className="mt-1 size-4 shrink-0 rounded border-input"
               />
               <div className="min-w-0 flex-1 space-y-2">
-                <span className="text-sm font-medium">Encoded video / playback</span>
+                <span className="text-sm font-medium">
+                  Encoded video / playback
+                </span>
                 <p className="text-xs text-muted-foreground">{fileLabel}</p>
                 {draft.video.flag ? (
                   <Textarea
@@ -765,7 +761,7 @@ function RejectLanguageVideoDialogBody({
               />
               <div className="min-w-0 flex-1 space-y-2">
                 <span className="text-sm font-medium">Title</span>
-                <p className="text-xs text-muted-foreground line-clamp-3">
+                <p className="line-clamp-3 text-xs text-muted-foreground">
                   {titlePreview}
                 </p>
                 {draft.title.flag ? (
@@ -802,7 +798,7 @@ function RejectLanguageVideoDialogBody({
               />
               <div className="min-w-0 flex-1 space-y-2">
                 <span className="text-sm font-medium">Description</span>
-                <p className="text-xs text-muted-foreground line-clamp-4 whitespace-pre-wrap">
+                <p className="line-clamp-4 text-xs whitespace-pre-wrap text-muted-foreground">
                   {descPreview}
                 </p>
                 {draft.description.flag ? (
@@ -869,9 +865,9 @@ function RejectLanguageVideoDialogBody({
                 Thumbnails
               </p>
               <p className="text-xs text-muted-foreground">
-                Check thumbnails to include in this rejection and add a comment for
-                each selected image. Unchecked thumbnails are marked approved when
-                you submit.
+                Check thumbnails to include in this rejection and add a comment
+                for each selected image. Unchecked thumbnails are marked
+                approved when you submit.
               </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 {(asset.thumbnails ?? []).map((t) => {
@@ -913,7 +909,7 @@ function RejectLanguageVideoDialogBody({
                                   [t.id]: {
                                     reject: e.target.checked,
                                     comment: e.target.checked
-                                      ? d.thumbs[t.id]?.comment ?? ""
+                                      ? (d.thumbs[t.id]?.comment ?? "")
                                       : "",
                                   },
                                 },
