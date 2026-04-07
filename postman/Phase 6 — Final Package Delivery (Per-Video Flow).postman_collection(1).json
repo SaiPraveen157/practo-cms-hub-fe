@@ -1,0 +1,1825 @@
+{
+  "info": {
+    "_postman_id": "a55c61dd-e66a-4e6d-96f8-1910b1caf49c",
+    "name": "Phase 6 — Final Package Delivery (Per-Video Flow)",
+    "description": "Phase 6 Final Package Delivery — Per-Video Independent Review Flow.\n\n── WORKFLOW ──────────────────────────────────────────\n1. Agency creates package + first video (one call)\n2. Agency adds more videos one-by-one (optional)\n3. Each video has its OWN independent flow:\n   MEDICAL_REVIEW → BRAND_VIDEO_REVIEW → AWAITING_APPROVER → APPROVED\n4. At MEDICAL_REVIEW — two PARALLEL tracks per video:\n   Track A (Video):    Medical Affairs reviews video file\n   Track B (Metadata): Brand reviews each thumbnail individually,\n                       then approves/rejects title/desc/tags/thumbnails\n5. When BOTH tracks APPROVED → video moves to BRAND_VIDEO_REVIEW\n6. Brand approves video quality → AWAITING_APPROVER\n7. Content Approver APPROVES only (cannot reject) → APPROVED\n8. Phase 7 auto-triggers when first video reaches APPROVED\n\n── KEY RULES ─────────────────────────────────────────\n• Package has NO status — it is just a named container\n• Each video is 100% independent (no coupling)\n• Thumbnails: Brand reviews each one individually (APPROVED/REJECTED + comment)\n• All thumbnails must be reviewed before Brand can approve metadata track\n• If ANY thumbnail REJECTED → Brand must reject metadata track\n• Content Approver CANNOT reject (approve only)\n• Only SUPER_ADMIN can withdraw a video\n• Agency CANNOT withdraw\n\n── AUTO-SAVED COLLECTION VARIABLES ──────────────────\nRun Login folder first — tokens are auto-saved.\nRun 1.1 to auto-save packageId, video1Id, asset1Id, thumb1Id, thumb2Id.\nRun 1.2 to auto-save video2Id, asset2Id, thumb3Id.\n\n── SET MANUALLY ──────────────────────────────────────\nscriptId → a LOCKED script whose First Cut video is APPROVED",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "53168836",
+    "_collection_link": "https://go.postman.co/collection/50573890-a55c61dd-e66a-4e6d-96f8-1910b1caf49c?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "0 — Login (saves all tokens)",
+      "item": [
+        {
+          "name": "0.1 Login — Super Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.token) { pm.collectionVariables.set('adminToken', j.token); console.log('✅ adminToken saved'); }",
+                  "else { console.error('❌ Login failed:', JSON.stringify(j)); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@practo.com\",\n  \"password\": \"Admin@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Login as Super Admin.\nAuto-saves → {{adminToken}}\n\nSuper Admin can: approve/reject at any stage, review thumbnails, withdraw any video."
+          },
+          "response": []
+        },
+        {
+          "name": "0.2 Login — Medical Affairs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.token) { pm.collectionVariables.set('medicalToken', j.token); console.log('✅ medicalToken saved'); }",
+                  "else { console.error('❌ Login failed:', JSON.stringify(j)); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"medical@practo.com\",\n  \"password\": \"Admin@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Login as Medical Affairs.\nAuto-saves → {{medicalToken}}\n\nMedical Affairs can: approve/reject VIDEO TRACK at MEDICAL_REVIEW."
+          },
+          "response": []
+        },
+        {
+          "name": "0.3 Login — Content Brand",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.token) { pm.collectionVariables.set('brandToken', j.token); console.log('✅ brandToken saved'); }",
+                  "else { console.error('❌ Login failed:', JSON.stringify(j)); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"brand@practo.com\",\n  \"password\": \"Admin@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Login as Content Brand.\nAuto-saves → {{brandToken}}\n\nContent Brand can:\n- At MEDICAL_REVIEW: review each thumbnail (PATCH /thumbnails/:id/review), then approve/reject METADATA TRACK\n- At BRAND_VIDEO_REVIEW: approve/reject video quality"
+          },
+          "response": []
+        },
+        {
+          "name": "0.4 Login — Agency POC",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.token) { pm.collectionVariables.set('agencyToken', j.token); console.log('✅ agencyToken saved'); }",
+                  "else { console.error('❌ Login failed:', JSON.stringify(j)); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"agency@practo.com\",\n  \"password\": \"Admin@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Login as Agency POC.\nAuto-saves → {{agencyToken}}\n\nAgency POC can: create package, add videos, resubmit-video, resubmit-metadata, update package name.\nAgency CANNOT withdraw — only Super Admin can."
+          },
+          "response": []
+        },
+        {
+          "name": "0.5 Login — Content Approver",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.token) { pm.collectionVariables.set('approverToken', j.token); console.log('✅ approverToken saved'); }",
+                  "else { console.error('❌ Login failed:', JSON.stringify(j)); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"approver@practo.com\",\n  \"password\": \"Admin@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Login as Content Approver.\nAuto-saves → {{approverToken}}\n\nContent Approver can: APPROVE ONLY at AWAITING_APPROVER stage. Cannot reject."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "1 — Agency: Create Package & Add Videos",
+      "item": [
+        {
+          "name": "1.0 Get Upload URL — video file",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{agencyToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileName\": \"long-form-video.mp4\",\n  \"fileType\": \"video/mp4\",\n  \"assetType\": \"video\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/upload-url",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "upload-url"
+              ]
+            },
+            "description": "Get a presigned S3 URL to upload a video file.\n\nResponse:\n  uploadUrl → PUT your video binary here (no auth header needed)\n  fileUrl   → save this, use it in the create/add-video request\n  key       → S3 object key\n\nassetType: 'video' or 'thumbnail'"
+          },
+          "response": []
+        },
+        {
+          "name": "1.0b Get Upload URL — thumbnail",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{agencyToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileName\": \"thumbnail-option-1.jpg\",\n  \"fileType\": \"image/jpeg\",\n  \"assetType\": \"thumbnail\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/upload-url",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "upload-url"
+              ]
+            },
+            "description": "Get a presigned S3 URL to upload a thumbnail image.\nCall once per thumbnail option.\nassetType: 'thumbnail'"
+          },
+          "response": []
+        },
+        {
+          "name": "1.1 Create Package + First Video (LONG_FORM)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.success && j.package) {",
+                  "    pm.collectionVariables.set('packageId', j.package.id);",
+                  "    console.log('✅ packageId saved:', j.package.id);",
+                  "",
+                  "    // Save first video's IDs from the videos array",
+                  "    var videos = j.package.videos || [];",
+                  "    if (videos.length > 0) {",
+                  "        var v1 = videos[0];",
+                  "        pm.collectionVariables.set('video1Id', v1.id);",
+                  "        console.log('✅ video1Id saved:', v1.id);",
+                  "",
+                  "        var assets = v1.assets || [];",
+                  "        if (assets.length > 0) {",
+                  "            pm.collectionVariables.set('asset1Id', assets[0].id);",
+                  "            console.log('✅ asset1Id saved:', assets[0].id);",
+                  "            var thumbs = assets[0].thumbnails || [];",
+                  "            if (thumbs[0]) { pm.collectionVariables.set('thumb1Id', thumbs[0].id); console.log('✅ thumb1Id:', thumbs[0].id); }",
+                  "            if (thumbs[1]) { pm.collectionVariables.set('thumb2Id', thumbs[1].id); console.log('✅ thumb2Id:', thumbs[1].id); }",
+                  "        }",
+                  "    }",
+                  "} else {",
+                  "    console.error('❌ Create failed:', JSON.stringify(j));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{agencyToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scriptId\": \"{{scriptId}}\",\n  \"name\": \"Heart Attack Awareness Package\",\n  \"video\": {\n    \"type\": \"LONG_FORM\",\n    \"fileUrl\": \"http://164.52.204.34:9002/practo-hub-videos-v2/long-form.mp4\",\n    \"fileName\": \"long-form.mp4\",\n    \"fileType\": \"video/mp4\",\n    \"fileSize\": 52428800,\n    \"title\": \"Understanding Heart Attack — Full Documentary\",\n    \"description\": \"A comprehensive 10-minute documentary on heart attack symptoms, causes, and prevention.\",\n    \"tags\": [\"heart-attack\", \"cardiology\", \"prevention\", \"practo\"],\n    \"thumbnails\": [\n      {\n        \"fileUrl\": \"http://164.52.204.34:9002/practo-hub-videos-v2/thumb-long-1.jpg\",\n        \"fileName\": \"thumb-long-1.jpg\",\n        \"fileType\": \"image/jpeg\",\n        \"fileSize\": 204800\n      },\n      {\n        \"fileUrl\": \"http://164.52.204.34:9002/practo-hub-videos-v2/thumb-long-2.jpg\",\n        \"fileName\": \"thumb-long-2.jpg\",\n        \"fileType\": \"image/jpeg\",\n        \"fileSize\": 204800\n      }\n    ]\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages"
+              ]
+            },
+            "description": "Agency creates the package container AND submits the first video in one call.\n\nNOTE: 'video' is a single object (NOT an array). Agency picks type: LONG_FORM or SHORT_FORM.\n\nPreconditions:\n  - scriptId must be a LOCKED script\n  - First Cut video for that script must be APPROVED (Phase 5 done)\n  - Only 1 package allowed per script\n\nAuto-saves: packageId, video1Id, asset1Id, thumb1Id, thumb2Id\n\nOn success:\n  video.status = MEDICAL_REVIEW\n  video.videoTrackStatus = PENDING\n  video.metadataTrackStatus = PENDING\n  Both tracks start simultaneously — no waiting."
+          },
+          "response": []
+        },
+        {
+          "name": "1.2 Add Second Video (SHORT_FORM)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "var v2 = j.video || (j.videos && j.videos[0]);",
+                  "if (j.success && v2) {",
+                  "    pm.collectionVariables.set('video2Id', v2.id);",
+                  "    console.log('✅ video2Id saved:', v2.id);",
+                  "    var assets = v2.assets || [];",
+                  "    if (assets.length > 0) {",
+                  "        pm.collectionVariables.set('asset2Id', assets[0].id);",
+                  "        console.log('✅ asset2Id saved:', assets[0].id);",
+                  "        var thumbs = assets[0].thumbnails || [];",
+                  "        if (thumbs[0]) { pm.collectionVariables.set('thumb3Id', thumbs[0].id); console.log('✅ thumb3Id:', thumbs[0].id); }",
+                  "    }",
+                  "} else {",
+                  "    console.error('❌ Add video failed:', JSON.stringify(j));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{agencyToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"video\": {\n    \"type\": \"SHORT_FORM\",\n    \"fileUrl\": \"http://164.52.204.34:9002/practo-hub-videos-v2/short-form.mp4\",\n    \"fileName\": \"short-form.mp4\",\n    \"fileType\": \"video/mp4\",\n    \"fileSize\": 10485760,\n    \"title\": \"Heart Attack Warning Signs — 60 Seconds\",\n    \"description\": \"Quick 60-second reel on the top 5 warning signs of a heart attack.\",\n    \"tags\": [\"heart-attack\", \"reel\", \"awareness\"],\n    \"thumbnails\": [\n      {\n        \"fileUrl\": \"http://164.52.204.34:9002/practo-hub-videos-v2/thumb-short-1.jpg\",\n        \"fileName\": \"thumb-short-1.jpg\",\n        \"fileType\": \"image/jpeg\",\n        \"fileSize\": 102400\n      }\n    ]\n  },\n  \"videos\": [\n    {\n      \"type\": \"SHORT_FORM\",\n      \"fileUrl\": \"http://164.52.204.34:9002/practo-hub-videos-v2/short-form.mp4\",\n      \"fileName\": \"short-form.mp4\",\n      \"fileType\": \"video/mp4\",\n      \"fileSize\": 10485760,\n      \"title\": \"Heart Attack Warning Signs — 60 Seconds\",\n      \"description\": \"Quick 60-second reel on the top 5 warning signs of a heart attack.\",\n      \"tags\": [\"heart-attack\", \"reel\", \"awareness\"],\n      \"thumbnails\": [\n        {\n          \"fileUrl\": \"http://164.52.204.34:9002/practo-hub-videos-v2/thumb-short-1.jpg\",\n          \"fileName\": \"thumb-short-1.jpg\",\n          \"fileType\": \"image/jpeg\",\n          \"fileSize\": 102400\n        }\n      ]\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/{{packageId}}/videos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "{{packageId}}",
+                "videos"
+              ]
+            },
+            "description": "Agency adds one or more videos to the existing package.\n\nRequest body MUST wrap entries in a `videos` array (backend validation).\nEach item uses the same shape as `video` on POST /api/packages.\n\nThis video immediately starts its OWN independent MEDICAL_REVIEW flow.\nIt does NOT affect Video 1's review progress — completely independent.\n\nAgency can add videos at any time, even while other videos are being reviewed.\n\nAuto-saves: video2Id, asset2Id, thumb3Id"
+          },
+          "response": []
+        },
+        {
+          "name": "1.3 Update Package Name",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{agencyToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Heart Attack Awareness Campaign — Final\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/{{packageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "{{packageId}}"
+              ]
+            },
+            "description": "Agency renames the package. Can be done at any time.\nOnly Agency POC can rename.\n\nExpected: { success: true, message: 'Package name updated', package: {...} }"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2 — MEDICAL_REVIEW: Track A — Medical Affairs (Video Track)",
+      "item": [
+        {
+          "name": "2.1 Medical — Approve Video Track ✅",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{medicalToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Video file meets all medical accuracy standards. No corrections needed.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "approve"
+              ]
+            },
+            "description": "Medical Affairs approves the VIDEO TRACK for Video 1 at MEDICAL_REVIEW.\n\nEffect:\n  videoTrackStatus → APPROVED\n  If metadataTrackStatus is also APPROVED → video.status → BRAND_VIDEO_REVIEW\n  Otherwise → stays at MEDICAL_REVIEW (waiting for Brand to finish metadata)\n\nRun for each video independently (change video1Id to video2Id for the other)."
+          },
+          "response": []
+        },
+        {
+          "name": "2.2 Medical — Reject Video Track ❌",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{medicalToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"overallComments\": \"Video has medical accuracy issues that must be corrected.\",\n  \"itemFeedback\": [\n    {\n      \"videoAssetId\": \"{{asset1Id}}\",\n      \"field\": \"VIDEO\",\n      \"hasIssue\": true,\n      \"comment\": \"Incorrect dosage information shown at 2:30 — must be corrected before re-submission\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "reject"
+              ]
+            },
+            "description": "Medical Affairs rejects the VIDEO TRACK for Video 1 at MEDICAL_REVIEW.\n\nRules:\n  - field must be 'VIDEO' for Medical Affairs (they only review video files)\n  - At least 1 item in itemFeedback must have a non-empty comment\n  - overallComments is optional\n\nEffect:\n  videoTrackStatus → REJECTED\n  metadataTrackStatus stays UNCHANGED (independent)\n  video.status stays MEDICAL_REVIEW\n\nAgency must fix and call: POST /videos/:videoId/resubmit-video"
+          },
+          "response": []
+        },
+        {
+          "name": "2.3 Medical — Approve Video 2 as well ✅",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{medicalToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Short form video is medically accurate.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video2Id}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video2Id}}",
+                "approve"
+              ]
+            },
+            "description": "Medical Affairs approves the VIDEO TRACK for Video 2.\nVideos are completely independent — approving Video 2 has zero effect on Video 1."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3 — MEDICAL_REVIEW: Track B — Brand Reviews Thumbnails + Metadata",
+      "item": [
+        {
+          "name": "3.1 Brand — Approve Thumbnail 1 ✅",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{brandToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"APPROVED\",\n  \"comment\": \"Looks great — matches brand palette.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/thumbnails/{{thumb1Id}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "thumbnails",
+                "{{thumb1Id}}",
+                "review"
+              ]
+            },
+            "description": "Brand reviews a single thumbnail — APPROVED.\n\nBrand must review EVERY thumbnail individually before they can approve or reject the metadata track.\n\nRules:\n  - status: 'APPROVED' or 'REJECTED'\n  - comment is OPTIONAL when approving\n  - comment is REQUIRED when rejecting\n  - Only works at MEDICAL_REVIEW stage\n  - Only Brand or Super Admin can review thumbnails"
+          },
+          "response": []
+        },
+        {
+          "name": "3.2 Brand — Reject Thumbnail 2 ❌ (with comment)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{brandToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"REJECTED\",\n  \"comment\": \"Background color does not match Practo brand guidelines. Use #0066CC blue background only.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/thumbnails/{{thumb2Id}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "thumbnails",
+                "{{thumb2Id}}",
+                "review"
+              ]
+            },
+            "description": "Brand reviews a thumbnail — REJECTED.\n\nComment is REQUIRED when rejecting. If you send REJECTED without a comment:\n  → { success: false, message: 'A comment is required when rejecting a thumbnail' }\n\nEven 1 REJECTED thumbnail means Brand CANNOT approve the metadata track.\nBrand must then reject the metadata track → Agency resubmits metadata → Brand reviews new thumbnails again."
+          },
+          "response": []
+        },
+        {
+          "name": "3.3 Brand — Approve Thumbnail 3 (Video 2) ✅",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{brandToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"APPROVED\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/thumbnails/{{thumb3Id}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "thumbnails",
+                "{{thumb3Id}}",
+                "review"
+              ]
+            },
+            "description": "Brand approves thumbnail for Video 2.\nEach video's thumbnails are reviewed independently."
+          },
+          "response": []
+        },
+        {
+          "name": "3.4 Brand — Approve Metadata Track (Video 1) ✅",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{brandToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Title, description, tags all on-brand. All thumbnails reviewed and approved.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "approve"
+              ]
+            },
+            "description": "Brand approves the METADATA TRACK for Video 1 at MEDICAL_REVIEW.\n\nPREREQUISITE: ALL thumbnails for this video's current version must be reviewed (none PENDING).\nIf any thumbnail is still PENDING:\n  → { success: false, message: 'Cannot approve metadata — X thumbnail(s) have not been reviewed yet.' }\nIf any thumbnail is REJECTED:\n  → { success: false, message: 'Cannot approve metadata — X thumbnail(s) are rejected. Reject the metadata track so Agency can fix them.' }\n\nNo thumbnailSelections needed — Brand already reviewed each thumbnail individually.\n\nEffect:\n  metadataTrackStatus → APPROVED\n  If videoTrackStatus also APPROVED → video.status → BRAND_VIDEO_REVIEW\n  Otherwise stays MEDICAL_REVIEW"
+          },
+          "response": []
+        },
+        {
+          "name": "3.5 Brand — Reject Metadata Track (Video 1) ❌",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{brandToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"overallComments\": \"Metadata needs corrections. See item feedback.\",\n  \"itemFeedback\": [\n    {\n      \"videoAssetId\": \"{{asset1Id}}\",\n      \"field\": \"TITLE\",\n      \"hasIssue\": true,\n      \"comment\": \"Title too long — max 60 characters for social media. Current: 78 chars.\"\n    },\n    {\n      \"videoAssetId\": \"{{asset1Id}}\",\n      \"field\": \"TAGS\",\n      \"hasIssue\": true,\n      \"comment\": \"Missing mandatory hashtag #PractoHealth\"\n    },\n    {\n      \"videoAssetId\": \"{{asset1Id}}\",\n      \"field\": \"THUMBNAIL\",\n      \"hasIssue\": true,\n      \"comment\": \"All thumbnails rejected — see individual thumbnail comments above\"\n    },\n    {\n      \"videoAssetId\": \"{{asset1Id}}\",\n      \"field\": \"DESCRIPTION\",\n      \"hasIssue\": false\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "reject"
+              ]
+            },
+            "description": "Brand rejects the METADATA TRACK for Video 1 at MEDICAL_REVIEW.\n\nValid field values for metadata rejection: TITLE, DESCRIPTION, TAGS, THUMBNAIL\nAt least 1 item must have hasIssue: true AND a non-empty comment.\n\nEffect:\n  metadataTrackStatus → REJECTED\n  videoTrackStatus stays UNCHANGED (independent)\n  video.status stays MEDICAL_REVIEW\n\nAgency must fix and call: POST /videos/:videoId/resubmit-metadata"
+          },
+          "response": []
+        },
+        {
+          "name": "3.6 Brand — Approve Metadata Track (Video 2) ✅",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{brandToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Short form metadata is on-brand. Thumbnail approved.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video2Id}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video2Id}}",
+                "approve"
+              ]
+            },
+            "description": "Brand approves metadata for Video 2. Independent from Video 1."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4 — Agency: Resubmit After Rejection",
+      "item": [
+        {
+          "name": "4.1 Agency — Resubmit Video File (after video track rejected) 🔄",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.success && j.video) {",
+                  "    var assets = j.video.assets || [];",
+                  "    var latest = assets.reduce(function(a, b) { return a.version > b.version ? a : b; }, {});",
+                  "    if (latest.id) {",
+                  "        pm.collectionVariables.set('asset1Id', latest.id);",
+                  "        console.log('✅ asset1Id updated to v' + latest.version + ':', latest.id);",
+                  "        var thumbs = latest.thumbnails || [];",
+                  "        if (thumbs[0]) { pm.collectionVariables.set('thumb1Id', thumbs[0].id); console.log('✅ thumb1Id updated'); }",
+                  "        if (thumbs[1]) { pm.collectionVariables.set('thumb2Id', thumbs[1].id); console.log('✅ thumb2Id updated'); }",
+                  "    }",
+                  "} else { console.error('❌ Resubmit failed:', JSON.stringify(j)); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{agencyToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileUrl\": \"http://164.52.204.34:9002/practo-hub-videos-v2/long-form-v2.mp4\",\n  \"fileName\": \"long-form-v2.mp4\",\n  \"fileType\": \"video/mp4\",\n  \"fileSize\": 52428800\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/resubmit-video",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "resubmit-video"
+              ]
+            },
+            "description": "Agency resubmits a new video FILE only after videoTrackStatus = REJECTED.\n\nOnly send: fileUrl, fileName (and optional fileType, fileSize).\nDO NOT send title, description, tags, or thumbnails — they are AUTOMATICALLY COPIED from the current version.\n\nImportant: Thumbnails are copied WITH their existing APPROVED/REJECTED status preserved.\nBrand does NOT need to re-review thumbnails when only the video file changed.\n\nEffect:\n  currentVersion increments\n  videoTrackStatus → PENDING (medical reviews again)\n  metadataTrackStatus stays unchanged\n\nAuto-saves: updated asset1Id, thumb1Id, thumb2Id"
+          },
+          "response": []
+        },
+        {
+          "name": "4.2 Agency — Resubmit Metadata (after metadata track rejected) 🔄",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.success && j.video) {",
+                  "    var assets = j.video.assets || [];",
+                  "    var latest = assets.reduce(function(a, b) { return a.version > b.version ? a : b; }, {});",
+                  "    if (latest.id) {",
+                  "        pm.collectionVariables.set('asset1Id', latest.id);",
+                  "        console.log('✅ asset1Id updated to v' + latest.version + ':', latest.id);",
+                  "        var thumbs = latest.thumbnails || [];",
+                  "        if (thumbs[0]) { pm.collectionVariables.set('thumb1Id', thumbs[0].id); console.log('✅ thumb1Id updated'); }",
+                  "        if (thumbs[1]) { pm.collectionVariables.set('thumb2Id', thumbs[1].id); console.log('✅ thumb2Id updated'); }",
+                  "    }",
+                  "} else { console.error('❌ Resubmit metadata failed:', JSON.stringify(j)); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{agencyToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Understanding Heart Attack — Full Documentary (Revised)\",\n  \"description\": \"A comprehensive guide to heart attack symptoms, causes, and prevention. Consult your doctor. #PractoHealth\",\n  \"tags\": [\"heart-attack\", \"cardiology\", \"PractoHealth\", \"prevention\"],\n  \"thumbnails\": [\n    {\n      \"fileUrl\": \"http://164.52.204.34:9002/practo-hub-videos-v2/thumb-long-new-1.jpg\",\n      \"fileName\": \"thumb-long-new-1.jpg\",\n      \"fileType\": \"image/jpeg\",\n      \"fileSize\": 204800\n    },\n    {\n      \"fileUrl\": \"http://164.52.204.34:9002/practo-hub-videos-v2/thumb-long-new-2.jpg\",\n      \"fileName\": \"thumb-long-new-2.jpg\",\n      \"fileType\": \"image/jpeg\",\n      \"fileSize\": 204800\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/resubmit-metadata",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "resubmit-metadata"
+              ]
+            },
+            "description": "Agency resubmits new METADATA + THUMBNAILS only after metadataTrackStatus = REJECTED.\n\nSend: title, description, tags, thumbnails (all new thumbnails).\nDO NOT send fileUrl or fileName — the video file is AUTOMATICALLY COPIED.\n\nAll new thumbnails start with status: PENDING.\nBrand must re-review ALL thumbnails from scratch.\n\nEffect:\n  currentVersion increments\n  metadataTrackStatus → PENDING (brand reviews again)\n  videoTrackStatus stays unchanged\n\nAuto-saves: updated asset1Id, thumb1Id, thumb2Id"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5 — BRAND_VIDEO_REVIEW: Brand Quality Review",
+      "item": [
+        {
+          "name": "5.1 Brand — Approve Video Quality ✅",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{brandToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Video quality is excellent. Color grading and audio are on-brand. Ready for final approval.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "approve"
+              ]
+            },
+            "description": "Brand approves the OVERALL VIDEO QUALITY at BRAND_VIDEO_REVIEW.\n\nThis is Brand's second review — they saw metadata at MEDICAL_REVIEW, now they check the full video experience.\nNo thumbnail re-review needed here.\n\nEffect:\n  video.status → AWAITING_APPROVER\n  Content Approver can now act"
+          },
+          "response": []
+        },
+        {
+          "name": "5.2 Brand — Reject Video Quality ❌ (goes back to MEDICAL_REVIEW)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{brandToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"overallComments\": \"Video quality does not meet brand standards.\",\n  \"itemFeedback\": [\n    {\n      \"videoAssetId\": \"{{asset1Id}}\",\n      \"field\": \"VIDEO\",\n      \"hasIssue\": true,\n      \"comment\": \"Color grading is too dark and off-brand. Audio levels are uneven. Please re-edit.\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "reject"
+              ]
+            },
+            "description": "Brand rejects video quality at BRAND_VIDEO_REVIEW.\n\nUse field: 'VIDEO' — this is a video quality rejection.\n\nEffect:\n  video.status → MEDICAL_REVIEW (goes back!)\n  videoTrackStatus → REJECTED\n  metadataTrackStatus stays APPROVED (metadata does NOT reset)\n\nAgency only needs to resubmit the video file (not metadata).\nMedical re-approves video → both tracks APPROVED again → comes back to BRAND_VIDEO_REVIEW."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6 — AWAITING_APPROVER: Content Approver Final Sign-off",
+      "item": [
+        {
+          "name": "6.1 Content Approver — Final Approve ✅ (triggers Phase 7 if first APPROVED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{approverToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Final approval granted. Video meets all content, medical, and brand standards.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "approve"
+              ]
+            },
+            "description": "Content Approver gives FINAL APPROVAL at AWAITING_APPROVER.\n\nContent Approver CANNOT reject. This endpoint is APPROVE ONLY for Content Approver at this stage.\nIf you try to reject → { success: false, message: 'Cannot reject video at stage: AWAITING_APPROVER' }\n\nEffect:\n  video.status → APPROVED\n  video.lockedById = approver's userId\n  video.lockedAt = now\n\nIf this is the FIRST APPROVED video in the package:\n  → Phase 7 is automatically triggered backend-side\n  → No frontend action needed"
+          },
+          "response": []
+        },
+        {
+          "name": "6.2 Content Approver — Try to Reject (should FAIL) ❌",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{approverToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"overallComments\": \"This should fail — Content Approver cannot reject.\",\n  \"itemFeedback\": [\n    {\n      \"videoAssetId\": \"{{asset1Id}}\",\n      \"field\": \"VIDEO\",\n      \"hasIssue\": true,\n      \"comment\": \"This rejection will not work.\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "reject"
+              ]
+            },
+            "description": "EXPECTED TO FAIL — Content Approver cannot reject at any stage.\n\nExpected response:\n{ \"success\": false, \"message\": \"Cannot reject video at stage: AWAITING_APPROVER\" }\n\nContent Approver is approve-only in Phase 6."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "7 — Super Admin Actions",
+      "item": [
+        {
+          "name": "7.1 Super Admin — Withdraw Video (any stage)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/withdraw",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "withdraw"
+              ]
+            },
+            "description": "Super Admin withdraws a video from any active stage.\n\nOnly Super Admin can withdraw — Agency POC cannot.\nWithdrawal is a TERMINAL state — no un-withdraw endpoint exists.\nAgency can add a brand new video if they need to resubmit.\n\nEffect: video.status → WITHDRAWN\nErrors:\n  { success: false, message: 'Only Super Admin can withdraw a video' }  ← if not admin\n  { success: false, message: 'Video is already withdrawn' }             ← if already done"
+          },
+          "response": []
+        },
+        {
+          "name": "7.2 Super Admin — Approve Video Track (override Medical Affairs)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Super Admin emergency override — approving video track.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "approve"
+              ]
+            },
+            "description": "Super Admin approves the video track at MEDICAL_REVIEW, acting as Medical Affairs."
+          },
+          "response": []
+        },
+        {
+          "name": "7.3 Super Admin — Review Thumbnail (override Brand)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"APPROVED\",\n  \"comment\": \"Super Admin override — thumbnail approved.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/thumbnails/{{thumb1Id}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "thumbnails",
+                "{{thumb1Id}}",
+                "review"
+              ]
+            },
+            "description": "Super Admin can review thumbnails, acting as Brand."
+          },
+          "response": []
+        },
+        {
+          "name": "7.4 Agency — Try to Withdraw (should FAIL) ❌",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{agencyToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/withdraw",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "withdraw"
+              ]
+            },
+            "description": "EXPECTED TO FAIL — Agency POC cannot withdraw a video.\n\nExpected response:\n{ \"success\": false, \"message\": \"Only Super Admin can withdraw a video\" }"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "8 — Read / Info Endpoints",
+      "item": [
+        {
+          "name": "8.1 Get Package (all videos + details)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{agencyToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/{{packageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "{{packageId}}"
+              ]
+            },
+            "description": "Get the full package with all videos, their assets, thumbnails, and reviews.\n\nReturns package object with videos[] array.\nEach video has its own status, videoTrackStatus, metadataTrackStatus, currentVersion.\n\nTo get the current version's asset:\n  const currentAsset = video.assets.find(a => a.version === video.currentVersion)"
+          },
+          "response": []
+        },
+        {
+          "name": "8.2 Get Package by Script ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{agencyToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/script/{{scriptId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "script",
+                "{{scriptId}}"
+              ]
+            },
+            "description": "Get the package for a specific script.\nUseful when you have the scriptId but not the packageId.\n\nError if no package exists: { success: false, message: 'No package found for this script' }"
+          },
+          "response": []
+        },
+        {
+          "name": "8.3 Get Video (single video detail)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{brandToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}"
+              ]
+            },
+            "description": "Get a single video with its full details: assets, thumbnails (with status/comment), and reviews.\n\nUseful for reviewer detail views."
+          },
+          "response": []
+        },
+        {
+          "name": "8.4 Get Video Version History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{agencyToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/versions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "versions"
+              ]
+            },
+            "description": "Get all version snapshots for a video.\n\nReturns: { videoId, currentVersion, totalVersions, versions: [{version, asset, reviews}] }\n\nEach version has the asset snapshot (fileUrl, title, thumbnails) and reviews made during that version.\nCurrentVersion increments each time Agency calls resubmit-video or resubmit-metadata."
+          },
+          "response": []
+        },
+        {
+          "name": "8.5 Get Queue (Medical Affairs view)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{medicalToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/queue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "queue"
+              ]
+            },
+            "description": "Get the review queue for the current user.\n\nMedical Affairs → sees videos at MEDICAL_REVIEW where videoTrackStatus = PENDING\nContent Brand   → sees videos at MEDICAL_REVIEW where metadataTrackStatus = PENDING + all BRAND_VIDEO_REVIEW\nApprover        → sees videos at AWAITING_APPROVER\nAgency          → sees their own submitted videos\nSuper Admin     → sees all videos"
+          },
+          "response": []
+        },
+        {
+          "name": "8.6 Get Queue (Brand view)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{brandToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/queue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "queue"
+              ]
+            },
+            "description": "Brand's queue: videos at MEDICAL_REVIEW with metadataTrackStatus=PENDING + all BRAND_VIDEO_REVIEW videos."
+          },
+          "response": []
+        },
+        {
+          "name": "8.7 Get Queue (Content Approver view)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{approverToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/queue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "queue"
+              ]
+            },
+            "description": "Content Approver's queue: videos at AWAITING_APPROVER."
+          },
+          "response": []
+        },
+        {
+          "name": "8.8 Get Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "stats"
+              ]
+            },
+            "description": "Get video counts by status.\n\nReturns:\n{\n  stats: {\n    total: 20,\n    byStatus: {\n      MEDICAL_REVIEW: 5,\n      BRAND_VIDEO_REVIEW: 3,\n      AWAITING_APPROVER: 2,\n      APPROVED: 8,\n      WITHDRAWN: 2\n    }\n  }\n}"
+          },
+          "response": []
+        },
+        {
+          "name": "8.9 Get My Reviewed Videos (approved)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{medicalToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/my-reviews?decision=APPROVED&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "my-reviews"
+              ],
+              "query": [
+                {
+                  "key": "decision",
+                  "value": "APPROVED"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Get videos previously reviewed by the current user.\ndecision: APPROVED or REJECTED\n\nAuth: Medical Affairs, Content Brand, Content Approver only."
+          },
+          "response": []
+        },
+        {
+          "name": "8.10 Get My Reviewed Videos (rejected)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{brandToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/my-reviews?decision=REJECTED&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "my-reviews"
+              ],
+              "query": [
+                {
+                  "key": "decision",
+                  "value": "REJECTED"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Get videos Brand has previously rejected."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "9 — Error / Negative Cases (all should return errors)",
+      "item": [
+        {
+          "name": "9.1 ❌ Create package on non-locked script",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{agencyToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scriptId\": \"{{scriptId}}\",\n  \"name\": \"Test Package\",\n  \"video\": {\n    \"type\": \"LONG_FORM\",\n    \"fileUrl\": \"http://example.com/test.mp4\",\n    \"fileName\": \"test.mp4\",\n    \"thumbnails\": [{ \"fileUrl\": \"http://example.com/thumb.jpg\", \"fileName\": \"thumb.jpg\" }]\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages"
+              ]
+            },
+            "description": "Expected error if script not locked:\n{ success: false, message: 'Cannot create package — script is not yet locked (current: DRAFT)' }"
+          },
+          "response": []
+        },
+        {
+          "name": "9.2 ❌ Reject thumbnail without comment",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{brandToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"REJECTED\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/thumbnails/{{thumb1Id}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "thumbnails",
+                "{{thumb1Id}}",
+                "review"
+              ]
+            },
+            "description": "Expected error:\n{ success: false, message: 'A comment is required when rejecting a thumbnail' }"
+          },
+          "response": []
+        },
+        {
+          "name": "9.3 ❌ Brand approves metadata while thumbnails still PENDING",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{brandToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Trying to approve without reviewing thumbnails.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "approve"
+              ]
+            },
+            "description": "Expected error:\n{ success: false, message: 'Cannot approve metadata — X thumbnail(s) have not been reviewed yet. Review each thumbnail before approving.' }"
+          },
+          "response": []
+        },
+        {
+          "name": "9.4 ❌ Medical rejects without any comment in itemFeedback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{medicalToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itemFeedback\": [\n    {\n      \"videoAssetId\": \"{{asset1Id}}\",\n      \"field\": \"VIDEO\",\n      \"hasIssue\": true\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "reject"
+              ]
+            },
+            "description": "Expected error:\n{ success: false, message: 'At least one item must have a rejection comment' }"
+          },
+          "response": []
+        },
+        {
+          "name": "9.5 ❌ Agency resubmits video when track is not rejected",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{agencyToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileUrl\": \"http://164.52.204.34:9002/practo-hub-videos-v2/test.mp4\",\n  \"fileName\": \"test.mp4\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/resubmit-video",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "resubmit-video"
+              ]
+            },
+            "description": "Expected error:\n{ success: false, message: 'Cannot resubmit video file — video track is not rejected (current: PENDING)' }"
+          },
+          "response": []
+        },
+        {
+          "name": "9.6 ❌ Medical tries to approve at BRAND_VIDEO_REVIEW",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{medicalToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Medical trying to act at wrong stage.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "approve"
+              ]
+            },
+            "description": "Expected error:\n{ success: false, message: 'Role MEDICAL_AFFAIRS cannot approve video at stage BRAND_VIDEO_REVIEW' }"
+          },
+          "response": []
+        },
+        {
+          "name": "9.7 ❌ Medical reviews thumbnail (only Brand can)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{medicalToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"APPROVED\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/thumbnails/{{thumb1Id}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "thumbnails",
+                "{{thumb1Id}}",
+                "review"
+              ]
+            },
+            "description": "Expected error:\n{ success: false, message: 'Only Brand/Content team can review thumbnails' }"
+          },
+          "response": []
+        },
+        {
+          "name": "9.8 ❌ Medical reviews already reviewed (duplicate review)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{medicalToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Trying to approve again in the same cycle.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/packages/videos/{{video1Id}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "packages",
+                "videos",
+                "{{video1Id}}",
+                "approve"
+              ]
+            },
+            "description": "Run this AFTER 2.1 (Medical already approved). Expected error:\n{ success: false, message: 'Medical Affairs has already approved the video track for this submission cycle' }"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://164.52.204.34:5001",
+      "type": "string"
+    },
+    {
+      "key": "adminToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "medicalToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "brandToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "agencyToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "approverToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "scriptId",
+      "value": "PASTE_A_LOCKED_SCRIPT_ID_HERE",
+      "type": "string"
+    },
+    {
+      "key": "packageId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "video1Id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "video2Id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "asset1Id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "asset2Id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "thumb1Id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "thumb2Id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "thumb3Id",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

@@ -2,7 +2,13 @@
 
 import { useAuthStore } from "@/store"
 import { ROLE_LABELS } from "@/lib/role-routes"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 
 export default function MedicalAffairsHomePage() {
   const user = useAuthStore((s) => s.user)
@@ -22,11 +28,14 @@ export default function MedicalAffairsHomePage() {
           <CardHeader>
             <CardTitle>Overview</CardTitle>
             <CardDescription>
-              Create scripts, submit for Content/Brand review, and review Agency revisions.
+              Create scripts, submit for Content/Brand review, and review Agency
+              revisions.
             </CardDescription>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            You can create new scripts (title, insight, content), submit drafts for review, and approve or reject Agency revisions at the Medical Review stage.
+            You can create new scripts (title, insight, content), submit drafts
+            for review, and approve or reject Agency revisions at the Medical
+            Review stage.
           </CardContent>
         </Card>
       </div>

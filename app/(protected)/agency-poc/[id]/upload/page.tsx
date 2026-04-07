@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -14,13 +14,16 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { useAuthStore } from "@/store"
 import { getScriptQueue } from "@/lib/scripts-api"
+import { scriptNeedsAgencyFirstLineUpUpload } from "@/lib/agency-first-line-up"
+import { getScriptFluStatus } from "@/lib/script-flu-status"
 import {
   getUploadUrl,
   uploadFileToPresignedUrl,
   submitVideo,
+  getVideoQueue,
 } from "@/lib/videos-api"
 import type { Script } from "@/types/script"
-import type { VideoPhase } from "@/types/video"
+import type { Video, VideoPhase } from "@/types/video"
 import { ScriptDetailSkeleton } from "@/components/loading/script-detail-skeleton"
 import { ArrowLeft, Loader2, Send, Upload } from "lucide-react"
 import { toast } from "sonner"
@@ -61,9 +64,24 @@ export default function AgencyPocUploadPage() {
     fileSize: number
   } | null>(null)
   const [sending, setSending] = useState(false)
+  const [videos, setVideos] = useState<Video[]>([])
+  /** False until video queue fetched for a locked script (needed for FLU gate). */
+  const [videosReady, setVideosReady] = useState(false)
 
   const isAgencyPoc = user?.role === "AGENCY_POC"
   const isLocked = script?.status === "LOCKED"
+
+  const needsFirstLineUpUpload = useMemo(
+    () =>
+      script ? scriptNeedsAgencyFirstLineUpUpload(script, videos) : false,
+    [script, videos]
+  )
+
+  /** Video queue only needed for FLU gate when API omits `fluStatus`. */
+  const fluGateNeedsVideoQueue = useMemo(() => {
+    if (!script || script.status !== "LOCKED") return false
+    return getScriptFluStatus(script) === undefined
+  }, [script])
 
   useEffect(() => {
     if (!token || !id) return
@@ -83,7 +101,9 @@ export default function AgencyPocUploadPage() {
           return
         }
         if (s.status !== "LOCKED") {
-          setError("Only locked scripts can have videos uploaded. This script is not locked.")
+          setError(
+            "Only locked scripts can have videos uploaded. This script is not locked."
+          )
           setScript(s)
           return
         }
@@ -100,6 +120,30 @@ export default function AgencyPocUploadPage() {
       cancelled = true
     }
   }, [token, id])
+
+  useEffect(() => {
+    if (!token || !script || script.status !== "LOCKED") {
+      setVideos([])
+      setVideosReady(true)
+      return
+    }
+    let cancelled = false
+    setVideosReady(false)
+    getVideoQueue(token)
+      .then((res) => {
+        if (cancelled) return
+        setVideos([...(res.available ?? []), ...(res.myReviews ?? [])])
+      })
+      .catch(() => {
+        if (!cancelled) setVideos([])
+      })
+      .finally(() => {
+        if (!cancelled) setVideosReady(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token, script?.id, script?.status])
 
   async function handleUploadFile() {
     if (!token || !script || !file) return
@@ -177,6 +221,44 @@ export default function AgencyPocUploadPage() {
     return <ScriptDetailSkeleton />
   }
 
+  if (isLocked && fluGateNeedsVideoQueue && !videosReady) {
+    return <ScriptDetailSkeleton />
+  }
+
+  if (isLocked && !needsFirstLineUpUpload) {
+    return (
+      <div className="p-6 md:p-8">
+        <div className="mx-auto max-w-2xl space-y-6">
+          <Button variant="ghost" size="sm" className="-ml-2" asChild>
+            <Link href="/agency-poc">
+              <ArrowLeft className="mr-1 size-4" />
+              Back to queue
+            </Link>
+          </Button>
+          <Card>
+            <CardHeader>
+              <CardTitle>First Line Up not required</CardTitle>
+              <CardDescription>
+                This script already has a First Line Up that is approved or in
+                review. Upload First Line Up again only when Content/Brand sends
+                it back for changes. Use Video production for First Cut (Phase 5)
+                and other steps.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              <Button asChild>
+                <Link href="/agency-poc-videos">Video production</Link>
+              </Button>
+              <Button variant="outline" asChild>
+                <Link href={`/agency-poc/${id}`}>Script detail</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
   if (!isLocked) {
     return (
       <div className="p-6 md:p-8">
@@ -215,8 +297,8 @@ export default function AgencyPocUploadPage() {
               Upload video — First Line Up
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Upload media for this locked script, then send to Medical Affairs for
-              review. TAT 24 hours.
+              Upload media for this locked script, then send to Medical Affairs
+              for review. TAT 24 hours.
             </p>
           </div>
         </div>
@@ -237,16 +319,24 @@ export default function AgencyPocUploadPage() {
           <CardContent className="space-y-4">
             <div>
               <p className="text-sm font-medium text-muted-foreground">Title</p>
-              <p className="mt-1 font-medium">{script.title || "Untitled script"}</p>
+              <p className="mt-1 font-medium">
+                {script.title || "Untitled script"}
+              </p>
             </div>
             {script.insight && (
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Insight</p>
-                <p className="mt-1 whitespace-pre-wrap text-sm">{script.insight}</p>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Insight
+                </p>
+                <p className="mt-1 text-sm whitespace-pre-wrap">
+                  {script.insight}
+                </p>
               </div>
             )}
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Script</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                Script
+              </p>
               <div
                 className="mt-1 rounded-lg bg-muted/50 p-4 text-sm leading-relaxed [&_a]:text-primary [&_a]:underline [&_ol]:list-decimal [&_p]:mb-2 [&_ul]:list-disc"
                 dangerouslySetInnerHTML={{ __html: script.content ?? "" }}

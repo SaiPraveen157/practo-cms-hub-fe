@@ -7,14 +7,20 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useAuthStore } from "@/store"
+import { getPackageQueue } from "@/lib/packages-api"
+import { scriptNeedsAgencyFirstLineUpUpload } from "@/lib/agency-first-line-up"
+import { groupQueueVideosIntoPackages } from "@/lib/package-video-helpers"
+import { packageVisibleInAgencyPhase6Workflow } from "@/lib/video-phase-gates"
 import { getScriptQueue, getScriptStats } from "@/lib/scripts-api"
+import { getVideoQueue } from "@/lib/videos-api"
+import type { Video } from "@/types/video"
 import { filterScriptsBySearch } from "@/lib/script-search"
 import type { Script, ScriptStatus, ScriptStatsResponse } from "@/types/script"
 import { ScriptListSkeleton } from "@/components/loading/script-list-skeleton"
 import { ScriptListingCard } from "@/components/script-listing-card"
 import { ScriptListPagination } from "@/components/ui/pagination"
 import { ScriptStatsCards } from "@/components/script-stats-cards"
-import { FileText, Search, Send, Upload } from "lucide-react"
+import { Clapperboard, FileText, Package, Search, Send, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 10
@@ -44,6 +50,12 @@ export default function AgencyPocPage() {
   const [stats, setStats] = useState<ScriptStatsResponse | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [tab, setTab] = useState<TabKey>("all")
+  /** scriptId → package id from agency package queue (for locked script actions). */
+  const [finalPackageIdByScriptId, setFinalPackageIdByScriptId] = useState<
+    Map<string, string>
+  >(() => new Map())
+  /** Video queue rows — FLU upload visibility uses `script.fluStatus` when present; videos are fallback only. */
+  const [videos, setVideos] = useState<Video[]>([])
 
   const isAgencyPoc = user?.role === "AGENCY_POC"
 
@@ -94,6 +106,41 @@ export default function AgencyPocPage() {
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    Promise.all([getPackageQueue(token), getVideoQueue(token)])
+      .then(([packageRes, videoRes]) => {
+        if (cancelled) return
+        const mergedVideos = [
+          ...(videoRes.available ?? []),
+          ...(videoRes.myReviews ?? []),
+        ]
+        setVideos(mergedVideos)
+        const m = new Map<string, string>()
+        const packages = groupQueueVideosIntoPackages(packageRes.videos ?? [])
+        for (const p of packages) {
+          if (
+            p.scriptId &&
+            p.id &&
+            packageVisibleInAgencyPhase6Workflow(p, mergedVideos)
+          ) {
+            m.set(p.scriptId, p.id)
+          }
+        }
+        setFinalPackageIdByScriptId(m)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setVideos([])
+          setFinalPackageIdByScriptId(new Map())
+        }
       })
     return () => {
       cancelled = true
@@ -160,7 +207,11 @@ export default function AgencyPocPage() {
         </div>
 
         <div className="border-b border-border">
-          <nav className="flex gap-1" role="tablist" aria-label="Script list tabs">
+          <nav
+            className="flex gap-1"
+            role="tablist"
+            aria-label="Script list tabs"
+          >
             {(
               [
                 { key: "all" as TabKey, label: "All" },
@@ -245,42 +296,79 @@ export default function AgencyPocPage() {
           </Card>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
-            {displayedScripts.map((script) => (
-              <ScriptListingCard
-                key={script.id}
-                script={script}
-                detailHref={`/agency-poc/${script.id}`}
-                authorSubtitle="Agency POC"
-                onCardClick={() => router.push(`/agency-poc/${script.id}`)}
-                actions={
-                  script.status === "LOCKED" ? (
-                    <Button
-                      asChild
-                      size="sm"
-                      className="gap-1.5 border-0 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Link href={`/agency-poc/${script.id}/upload`}>
-                        <Upload className="size-4 shrink-0" />
-                        Upload video
-                      </Link>
-                    </Button>
-                  ) : (
-                    <Button
-                      asChild
-                      size="sm"
-                      className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Link href={`/agency-poc/${script.id}`}>
-                        <Send className="size-4 shrink-0" />
-                        Edit & submit revision
-                      </Link>
-                    </Button>
-                  )
-                }
-              />
-            ))}
+            {displayedScripts.map((script) => {
+              const finalPackageId = finalPackageIdByScriptId.get(script.id)
+              const needsFirstLineUpUpload =
+                scriptNeedsAgencyFirstLineUpUpload(script, videos)
+              return (
+                <ScriptListingCard
+                  key={script.id}
+                  script={script}
+                  detailHref={`/agency-poc/${script.id}`}
+                  authorSubtitle="Agency POC"
+                  onCardClick={() => router.push(`/agency-poc/${script.id}`)}
+                  actions={
+                    script.status === "LOCKED" ? (
+                      <div
+                        className="flex flex-wrap gap-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {finalPackageId ? (
+                          <Button
+                            asChild
+                            size="sm"
+                            variant="outline"
+                            className="gap-1.5"
+                          >
+                            <Link
+                              href={`/agency-poc-packages/${finalPackageId}`}
+                            >
+                              <Package className="size-4 shrink-0" />
+                              Final package
+                            </Link>
+                          </Button>
+                        ) : needsFirstLineUpUpload ? (
+                          <Button
+                            asChild
+                            size="sm"
+                            className="gap-1.5 border-0 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
+                          >
+                            <Link href={`/agency-poc/${script.id}/upload`}>
+                              <Upload className="size-4 shrink-0" />
+                              Upload First Line Up
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button
+                            asChild
+                            size="sm"
+                            variant="outline"
+                            className="gap-1.5"
+                          >
+                            <Link href="/agency-poc-videos">
+                              <Clapperboard className="size-4 shrink-0" />
+                              Video production
+                            </Link>
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <Button
+                        asChild
+                        size="sm"
+                        className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Link href={`/agency-poc/${script.id}`}>
+                          <Send className="size-4 shrink-0" />
+                          Edit & submit revision
+                        </Link>
+                      </Button>
+                    )
+                  }
+                />
+              )
+            })}
           </div>
         )}
 

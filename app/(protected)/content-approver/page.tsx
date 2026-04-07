@@ -3,7 +3,13 @@
 import Link from "next/link"
 import { useAuthStore } from "@/store"
 import { ROLE_LABELS } from "@/lib/role-routes"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ShieldCheck } from "lucide-react"
 
@@ -25,14 +31,20 @@ export default function ContentApproverHomePage() {
           <CardHeader>
             <CardTitle>Overview</CardTitle>
             <CardDescription>
-              Final sign-off: lock scripts so they can be sent to Agency for production.
+              Final sign-off: lock scripts so they can be sent to Agency for
+              production.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              You see scripts in Content Approver Review (approved by Content/Brand). Lock a script to move it to Locked; then the Agency can use it for production.
+              You see scripts in Content Approver Review (approved by
+              Content/Brand). Lock a script to move it to Locked; then the
+              Agency can use it for production.
             </p>
-            <Button asChild className="bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white border-0 hover:opacity-90">
+            <Button
+              asChild
+              className="border-0 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
+            >
               <Link href="/content-approver-script-new">
                 <ShieldCheck className="mr-2 size-4" />
                 Open script queue

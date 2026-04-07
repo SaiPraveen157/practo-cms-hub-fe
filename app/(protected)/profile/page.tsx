@@ -99,23 +99,23 @@ export default function ProfilePage() {
             <div className="border-t border-border pt-10 md:pt-14">
               <Section title="Identity">
                 <dl className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:gap-x-16 md:gap-y-6">
-                <DetailRow
-                  label="Name"
-                  value={
-                    [user.firstName, user.lastName]
-                      .filter(Boolean)
-                      .join(" ") || "—"
-                  }
-                />
-                <DetailRow
-                  label="Email"
-                  value={<span className="break-all">{user.email}</span>}
-                />
-                <DetailRow
-                  label="Role"
-                  value={ROLE_LABELS[user.role as UserRole] ?? user.role}
-                />
-                <DetailRow label="Status" value={user.status ?? "ACTIVE"} />
+                  <DetailRow
+                    label="Name"
+                    value={
+                      [user.firstName, user.lastName]
+                        .filter(Boolean)
+                        .join(" ") || "—"
+                    }
+                  />
+                  <DetailRow
+                    label="Email"
+                    value={<span className="break-all">{user.email}</span>}
+                  />
+                  <DetailRow
+                    label="Role"
+                    value={ROLE_LABELS[user.role as UserRole] ?? user.role}
+                  />
+                  <DetailRow label="Status" value={user.status ?? "ACTIVE"} />
                 </dl>
               </Section>
             </div>

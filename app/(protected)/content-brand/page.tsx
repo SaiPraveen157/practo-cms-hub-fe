@@ -3,7 +3,13 @@
 import Link from "next/link"
 import { useAuthStore } from "@/store"
 import { ROLE_LABELS } from "@/lib/role-routes"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { FileText } from "lucide-react"
 
@@ -25,14 +31,20 @@ export default function ContentBrandHomePage() {
           <CardHeader>
             <CardTitle>Overview</CardTitle>
             <CardDescription>
-              Review and approve scripts from Medical Affairs, and give final approval before Content Approver locks.
+              Review and approve scripts from Medical Affairs, and give final
+              approval before Content Approver locks.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              You see scripts in Content/Brand Review and Content/Brand Approval. Approve to send to Agency or to Content Approver; reject to send back with feedback. TAT 24 hours.
+              You see scripts in Content/Brand Review and Content/Brand
+              Approval. Approve to send to Agency or to Content Approver; reject
+              to send back with feedback. TAT 24 hours.
             </p>
-            <Button asChild className="bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white border-0 hover:opacity-90">
+            <Button
+              asChild
+              className="border-0 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
+            >
               <Link href="/content-brand-reviewer">
                 <FileText className="mr-2 size-4" />
                 Open review queue

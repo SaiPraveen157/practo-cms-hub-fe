@@ -55,3 +55,375 @@ Each role has its own set of permissions; APIs and UI must respect role-based vi
 - **Roles:** Super Admin, Medical Affairs, Content/Brand, Agency POC, Content Approver — each with distinct permissions and visibility.
 - **Now:** Script creation → review → agency production → lock. **Later:** Phases 4–7 (video, first cut, final package, languages).
 - **Tech:** Zustand for state; routes designed around the workflow; readable, maintainable code.
+
+## This is how the entire workflow looks like( includes all 7 phases)
+
+
+```
+📋 CMS Workflow Flowchart
+________________
+________________
+
+
+🔵 PHASE 1 — SCRIPT CREATION
+┌─────────────────────────────────────┐
+│         MEDICAL AFFAIRS TEAM        │
+└─────────────────┬───────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────┐
+│         Creates a New Script        │
+│                                     │
+│  • Title / Topic                    │
+│  • Insight                          │
+│  • Script (in English)              │
+│                                     │
+│  ⚠️ No Doctor's Notes required      │
+└─────────────────┬───────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────┐
+│    Sends to CONTENT / BRAND TEAM    │
+│         ⏱️ TAT: 24 Hours            │
+│    📧 Email notification sent to    │
+│       all mapped Medical Affairs IDs│
+└─────────────────────────────────────┘
+
+
+________________
+
+
+🔵 PHASE 2 — SCRIPT REVIEW & APPROVAL
+┌─────────────────────────────────────┐
+│       CONTENT / BRAND TEAM          │
+│           Reviews Script            │
+│         ⏱️ TAT: 24 Hours            │
+└────────┬──────────────┬─────────────┘
+         │              │
+         ▼              ▼
+┌─────────────────┐  ┌──────────────────────┐
+│ ❌ NEEDS        │  │  ✅ APPROVED          │
+│    CHANGES      │  └──────────┬───────────┘
+└────────┬────────┘             │
+         │                      │
+         ▼                      │
+┌─────────────────────────────┐ │
+│ Sends Feedback to           │ │
+│ MEDICAL AFFAIRS             │ │
+│ ⏱️ TAT: 24 Hours            │ │
+│ 📧 Email notification sent  │ │
+└────────┬────────────────────┘ │
+         │                      │
+         ▼                      │
+┌─────────────────────────────┐ │
+│ MEDICAL AFFAIRS             │ │
+│ Revises Script              │ │
+└────────┬────────────────────┘ │
+         │                      │
+         ▼                      │
+┌─────────────────────────────┐ │
+│ Resubmits to                │ │
+│ CONTENT / BRAND TEAM        │ │
+│ 🔁 Loop until approved      │ │
+│ ⏱️ TAT: 24 Hours each round │ │
+└────────┬────────────────────┘ │
+         │                      │
+         └──────────┬───────────┘
+                    │
+                    ▼
+     ┌──────────────────────────────┐
+     │  ✅ Script APPROVED by       │
+     │   Content / Brand Team       │
+     └──────────────────────────────┘
+
+
+________________
+
+
+🔵 PHASE 3 — AGENCY SCRIPT PRODUCTION
+┌─────────────────────────────────────┐
+│  ✅ Approved Script sent to AGENCY  │
+│         ⏱️ TAT: 24 Hours            │
+└─────────────────┬───────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────┐
+│    AGENCY Makes Changes to Script   │
+└─────────────────┬───────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────┐
+│  Sent to MEDICAL AFFAIRS for Review │
+│    💬 Comments allowed              │
+│    📧 Email notification sent to    │
+│       all mapped Medical Affairs IDs│
+└────────┬──────────────┬─────────────┘
+         │              │
+         ▼              ▼
+┌─────────────────┐  ┌──────────────────────┐
+│ ❌ CHANGES      │  │  ✅ APPROVED by       │
+│    NEEDED       │  │   Medical Affairs     │
+└────────┬────────┘  └──────────┬───────────┘
+         │                      │
+         ▼                      │
+┌─────────────────┐             │
+│  Back to AGENCY │             │
+│  ⏱️ TAT: 24 Hrs │             │
+│  🔁 Loop        │             │
+└────────┬────────┘             │
+         │                      │
+         └──────────┬───────────┘
+                    │
+                    ▼
+     ┌──────────────────────────────┐
+     │  ✅ Approved by              │
+     │   CONTENT / BRAND TEAM       │
+     │   ⏱️ TAT: 24 Hours           │
+     └──────────────┬───────────────┘
+                    │
+                    ▼
+     ┌──────────────────────────────┐
+     │  ✅ FINAL APPROVAL by        │
+     │  CONTENT APPROVER (Practo)   │
+     └──────────────┬───────────────┘
+                    │
+                    ▼
+     ┌──────────────────────────────┐
+     │  📤 Script sent to AGENCY    │
+     │       for PRODUCTION         │
+     └──────────────────────────────┘
+
+
+________________
+
+
+🟠 PHASE 4 — POST PRODUCTION: FIRST LINE UP
+┌─────────────────────────────────────┐
+│  AGENCY sends FIRST LINE UP         │
+│  (Video Outline / Storyboard)       │
+│  ⏱️ TAT: 24 Hours                   │
+└─────────────────┬───────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────┐
+│  MEDICAL AFFAIRS Reviews            │
+│  💬 Comments with Timestamps        │
+│  📧 Email notification sent to      │
+│     all mapped Medical Affairs IDs  │
+└────────┬──────────────┬─────────────┘
+         │              │
+         ▼              ▼
+┌─────────────────┐  ┌──────────────────────┐
+│ ❌ CHANGES      │  │  ✅ APPROVED by       │
+│    NEEDED       │  │   Medical Affairs     │
+└────────┬────────┘  └──────────┬───────────┘
+         │                      │
+         ▼                      │
+┌─────────────────┐             │
+│  Back to AGENCY │             │
+│  ⏱️ TAT: 24 Hrs │             │
+│  🔁 Loop        │             │
+└────────┬────────┘             │
+         │                      │
+         └──────────┬───────────┘
+                    │
+                    ▼
+     ┌──────────────────────────────┐
+     │  ✅ Approved by              │
+     │   CONTENT / BRAND TEAM       │
+     │   ⏱️ TAT: 24 Hours           │
+     └──────────────────────────────┘
+
+
+________________
+
+
+🟠 PHASE 5 — POST PRODUCTION: FIRST CUT (Video Draft)
+┌─────────────────────────────────────┐
+│   AGENCY sends FIRST CUT            │
+│   (Full Video Draft)                │
+│   ⏱️ TAT: 24 Hours                  │
+└─────────────────┬───────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────┐
+│  MEDICAL AFFAIRS Reviews            │
+│  💬 Comments with Timestamps        │
+│  📧 Email notification sent to      │
+│     all mapped Medical Affairs IDs  │
+└────────┬──────────────┬─────────────┘
+         │              │
+         ▼              ▼
+┌─────────────────┐  ┌──────────────────────┐
+│ ❌ CHANGES      │  │  ✅ APPROVED by       │
+│    NEEDED       │  │   Medical Affairs     │
+└────────┬────────┘  └──────────┬───────────┘
+         │                      │
+         ▼                      │
+┌─────────────────┐             │
+│  Back to AGENCY │             │
+│  ⏱️ TAT: 24 Hrs │             │
+│  🔁 Loop        │             │
+└────────┬────────┘             │
+         │                      │
+         └──────────┬───────────┘
+                    │
+                    ▼
+     ┌──────────────────────────────────┐
+     │  CONTENT / BRAND TEAM Reviews    │
+     │  💬 Comments with Timestamps     │
+     │  ⏱️ TAT: 24 Hours                │
+     └──────────────┬───────────────────┘
+                    │
+         ┌──────────┴──────────┐
+         ▼                     ▼
+┌─────────────────┐  ┌──────────────────────────┐
+│ ❌ CHANGES      │  │  ✅ APPROVED by           │
+│    NEEDED       │  │   Content / Brand Team    │
+└────────┬────────┘  └──────────────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Back to AGENCY │
+│  ⏱️ TAT: 24 Hrs │
+│  🔁 Loop        │
+└─────────────────┘
+
+
+ℹ️ Note: After Content/Brand sends back to Agency, Medical Affairs re-reviews the revised cut before Content/Brand gives final approval. The full loop (Agency → Medical Affairs → Content/Brand) repeats until both parties approve.
+________________
+
+
+🟠 PHASE 6 — FINAL PACKAGE DELIVERY (English)
+┌──────────────────────────────────────────┐
+│       AGENCY Submits FINAL PACKAGE       │
+│              ⏱️ TAT: 24 Hours            │
+│                                          │
+│   📹  Final Video — Long Form            │
+│   📹  Short Form Videos (2–3)            │
+│   🔤  Title                              │
+│   🖼️  Thumbnail (Multiple Uploads)       │
+│   📝  Description                        │
+│   🏷️  Tags                               │
+└──────────────────┬───────────────────────┘
+                   │
+       ┌───────────┴───────────┐
+       │                       │
+       ▼                       ▼
+┌──────────────────────┐  ┌────────────────────────────────┐
+│  📹 VIDEOS           │  │  🔤 Title                      │
+│                      │  │  🖼️  Thumbnail                 │
+│  Step 1:             │  │      → Multiple uploads        │
+│  MEDICAL AFFAIRS     │  │      → 💬 Comments per upload  │
+│  Reviews + approves  │  │  📝 Description                │
+│  💬 Comments         │  │  🏷️  Tags                      │
+│  🔁 Loop to Agency   │  │                                │
+│  ⏱️ TAT: 24 Hrs      │  │  Approved by:                  │
+│       ↓              │  │  CONTENT / BRAND TEAM          │
+│  Step 2:             │  │  💬 Comments + 🔁 Loop         │
+│  CONTENT/BRAND TEAM  │  │  ⏱️ TAT: 24 Hours              │
+│  Reviews + approves  │  └────────────┬───────────────────┘
+│  💬 Comments + 🔁    │               │
+│  ⏱️ TAT: 24 Hrs      │               │
+└──────────┬───────────┘               │
+           │                           │
+           └────────────┬──────────────┘
+                        │
+                        ▼
+        ┌───────────────────────────────┐
+        │  ✅ Full English Package      │
+        │  (1 Long Form + 2–3 Shorts)   │
+        └───────────────┬───────────────┘
+                        │
+                        ▼
+        ┌───────────────────────────────┐
+        │  ✅ FINAL APPROVAL by         │
+        │  CONTENT APPROVER (Practo)    │
+        └───────────────────────────────┘
+
+
+________________
+
+
+🟢 PHASE 7 — LANGUAGE PACKAGES (6 Languages)
+┌─────────────────────────────────────┐
+│  Under the SAME TOPIC               │
+│  AGENCY uploads 6 Language Versions │
+│  (Same package structure as English)│
+│  ⏱️ TAT: 24 Hours per review round  │
+└─────────────────┬───────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────┐
+│  CONTENT / BRAND TEAM Reviews       │
+│  💬 Comments allowed                │
+│  🔁 Loop continues until approved   │
+│  ⏱️ TAT: 24 Hours                   │
+└─────────────────┬───────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────┐
+│  ✅ Approved by CONTENT/BRAND TEAM  │
+└─────────────────┬───────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────┐
+│  ✅ FINAL APPROVAL by               │
+│  CONTENT APPROVER (Practo)          │
+└─────────────────┬───────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────┐
+│         🎉 PROCESS COMPLETE         │
+└─────────────────────────────────────┘
+
+
+________________
+
+
+📌 KEY ROLES SUMMARY
+Role
+	Responsibility
+	🩺 Medical Affairs
+	Creates scripts; reviews all video content; single login mapped to multiple email IDs
+	🎨 Content / Brand Team
+	Reviews & approves scripts; approves all final assets incl. Title, Thumbnail, Description, Tags
+	🏭 Agency
+	Produces scripts, videos, and full packages
+	✅ Content Approver (Practo)
+	Final sign-off on English package + all language packages
+	________________
+
+
+⏱️ TAT SUMMARY
+Stage
+	TAT
+	Script → Content/Brand Team
+	24 Hours
+	Content/Brand Feedback → Medical Affairs revision
+	24 Hours
+	Approved Script → Agency (each loop)
+	24 Hours
+	Agency → Medical Affairs review (post-production)
+	24 Hours
+	Agency → Content/Brand review (post-production)
+	24 Hours
+	Final Package review (each round)
+	24 Hours
+	Language Packages review (each round)
+	24 Hours
+	
+
+	
+
+	🔐 SYSTEM / LOGIN SETUP
+┌──────────────────────────────────────────────────────┐
+│           MEDICAL AFFAIRS TEAM — LOGIN SETUP         │
+│                                                      │
+│  • Single shared login for Medical Affairs Team      │
+│  • Mapped to multiple individual email IDs           │
+│  • On every approval action required:                │
+│    → Email notification sent to ALL mapped IDs       │
+│    → TAT reminder included in notification email     │
+└──────────────────────────────────────────────────────┘
+```

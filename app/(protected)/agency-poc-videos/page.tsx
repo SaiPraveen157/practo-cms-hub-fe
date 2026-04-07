@@ -15,6 +15,9 @@ import {
 } from "@/components/ui/dialog"
 import { useAuthStore } from "@/store"
 import { getVideoQueue, getVideoStats, uploadVideoFlow } from "@/lib/videos-api"
+import { getScriptQueue } from "@/lib/scripts-api"
+import { getAgencyVideoCardPhaseTags } from "@/lib/agency-video-phase-tags"
+import type { Script } from "@/types/script"
 import type { Video, VideoPhase, VideoStatus } from "@/types/video"
 import { VideoTatBar, resolveVideoTat } from "@/components/video-tat-bar"
 import {
@@ -58,6 +61,8 @@ function getStatusPillClass(status: VideoStatus): string {
 
 interface VideoCardProps {
   video: Video
+  scriptFromQueue: Script | undefined
+  allVideos: Video[]
   onView: () => void
   onUpload?: () => void
   getStatusPillClass: (status: VideoStatus) => string
@@ -67,12 +72,19 @@ interface VideoCardProps {
 
 function VideoCard({
   video,
+  scriptFromQueue,
+  allVideos,
   onView,
   onUpload,
   getStatusPillClass,
   tatLimitHours,
   repeatCycleHours,
 }: VideoCardProps) {
+  const phaseTags = getAgencyVideoCardPhaseTags(
+    scriptFromQueue,
+    allVideos,
+    video.scriptId
+  )
   return (
     <Card
       className="flex cursor-pointer flex-col overflow-hidden rounded-xl shadow-sm ring-1 ring-border/50 transition-shadow hover:shadow-md"
@@ -87,18 +99,38 @@ function VideoCard({
       }}
     >
       <CardContent className="flex flex-1 flex-col gap-4 p-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <span
-            className={cn(
-              "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium uppercase",
-              getStatusPillClass(video.status)
-            )}
-          >
-            {STATUS_LABELS[video.status]}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {PHASE_LABELS[video.phase]} · v{video.version}
-          </span>
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-1.5">
+            <span
+              className={cn(
+                "inline-flex max-w-full rounded-full px-2 py-0.5 text-[10px] leading-snug font-medium break-words sm:text-xs",
+                phaseTags.phase4.className
+              )}
+            >
+              {phaseTags.phase4.label}
+            </span>
+            <span
+              className={cn(
+                "inline-flex max-w-full rounded-full px-2 py-0.5 text-[10px] leading-snug font-medium break-words sm:text-xs",
+                phaseTags.phase5.className
+              )}
+            >
+              {phaseTags.phase5.label}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium uppercase",
+                getStatusPillClass(video.status)
+              )}
+            >
+              {STATUS_LABELS[video.status]}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {PHASE_LABELS[video.phase]} · v{video.version}
+            </span>
+          </div>
         </div>
         <h3 className="min-w-0 text-lg leading-tight font-semibold text-foreground">
           {video.script?.title ?? "Untitled script"}
@@ -160,6 +192,9 @@ export default function AgencyPocVideosPage() {
   const token = useAuthStore((s) => s.token)
   const user = useAuthStore((s) => s.user)
   const [videos, setVideos] = useState<Video[]>([])
+  const [scriptById, setScriptById] = useState<Map<string, Script>>(
+    () => new Map()
+  )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
@@ -185,12 +220,28 @@ export default function AgencyPocVideosPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await getVideoQueue(token)
-      const combined = [...(res.available ?? []), ...(res.myReviews ?? [])]
+      const [videoRes, scriptRes] = await Promise.all([
+        getVideoQueue(token),
+        getScriptQueue(token),
+      ])
+      const combined = [
+        ...(videoRes.available ?? []),
+        ...(videoRes.myReviews ?? []),
+      ]
       setVideos(combined)
+      const scripts = [
+        ...(scriptRes.available ?? []),
+        ...(scriptRes.myReviews ?? []),
+      ]
+      const m = new Map<string, Script>()
+      for (const s of scripts) {
+        if (!m.has(s.id)) m.set(s.id, s)
+      }
+      setScriptById(m)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load videos")
       toast.error("Failed to load videos")
+      setScriptById(new Map())
     } finally {
       setLoading(false)
     }
@@ -514,6 +565,8 @@ export default function AgencyPocVideosPage() {
                 <VideoCard
                   key={video.id}
                   video={video}
+                  scriptFromQueue={scriptById.get(video.scriptId)}
+                  allVideos={videos}
                   onView={() => router.push(`${LIST_PATH}/${video.id}`)}
                   onUpload={
                     needsUpload(video)

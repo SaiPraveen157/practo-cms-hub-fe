@@ -78,13 +78,19 @@ export default function ContentBrandReviewerPage() {
       getScriptQueue(token)
         .then((res) => {
           if (!cancelled) {
-            const combined = [...(res.available ?? []), ...(res.myReviews ?? [])]
+            const combined = [
+              ...(res.available ?? []),
+              ...(res.myReviews ?? []),
+            ]
             setScripts(combined)
             setPage(1)
           }
         })
         .catch((err) => {
-          if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load scripts")
+          if (!cancelled)
+            setError(
+              err instanceof Error ? err.message : "Failed to load scripts"
+            )
         })
         .finally(() => {
           if (!cancelled) setLoading(false)
@@ -103,7 +109,10 @@ export default function ContentBrandReviewerPage() {
           }
         })
         .catch((err) => {
-          if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load scripts")
+          if (!cancelled)
+            setError(
+              err instanceof Error ? err.message : "Failed to load scripts"
+            )
         })
         .finally(() => {
           if (!cancelled) setLoading(false)
@@ -116,7 +125,9 @@ export default function ContentBrandReviewerPage() {
 
   useEffect(() => {
     if (!token) return
-    getScriptStats(token).then(setStats).catch(() => setStats(null))
+    getScriptStats(token)
+      .then(setStats)
+      .catch(() => setStats(null))
   }, [token])
 
   if (!isContentBrand) {
@@ -124,8 +135,14 @@ export default function ContentBrandReviewerPage() {
       <div className="p-6 md:p-8">
         <Card>
           <CardContent className="pt-6">
-            <p className="text-muted-foreground">Only Content/Brand can access this review queue.</p>
-            <Button variant="outline" className="mt-4" onClick={() => router.back()}>
+            <p className="text-muted-foreground">
+              Only Content/Brand can access this review queue.
+            </p>
+            <Button
+              variant="outline"
+              className="mt-4"
+              onClick={() => router.back()}
+            >
               Go back
             </Button>
           </CardContent>
@@ -138,9 +155,12 @@ export default function ContentBrandReviewerPage() {
     <div className="p-6 md:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Content/Brand Review</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            Content/Brand Review
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Review scripts from Medical Affairs; final-approve scripts that passed Medical Affairs. TAT 24 hours.
+            Review scripts from Medical Affairs; final-approve scripts that
+            passed Medical Affairs. TAT 24 hours.
           </p>
         </div>
 
@@ -148,7 +168,7 @@ export default function ContentBrandReviewerPage() {
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="search"
               placeholder="Search by title..."
@@ -163,7 +183,11 @@ export default function ContentBrandReviewerPage() {
         </div>
 
         <div className="border-b border-border">
-          <nav className="flex gap-1" role="tablist" aria-label="Script list tabs">
+          <nav
+            className="flex gap-1"
+            role="tablist"
+            aria-label="Script list tabs"
+          >
             {(
               [
                 { key: "all" as TabKey, label: "All" },
@@ -176,7 +200,10 @@ export default function ContentBrandReviewerPage() {
                 type="button"
                 role="tab"
                 aria-selected={tab === key}
-                onClick={() => { setTab(key); setPage(1) }}
+                onClick={() => {
+                  setTab(key)
+                  setPage(1)
+                }}
                 className={cn(
                   "border-b-2 px-4 py-3 text-sm font-medium transition-colors",
                   tab === key
@@ -214,8 +241,7 @@ export default function ContentBrandReviewerPage() {
                   "Scripts in Content/Brand Review or awaiting final approval will appear here."}
                 {tab === "approved" &&
                   "Scripts you approved (review or final approval) will appear here."}
-                {tab === "rejected" &&
-                  "Scripts you rejected will appear here."}
+                {tab === "rejected" && "Scripts you rejected will appear here."}
               </p>
             </CardContent>
           </Card>
@@ -230,7 +256,10 @@ export default function ContentBrandReviewerPage() {
               <Button
                 variant="outline"
                 className="mt-4"
-                onClick={() => { setSearchQuery(""); setPage(1) }}
+                onClick={() => {
+                  setSearchQuery("")
+                  setPage(1)
+                }}
               >
                 Clear search
               </Button>
@@ -238,53 +267,57 @@ export default function ContentBrandReviewerPage() {
           </Card>
         ) : (
           <>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {displayedScripts.map((script) => (
-              <ScriptListingCard
-                key={script.id}
-                script={script}
-                detailHref={`/content-brand-reviewer/${script.id}`}
-                authorSubtitle="Content Creator"
-                onCardClick={() => router.push(`/content-brand-reviewer/${script.id}`)}
-                actions={
-                  <>
-                    <Button
-                      asChild
-                      size="sm"
-                      className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Link href={`/content-brand-reviewer/${script.id}`}>
-                        <CheckCircle className="size-4 shrink-0" />
-                        {script.status === "CONTENT_BRAND_APPROVAL" ? "Approve" : "Review"}
-                      </Link>
-                    </Button>
-                    <Button
-                      asChild
-                      size="sm"
-                      variant="destructive"
-                      className="gap-1.5"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Link href={`/content-brand-reviewer/${script.id}`}>
-                        <XCircle className="size-4 shrink-0" />
-                        Reject
-                      </Link>
-                    </Button>
-                  </>
-                }
+            <div className="grid gap-4 sm:grid-cols-2">
+              {displayedScripts.map((script) => (
+                <ScriptListingCard
+                  key={script.id}
+                  script={script}
+                  detailHref={`/content-brand-reviewer/${script.id}`}
+                  authorSubtitle="Content Creator"
+                  onCardClick={() =>
+                    router.push(`/content-brand-reviewer/${script.id}`)
+                  }
+                  actions={
+                    <>
+                      <Button
+                        asChild
+                        size="sm"
+                        className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Link href={`/content-brand-reviewer/${script.id}`}>
+                          <CheckCircle className="size-4 shrink-0" />
+                          {script.status === "CONTENT_BRAND_APPROVAL"
+                            ? "Approve"
+                            : "Review"}
+                        </Link>
+                      </Button>
+                      <Button
+                        asChild
+                        size="sm"
+                        variant="destructive"
+                        className="gap-1.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Link href={`/content-brand-reviewer/${script.id}`}>
+                          <XCircle className="size-4 shrink-0" />
+                          Reject
+                        </Link>
+                      </Button>
+                    </>
+                  }
+                />
+              ))}
+            </div>
+            {!loading && searchFilteredScripts.length > 0 && (
+              <ScriptListPagination
+                page={page}
+                totalPages={paginationTotalPages}
+                total={paginationTotal}
+                limit={PAGE_SIZE}
+                onPageChange={setPage}
               />
-            ))}
-          </div>
-          {!loading && searchFilteredScripts.length > 0 && (
-            <ScriptListPagination
-              page={page}
-              totalPages={paginationTotalPages}
-              total={paginationTotal}
-              limit={PAGE_SIZE}
-              onPageChange={setPage}
-            />
-          )}
+            )}
           </>
         )}
       </div>

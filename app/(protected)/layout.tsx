@@ -10,7 +10,7 @@ export default function ProtectedLayout({
     <ProtectedRoute>
       <div className="flex min-h-svh">
         <AppSidebar />
-        <main className="min-w-0 flex-1 overflow-auto bg-background">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto bg-background">
           {children}
         </main>
       </div>

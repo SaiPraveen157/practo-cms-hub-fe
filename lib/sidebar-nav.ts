@@ -14,6 +14,7 @@ export type SidebarNavIcon =
   | "bell"
   | "folder-open"
   | "video"
+  | "package"
   | "book-open"
   | "user"
   | "settings"
