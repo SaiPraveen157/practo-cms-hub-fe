@@ -9,14 +9,18 @@ export function parseVideoCommentTimestampSeconds(
   const v =
     raw.timestampSeconds ??
     raw.timestamp_seconds ??
-    raw.timestamp_sec
+    raw.timestamp_sec ??
+    raw.timeStamp ??
+    raw.time_stamp
   if (v == null || v === "") return null
   const n = typeof v === "number" ? v : Number(v)
   return Number.isFinite(n) ? n : null
 }
 
 /** Normalize GET/POST comment JSON to `VideoComment` with `timestampSeconds` set. */
-export function normalizeVideoComment(raw: Record<string, unknown>): VideoComment {
+export function normalizeVideoComment(
+  raw: Record<string, unknown>
+): VideoComment {
   return {
     id: String(raw.id ?? ""),
     content: String(raw.content ?? ""),
@@ -27,8 +31,12 @@ export function normalizeVideoComment(raw: Record<string, unknown>): VideoCommen
 }
 
 /** Read timestamp from a comment (normalized or raw API shape). */
-export function getVideoCommentTimestampSeconds(c: VideoComment): number | null {
+export function getVideoCommentTimestampSeconds(
+  c: VideoComment
+): number | null {
   const direct = c.timestampSeconds
   if (direct != null && Number.isFinite(direct)) return direct
-  return parseVideoCommentTimestampSeconds(c as unknown as Record<string, unknown>)
+  return parseVideoCommentTimestampSeconds(
+    c as unknown as Record<string, unknown>
+  )
 }
