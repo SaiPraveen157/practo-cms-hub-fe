@@ -35,6 +35,7 @@ import { useAuthStore } from "@/store"
 import {
   approvePackageVideo,
   getPackage,
+  getPackageVideoComments,
   rejectPackageVideo,
   reviewPackageThumbnail,
 } from "@/lib/packages-api"
@@ -76,6 +77,10 @@ import {
   Smartphone,
   XCircle,
 } from "lucide-react"
+import {
+  VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+  videoThreadBlocksApprove,
+} from "@/lib/video-comment"
 import { toast } from "sonner"
 
 type BrandReviewTab = "videos" | "metadata"
@@ -172,6 +177,10 @@ export default function ContentBrandPackageDetailPage() {
   const [brandApproveVideo, setBrandApproveVideo] =
     useState<PackageVideo | null>(null)
   const [brandApproveComment, setBrandApproveComment] = useState("")
+  const [metaApproveThreadBlocked, setMetaApproveThreadBlocked] =
+    useState(false)
+  const [brandApproveThreadBlocked, setBrandApproveThreadBlocked] =
+    useState(false)
 
   const load = useCallback(async () => {
     if (!token || !id) return
@@ -251,6 +260,40 @@ export default function ContentBrandPackageDetailPage() {
     else setReviewTab("metadata")
   }, [searchParams, pkg?.id, videoQualityCount, metaQueueCount])
 
+  useEffect(() => {
+    if (!token || !metaApproveVideo) {
+      setMetaApproveThreadBlocked(false)
+      return
+    }
+    let cancelled = false
+    void getPackageVideoComments(token, metaApproveVideo.id).then((list) => {
+      if (cancelled) return
+      setMetaApproveThreadBlocked(
+        videoThreadBlocksApprove(list, metaApproveVideo.currentVersion)
+      )
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [token, metaApproveVideo])
+
+  useEffect(() => {
+    if (!token || !brandApproveVideo) {
+      setBrandApproveThreadBlocked(false)
+      return
+    }
+    let cancelled = false
+    void getPackageVideoComments(token, brandApproveVideo.id).then((list) => {
+      if (cancelled) return
+      setBrandApproveThreadBlocked(
+        videoThreadBlocksApprove(list, brandApproveVideo.currentVersion)
+      )
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [token, brandApproveVideo])
+
   async function handleApproveMetadata() {
     if (!token || !metaApproveVideo) return
     const asset = getCurrentVideoAsset(metaApproveVideo)
@@ -264,6 +307,18 @@ export default function ContentBrandPackageDetailPage() {
     }
     const pending = thumbs.filter((t) => t.status === "PENDING")
     await run(`meta-approve-${metaApproveVideo.id}`, async () => {
+      const threadList = await getPackageVideoComments(
+        token,
+        metaApproveVideo.id
+      )
+      if (
+        videoThreadBlocksApprove(threadList, metaApproveVideo.currentVersion)
+      ) {
+        toast.error("Cannot approve yet", {
+          description: VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+        })
+        return
+      }
       for (const t of pending) {
         await reviewPackageThumbnail(token, t.id, {
           status: "APPROVED",
@@ -360,6 +415,18 @@ export default function ContentBrandPackageDetailPage() {
   async function handleApproveBrandVideo() {
     if (!token || !brandApproveVideo) return
     await run(`brand-approve-${brandApproveVideo.id}`, async () => {
+      const threadList = await getPackageVideoComments(
+        token,
+        brandApproveVideo.id
+      )
+      if (
+        videoThreadBlocksApprove(threadList, brandApproveVideo.currentVersion)
+      ) {
+        toast.error("Cannot approve yet", {
+          description: VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+        })
+        return
+      }
       const res = await approvePackageVideo(token, brandApproveVideo.id, {
         comments: brandApproveComment.trim() || "Video quality approved.",
       })
@@ -581,6 +648,11 @@ export default function ContentBrandPackageDetailPage() {
               approved here.
             </DialogDescription>
           </DialogHeader>
+          {metaApproveThreadBlocked ? (
+            <p className="text-sm text-muted-foreground">
+              {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+            </p>
+          ) : null}
           <Textarea
             value={metaApproveComment}
             onChange={(e) => setMetaApproveComment(e.target.value)}
@@ -594,6 +666,7 @@ export default function ContentBrandPackageDetailPage() {
               onClick={() => void handleApproveMetadata()}
               disabled={
                 !metaApproveVideo ||
+                metaApproveThreadBlocked ||
                 isPending(`meta-approve-${metaApproveVideo.id}`)
               }
             >
@@ -647,6 +720,11 @@ export default function ContentBrandPackageDetailPage() {
               Comments are optional.
             </DialogDescription>
           </DialogHeader>
+          {brandApproveThreadBlocked ? (
+            <p className="text-sm text-muted-foreground">
+              {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+            </p>
+          ) : null}
           <Textarea
             value={brandApproveComment}
             onChange={(e) => setBrandApproveComment(e.target.value)}
@@ -663,6 +741,7 @@ export default function ContentBrandPackageDetailPage() {
               onClick={() => void handleApproveBrandVideo()}
               disabled={
                 !brandApproveVideo ||
+                brandApproveThreadBlocked ||
                 isPending(`brand-approve-${brandApproveVideo.id}`)
               }
             >
@@ -1321,6 +1400,7 @@ function BrandVideoQualityPanel({
                 label={label}
                 icon={icon}
                 videoOnly
+                packageVideo={video}
               />
 
               {showQualityUi ? (

@@ -29,7 +29,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useAuthStore } from "@/store"
-import { approvePackageVideo, getPackage } from "@/lib/packages-api"
+import {
+  approvePackageVideo,
+  getPackage,
+  getPackageVideoComments,
+} from "@/lib/packages-api"
 import {
   deliverableLabelsByVideoId,
   getCurrentVideoAsset,
@@ -60,6 +64,10 @@ import {
   Smartphone,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import {
+  VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+  videoThreadBlocksApprove,
+} from "@/lib/video-comment"
 import { toast } from "sonner"
 
 function thumbBadgeClass(s: PackageThumbnailRecord["status"]) {
@@ -141,6 +149,16 @@ export default function ContentApproverPackageDetailPage() {
     const comment =
       approveComments.trim() || "Final approval for English final package."
     try {
+      for (const video of awaitingVideos) {
+        const list = await getPackageVideoComments(token, video.id)
+        if (videoThreadBlocksApprove(list, video.currentVersion)) {
+          toast.error("Cannot approve yet", {
+            description: `${deliverableLabels.get(video.id) ?? "A deliverable"}: ${VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}`,
+          })
+          setBusy(false)
+          return
+        }
+      }
       let updated = pkg
       for (const video of awaitingVideos) {
         const res = await approvePackageVideo(token, video.id, {
@@ -491,6 +509,7 @@ export default function ContentApproverPackageDetailPage() {
                           label={label}
                           icon={icon}
                           videoOnly
+                          packageVideo={video}
                         />
                       </div>
 

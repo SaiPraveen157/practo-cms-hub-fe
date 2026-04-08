@@ -28,6 +28,7 @@ import type { UserRole } from "@/types/auth"
 import {
   approveLanguageVideo,
   getLanguagePackage,
+  getLanguageVideoComments,
   rejectLanguageVideo,
   reviewLanguageThumbnail,
 } from "@/lib/language-packages-api"
@@ -48,10 +49,15 @@ import {
   languageVideoStatusBadgeClass,
   LANGUAGE_VIDEO_STATUS_LABELS,
 } from "@/lib/language-package-ui"
+import { LanguageVideoPlayerWithThread } from "@/components/language-packages/language-video-player-with-thread"
 import { TagPillList } from "@/components/packages/tag-pill-list"
 import { languageVideoAwaitingAgencyAfterBrandRejectOnCurrentAsset } from "@/lib/language-phase-gates"
 import { formatPackageDate } from "@/lib/package-ui"
 import { ArrowLeft, ImageIcon, Loader2, XCircle } from "lucide-react"
+import {
+  VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+  videoThreadBlocksApprove,
+} from "@/lib/video-comment"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -105,6 +111,7 @@ export default function ContentBrandLanguagePackageDetailPage() {
   const [approveVideoId, setApproveVideoId] = useState<string | null>(null)
   const [approveComment, setApproveComment] = useState("")
   const [approveBusy, setApproveBusy] = useState(false)
+  const [approveThreadBlocked, setApproveThreadBlocked] = useState(false)
 
   const [rejectOpen, setRejectOpen] = useState(false)
   const [rejectTargetVideo, setRejectTargetVideo] =
@@ -168,6 +175,30 @@ export default function ContentBrandLanguagePackageDetailPage() {
 
   const sorted = useMemo(() => (pkg ? languageVideosSorted(pkg) : []), [pkg])
 
+  useEffect(() => {
+    if (!token || !approveOpen || !approveVideoId) {
+      setApproveThreadBlocked(false)
+      return
+    }
+    const v =
+      sorted.find((x) => x.id === approveVideoId) ??
+      pkg?.videos?.find((x) => x.id === approveVideoId)
+    if (!v) {
+      setApproveThreadBlocked(false)
+      return
+    }
+    let cancelled = false
+    void getLanguageVideoComments(token, approveVideoId).then((list) => {
+      if (cancelled) return
+      setApproveThreadBlocked(
+        videoThreadBlocksApprove(list, v.currentVersion)
+      )
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [token, approveOpen, approveVideoId, sorted, pkg?.videos])
+
   const rejectAsset = useMemo(
     () =>
       rejectTargetVideo
@@ -203,12 +234,20 @@ export default function ContentBrandLanguagePackageDetailPage() {
 
   async function submitApprove() {
     if (!token || !approveVideoId) return
+    const video =
+      sorted.find((x) => x.id === approveVideoId) ??
+      pkg?.videos?.find((x) => x.id === approveVideoId)
+    if (!video) return
+    const threadList = await getLanguageVideoComments(token, approveVideoId)
+    if (videoThreadBlocksApprove(threadList, video.currentVersion)) {
+      toast.error("Cannot approve yet", {
+        description: VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+      })
+      return
+    }
     setApproveBusy(true)
     try {
-      const video =
-        sorted.find((x) => x.id === approveVideoId) ??
-        pkg?.videos?.find((x) => x.id === approveVideoId)
-      const asset = video ? getCurrentLanguageVideoAsset(video) : undefined
+      const asset = getCurrentLanguageVideoAsset(video)
       const thumbs = asset?.thumbnails ?? []
       for (const t of thumbs) {
         if (t.status === "APPROVED") continue
@@ -470,12 +509,11 @@ export default function ContentBrandLanguagePackageDetailPage() {
 
                         {va.fileUrl ? (
                           <div className={languageDetailShellClass()}>
-                            <video
-                              src={va.fileUrl}
-                              controls
-                              playsInline
-                              preload="metadata"
-                              className={VIDEO_CLASS}
+                            <LanguageVideoPlayerWithThread
+                              languageVideo={video}
+                              fileUrl={va.fileUrl}
+                              mediaKey={va.id}
+                              videoClassName={VIDEO_CLASS}
                             />
                           </div>
                         ) : null}
@@ -579,6 +617,11 @@ export default function ContentBrandLanguagePackageDetailPage() {
               </DialogDescription>
             ) : null}
           </DialogHeader>
+          {approveThreadBlocked ? (
+            <p className="text-sm text-muted-foreground">
+              {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+            </p>
+          ) : null}
           <div className="space-y-2">
             <Label htmlFor="ac">Comments (optional)</Label>
             <Textarea
@@ -599,7 +642,9 @@ export default function ContentBrandLanguagePackageDetailPage() {
               Cancel
             </Button>
             <Button
-              disabled={approveBusy || !approveVideoId}
+              disabled={
+                approveBusy || !approveVideoId || approveThreadBlocked
+              }
               onClick={() => void submitApprove()}
             >
               {approveBusy ? (

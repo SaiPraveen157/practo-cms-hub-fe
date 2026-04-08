@@ -67,6 +67,7 @@ import {
   formatPackageFileSize,
   humanizeItemFeedbackField,
 } from "@/lib/package-ui"
+import { LanguageVideoPlayerWithThread } from "@/components/language-packages/language-video-player-with-thread"
 import { TrackStatusCallout } from "@/components/packages/track-status-callout"
 import {
   TagPillList,
@@ -390,9 +391,13 @@ function LanguageRejectionContextBlock({
 
 function LangSubmittedVideoPlayerPaneInner({
   fileUrl,
+  mediaKey,
+  languageVideo,
   compact,
 }: {
   fileUrl: string
+  mediaKey: string
+  languageVideo: LanguageVideo
   compact?: boolean
 }) {
   const [videoError, setVideoError] = useState(false)
@@ -400,17 +405,13 @@ function LangSubmittedVideoPlayerPaneInner({
   if (fileUrl && !videoError) {
     return (
       <div className={submittedVideoShellClass()}>
-        <video
-          key={fileUrl}
-          src={fileUrl}
-          controls
-          playsInline
-          preload="metadata"
-          className={VIDEO_INLINE_CLASS}
-          onError={() => setVideoError(true)}
-        >
-          Your browser cannot play this video inline.
-        </video>
+        <LanguageVideoPlayerWithThread
+          languageVideo={languageVideo}
+          fileUrl={fileUrl}
+          mediaKey={mediaKey}
+          videoClassName={VIDEO_INLINE_CLASS}
+          onVideoError={() => setVideoError(true)}
+        />
       </div>
     )
   }
@@ -675,6 +676,8 @@ export default function AgencyLanguagePackageDetailPage() {
     [pkg]
   )
 
+  const packageHasVideos = (pkg?.videos?.length ?? 0) > 0
+
   async function savePackageName() {
     if (!token || !pkg || !rename.trim()) return
     setSavingName(true)
@@ -850,7 +853,11 @@ export default function AgencyLanguagePackageDetailPage() {
               </Card>
             ) : null}
 
-            {!agencyLanguagePackageNeedsRevision(pkg) ? (
+            {agencyLanguagePackageNeedsRevision(pkg) ? (
+              <p className="text-sm text-muted-foreground">
+                Finish resubmitting rejected videos below.
+              </p>
+            ) : !packageHasVideos ? (
               <>
                 <Card>
                   <CardHeader>
@@ -952,12 +959,7 @@ export default function AgencyLanguagePackageDetailPage() {
                   </CardContent>
                 </Card>
               </>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Finish resubmitting rejected videos below. Rename and “add
-                another video” return once nothing here needs revision.
-              </p>
-            )}
+            ) : null}
 
             <div className="space-y-4">
               <h2 className="text-lg font-semibold">Videos</h2>
@@ -1281,13 +1283,11 @@ function AgencyLanguageVideoCard({
           <>
             {asset?.fileUrl ? (
               <div className={languageDetailShellClass()}>
-                <video
-                  key={asset.fileUrl}
-                  src={asset.fileUrl}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  className={VIDEO_CLASS}
+                <LanguageVideoPlayerWithThread
+                  languageVideo={video}
+                  fileUrl={asset.fileUrl}
+                  mediaKey={asset.id}
+                  videoClassName={VIDEO_CLASS}
                 />
               </div>
             ) : null}
@@ -1445,6 +1445,8 @@ function AgencyLanguageVideoCard({
                       </p>
                       <LangSubmittedVideoPlayerPaneInner
                         fileUrl={asset.fileUrl}
+                        mediaKey={asset.id}
+                        languageVideo={video}
                         compact
                       />
                       <p className="font-mono text-xs wrap-break-word text-muted-foreground">

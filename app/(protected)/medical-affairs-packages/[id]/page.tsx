@@ -5,7 +5,6 @@ import {
   useEffect,
   useMemo,
   useState,
-  type ReactNode,
 } from "react"
 import Link from "next/link"
 import { useParams, useSearchParams } from "next/navigation"
@@ -32,6 +31,7 @@ import { useAuthStore } from "@/store"
 import {
   approvePackageVideo,
   getPackage,
+  getPackageVideoComments,
   rejectPackageVideo,
 } from "@/lib/packages-api"
 import {
@@ -42,17 +42,15 @@ import {
 } from "@/lib/package-video-helpers"
 import type {
   FinalPackage,
-  PackageAsset,
   PackageItemFeedbackEntry,
   PackageVideo,
 } from "@/types/package"
 import type { UserRole } from "@/types/auth"
-import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
+import { PackageInlineVideoCard } from "@/components/packages/package-inline-video-card"
 import {
   TRACK_STATUS_LABELS,
   VIDEO_STATUS_LABELS,
   formatPackageDate,
-  formatPackageFileSize,
   videoStatusBadgeClass,
 } from "@/lib/package-ui"
 import { PackageVideoTatInline } from "@/components/packages/package-video-tat-inline"
@@ -63,83 +61,16 @@ import {
   CheckCircle,
   Clapperboard,
   Clock,
-  ExternalLink,
   Loader2,
   Smartphone,
   XCircle,
 } from "lucide-react"
+import {
+  VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+  videoThreadBlocksApprove,
+} from "@/lib/video-comment"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-
-function PackageVideoPlayerCard({
-  asset,
-  label,
-  icon,
-}: {
-  asset: PackageAsset
-  label: string
-  icon: ReactNode
-}) {
-  const [videoError, setVideoError] = useState(false)
-  const size = formatPackageFileSize(asset.fileSize ?? undefined)
-
-  return (
-    <Card className="overflow-hidden border border-border bg-card shadow-sm">
-      <CardHeader className="border-b border-border bg-muted/20 pb-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              {icon}
-            </div>
-            <div className="min-w-0 space-y-1">
-              <CardTitle className="text-base leading-snug">{label}</CardTitle>
-              <CardDescription className="font-mono text-xs break-all">
-                {asset.fileName}
-                {size ? ` · ${size}` : ""}
-              </CardDescription>
-            </div>
-          </div>
-          <Badge variant="secondary" className="shrink-0 uppercase">
-            {asset.type.replace("_", " ")}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4 p-4 sm:p-6">
-        {asset.fileUrl && !videoError ? (
-          <div className="overflow-hidden rounded-xl border border-border bg-black shadow-inner">
-            <VideoPlayerTimeline
-              src={asset.fileUrl}
-              mediaKey={asset.id}
-              showCommentsUi={false}
-              videoClassName="max-h-[min(72vh,32rem)] w-full object-contain"
-              onVideoError={() => setVideoError(true)}
-            />
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
-            <p className="text-sm text-muted-foreground">
-              {videoError
-                ? "Inline preview failed (often a network or CORS issue)."
-                : "No video URL on this asset."}
-            </p>
-            {asset.fileUrl ? (
-              <Button variant="outline" size="sm" asChild>
-                <a
-                  href={asset.fileUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ExternalLink className="mr-2 size-4" />
-                  Open video in new tab
-                </a>
-              </Button>
-            ) : null}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
 
 export default function MedicalPackageDetailPage() {
   const params = useParams()
@@ -165,6 +96,7 @@ export default function MedicalPackageDetailPage() {
     Record<string, string>
   >({})
   const [busy, setBusy] = useState(false)
+  const [approveThreadBlocked, setApproveThreadBlocked] = useState(false)
 
   const load = useCallback(async () => {
     if (!token || !id) return
@@ -227,8 +159,32 @@ export default function MedicalPackageDetailPage() {
     return () => window.clearTimeout(t)
   }, [focusVideoId, loading])
 
+  useEffect(() => {
+    if (!approveOpen || !token || !activeVideo) {
+      setApproveThreadBlocked(false)
+      return
+    }
+    let cancelled = false
+    void getPackageVideoComments(token, activeVideo.id).then((list) => {
+      if (cancelled) return
+      setApproveThreadBlocked(
+        videoThreadBlocksApprove(list, activeVideo.currentVersion)
+      )
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [approveOpen, token, activeVideo])
+
   async function handleApprove() {
     if (!token || !activeVideo) return
+    const list = await getPackageVideoComments(token, activeVideo.id)
+    if (videoThreadBlocksApprove(list, activeVideo.currentVersion)) {
+      toast.error("Cannot approve yet", {
+        description: VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+      })
+      return
+    }
     setBusy(true)
     try {
       const res = await approvePackageVideo(token, activeVideo.id, {
@@ -427,10 +383,12 @@ export default function MedicalPackageDetailPage() {
                       <p className="mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
                         Video file
                       </p>
-                      <PackageVideoPlayerCard
+                      <PackageInlineVideoCard
                         asset={pa}
                         label={label}
                         icon={icon}
+                        videoOnly
+                        packageVideo={video}
                       />
                     </div>
 
@@ -516,6 +474,11 @@ export default function MedicalPackageDetailPage() {
               package are unaffected.
             </DialogDescription>
           </DialogHeader>
+          {approveThreadBlocked ? (
+            <p className="text-sm text-muted-foreground">
+              {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+            </p>
+          ) : null}
           <div className="space-y-2">
             <Label htmlFor="ap">Comments(optional)</Label>
             <Textarea
@@ -530,7 +493,10 @@ export default function MedicalPackageDetailPage() {
             <Button variant="outline" onClick={() => setApproveOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleApprove} disabled={busy}>
+            <Button
+              onClick={handleApprove}
+              disabled={busy || approveThreadBlocked}
+            >
               {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
               Submit
             </Button>

@@ -70,6 +70,7 @@ import { PackageVideoTatInline } from "@/components/packages/package-video-tat-i
 import { PackageItemFeedbackHumanizedList } from "@/components/packages/package-item-feedback-humanized"
 import { PackageListTabNav } from "@/components/packages/package-list-tab-nav"
 import { PackageVideoMetadataProminent } from "@/components/packages/package-video-metadata-prominent"
+import { PackageInlineVideoCard } from "@/components/packages/package-inline-video-card"
 import { TrackStatusCallout } from "@/components/packages/track-status-callout"
 import {
   TagPillList,
@@ -174,63 +175,6 @@ function submittedVideoShellClass() {
 }
 
 const EMPTY_FILE_LIST: File[] = []
-
-function SubmittedVideoPlayerPaneInner({
-  asset,
-  compact,
-}: {
-  asset: PackageAsset
-  compact?: boolean
-}) {
-  const [videoError, setVideoError] = useState(false)
-
-  if (asset.fileUrl && !videoError) {
-    return (
-      <div className={submittedVideoShellClass()}>
-        <VideoPlayerTimeline
-          src={asset.fileUrl}
-          mediaKey={asset.id}
-          showCommentsUi={false}
-          videoClassName={VIDEO_INLINE_CLASS}
-          onVideoError={() => setVideoError(true)}
-        />
-      </div>
-    )
-  }
-
-  return (
-    <div
-      className={cn(
-        "flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-muted-foreground/30 bg-muted/40 px-3 text-center",
-        compact ? "min-h-36 py-6" : "min-h-48 px-4 py-10"
-      )}
-    >
-      <p className="max-w-sm text-sm text-muted-foreground">
-        {videoError
-          ? "We couldn’t play this file in the browser (often network or permissions). Open it in a new tab instead."
-          : "There is no playable URL for this file yet."}
-      </p>
-    </div>
-  )
-}
-
-function SubmittedVideoPlayerPane({
-  asset,
-  compact,
-}: {
-  asset: PackageAsset
-  compact?: boolean
-}) {
-  const inner = (
-    <SubmittedVideoPlayerPaneInner
-      key={asset.fileUrl ?? `no-url-${asset.id}`}
-      asset={asset}
-      compact={compact}
-    />
-  )
-  if (compact) return inner
-  return <div className="flex min-h-0 min-w-0 flex-1 flex-col">{inner}</div>
-}
 
 function LocalReplacementVideoPreview({
   file,
@@ -461,38 +405,22 @@ function AgencyPackageVideoPreview({
   asset,
   label,
   icon,
+  packageVideo,
 }: {
   asset: PackageAsset
   label: string
   icon: ReactNode
+  packageVideo: PackageVideo
 }) {
-  const size = formatPackageFileSize(asset.fileSize ?? undefined)
-
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start gap-3 border-b border-border/80 pb-4">
-        <span className="mt-0.5 inline-flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          {icon}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-base leading-snug font-semibold text-foreground">
-            {label}
-          </p>
-          <p className="mt-1 font-mono text-xs break-all text-muted-foreground">
-            {asset.fileName}
-            {size ? ` · ${size}` : ""}
-          </p>
-        </div>
-        <Badge variant="secondary" className="shrink-0 uppercase">
-          {asset.type.replace("_", " ")}
-        </Badge>
-      </div>
-      <div>
-        <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          Preview
-        </p>
-        <SubmittedVideoPlayerPane asset={asset} />
-      </div>
+      <PackageInlineVideoCard
+        asset={asset}
+        label={label}
+        icon={icon}
+        videoOnly
+        packageVideo={packageVideo}
+      />
     </div>
   )
 }
@@ -1058,7 +986,13 @@ function VideoRevisionPanel({
                       <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                         Current file
                       </p>
-                      <SubmittedVideoPlayerPane compact asset={asset} />
+                      <PackageInlineVideoCard
+                        asset={asset}
+                        label={label}
+                        icon={icon}
+                        videoOnly
+                        packageVideo={video}
+                      />
                     </div>
                     <div className="space-y-2">
                       <p className="text-xs font-semibold tracking-wide text-primary uppercase">
@@ -1085,6 +1019,7 @@ function VideoRevisionPanel({
                     asset={asset}
                     label={label}
                     icon={icon}
+                    packageVideo={video}
                   />
                 )
               ) : (

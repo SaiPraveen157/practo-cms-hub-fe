@@ -21,6 +21,7 @@ import type { UserRole } from "@/types/auth"
 import {
   approveLanguageVideo,
   getLanguagePackage,
+  getLanguageVideoComments,
 } from "@/lib/language-packages-api"
 import {
   getCurrentLanguageVideoAsset,
@@ -28,6 +29,7 @@ import {
   languageVideosSorted,
 } from "@/lib/language-package-video-helpers"
 import type { LanguagePackage } from "@/types/language-package"
+import { LanguageVideoPlayerWithThread } from "@/components/language-packages/language-video-player-with-thread"
 import { TagPillList } from "@/components/packages/tag-pill-list"
 import {
   formatLanguageLabel,
@@ -37,6 +39,10 @@ import {
 } from "@/lib/language-package-ui"
 import { formatPackageDate } from "@/lib/package-ui"
 import { ArrowLeft, ImageIcon, Loader2 } from "lucide-react"
+import {
+  VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+  videoThreadBlocksApprove,
+} from "@/lib/video-comment"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -116,6 +122,16 @@ export default function ContentApproverLanguagePackageDetailPage() {
     setBusy(true)
     const overallComments = approveComment.trim() || undefined
     try {
+      for (const v of targets) {
+        const list = await getLanguageVideoComments(token, v.id)
+        if (videoThreadBlocksApprove(list, v.currentVersion)) {
+          toast.error("Cannot approve yet", {
+            description: VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+          })
+          setBusy(false)
+          return
+        }
+      }
       for (const v of targets) {
         const res = await approveLanguageVideo(token, v.id, {
           overallComments,
@@ -243,13 +259,11 @@ export default function ContentApproverLanguagePackageDetailPage() {
 
                         {va.fileUrl ? (
                           <div className={languageDetailShellClass()}>
-                            <video
-                              key={va.fileUrl}
-                              src={va.fileUrl}
-                              controls
-                              playsInline
-                              preload="metadata"
-                              className={VIDEO_CLASS}
+                            <LanguageVideoPlayerWithThread
+                              languageVideo={video}
+                              fileUrl={va.fileUrl}
+                              mediaKey={va.id}
+                              videoClassName={VIDEO_CLASS}
                             />
                           </div>
                         ) : null}

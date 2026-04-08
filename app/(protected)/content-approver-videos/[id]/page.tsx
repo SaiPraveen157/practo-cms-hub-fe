@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -22,6 +22,7 @@ import type {
   VideoComment,
 } from "@/types/video"
 import { ArrowLeft, CheckCircle, Loader2, XCircle } from "lucide-react"
+import { filterVideoCommentsForAssetVersion } from "@/lib/video-comment"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -94,7 +95,15 @@ export default function ContentApproverVideoDetailPage() {
 
   useEffect(() => {
     if (video) fetchComments()
-  }, [video?.id, fetchComments])
+  }, [video?.id, video?.version, fetchComments])
+
+  const versionScopedComments = useMemo(
+    () =>
+      video
+        ? filterVideoCommentsForAssetVersion(comments, video.version)
+        : [],
+    [comments, video?.version]
+  )
 
   if (!isContentApprover) {
     return (
@@ -179,12 +188,13 @@ export default function ContentApproverVideoDetailPage() {
               <VideoPlayerTimeline
                 src={video.fileUrl!}
                 mediaKey={video.id}
-                comments={comments}
+                comments={versionScopedComments}
                 onAddComment={async ({ content, timestampSeconds }) => {
                   if (!token || !id) return
                   await addVideoComment(token, id, {
                     content,
                     timestampSeconds,
+                    assetVersion: video.version,
                   })
                   await fetchComments()
                   toast.success("Comment added")

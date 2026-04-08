@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -42,6 +42,11 @@ import { VideoTatBar, resolveVideoTat } from "@/components/video-tat-bar"
 import type { UserRole } from "@/types/auth"
 import { ArrowLeft, CheckCircle, Loader2, XCircle } from "lucide-react"
 import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
+import {
+  VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+  filterVideoCommentsForAssetVersion,
+  videoThreadBlocksApprove,
+} from "@/lib/video-comment"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -139,10 +144,27 @@ export default function VideoDetailPage() {
 
   useEffect(() => {
     if (video) fetchComments()
-  }, [video?.id, fetchComments])
+  }, [video?.id, video?.version, fetchComments])
+
+  const versionScopedComments = useMemo(
+    () =>
+      video
+        ? filterVideoCommentsForAssetVersion(comments, video.version)
+        : [],
+    [comments, video?.version]
+  )
+
+  const threadBlocksApprove =
+    video != null && videoThreadBlocksApprove(comments, video.version)
 
   async function handleApprove() {
     if (!token || !id) return
+    if (video && videoThreadBlocksApprove(comments, video.version)) {
+      toast.error("Cannot approve yet", {
+        description: VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+      })
+      return
+    }
     setError(null)
     setApproving(true)
     try {
@@ -298,12 +320,13 @@ export default function VideoDetailPage() {
               <VideoPlayerTimeline
                 src={video.fileUrl!}
                 mediaKey={video.id}
-                comments={comments}
+                comments={versionScopedComments}
                 onAddComment={async ({ content, timestampSeconds }) => {
                   if (!token || !id) return
                   await addVideoComment(token, id, {
                     content,
                     timestampSeconds,
+                    assetVersion: video.version,
                   })
                   await fetchComments()
                   toast.success("Comment added")
@@ -380,12 +403,22 @@ export default function VideoDetailPage() {
           </Card>
         )}
 
+        {showApprove && threadBlocksApprove ? (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
+            <p className="font-medium">Approve disabled</p>
+            <p className="mt-1 text-muted-foreground dark:text-amber-100/90">
+              {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+            </p>
+          </div>
+        ) : null}
+
         {(showApprove || showReject) && (
           <div className="flex flex-wrap gap-2 border-t pt-6">
             {showApprove && (
               <Button
                 className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
                 onClick={() => setApproveDialogOpen(true)}
+                disabled={threadBlocksApprove}
               >
                 <CheckCircle className="size-4" />
                 Approve
@@ -419,6 +452,11 @@ export default function VideoDetailPage() {
                 : "Sends full draft to Content/Brand for final brand decision (Phase 5). Comments optional."}
             </DialogDescription>
           </DialogHeader>
+          {threadBlocksApprove ? (
+            <p className="text-sm text-muted-foreground">
+              {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+            </p>
+          ) : null}
           <div className="space-y-2">
             <Label htmlFor="approve-comments">Comments (optional)</Label>
             <Textarea
@@ -440,7 +478,7 @@ export default function VideoDetailPage() {
             </Button>
             <Button
               onClick={handleApprove}
-              disabled={approving}
+              disabled={approving || threadBlocksApprove}
               className="bg-green-600 text-white hover:bg-green-700"
             >
               {approving && <Loader2 className="mr-2 size-4 animate-spin" />}

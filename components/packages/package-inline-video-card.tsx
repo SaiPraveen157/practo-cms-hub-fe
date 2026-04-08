@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, type ReactNode } from "react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -16,6 +17,12 @@ import type { PackageAsset } from "@/types/package"
 import { parseAgencyDeliverableBlockBody } from "@/lib/package-composed-description"
 import { formatPackageFileSize, thumbnailsForVideo } from "@/lib/package-ui"
 import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
+import { usePackageVideoThreadComments } from "@/hooks/use-package-video-thread-comments"
+import { addPackageVideoComment } from "@/lib/packages-api"
+import { canPostPackageVideoThreadComment } from "@/lib/package-video-thread-comment-permissions"
+import { useAuthStore } from "@/store"
+import type { UserRole } from "@/types/auth"
+import type { PackageVideo } from "@/types/package"
 import { ExternalLink } from "lucide-react"
 
 export function PackageInlineVideoCard({
@@ -29,6 +36,8 @@ export function PackageInlineVideoCard({
   unifiedMetadata = false,
   /** Player only — no header, metadata, thumbnails, or agency copy (e.g. Content Brand videos tab). */
   videoOnly = false,
+  /** When set, loads `/api/packages/videos/:id/comments` for this deliverable and shows timeline UI. */
+  packageVideo = null,
   /** Accepted for API compatibility; unified thumbnails are plain images (no selection UI). */
   selectedThumbnailId: _selectedThumbnailId,
 }: {
@@ -39,10 +48,22 @@ export function PackageInlineVideoCard({
   deliverableBlockBody?: string | null
   unifiedMetadata?: boolean
   videoOnly?: boolean
+  packageVideo?: PackageVideo | null
   selectedThumbnailId?: string | null
 }) {
   void _selectedThumbnailId
   const [videoError, setVideoError] = useState(false)
+  const token = useAuthStore((s) => s.token)
+  const user = useAuthStore((s) => s.user)
+  const role = user?.role as UserRole | undefined
+  const threadVideoId = packageVideo?.id ?? null
+  const { comments, refresh } = usePackageVideoThreadComments(
+    threadVideoId,
+    packageVideo?.currentVersion
+  )
+  const showThread = Boolean(threadVideoId)
+  const allowCommentPost =
+    packageVideo != null && canPostPackageVideoThreadComment(role, packageVideo)
 
   const videoBlock = (
     <>
@@ -51,9 +72,25 @@ export function PackageInlineVideoCard({
           <VideoPlayerTimeline
             src={asset.fileUrl}
             mediaKey={asset.id}
-            showCommentsUi={false}
+            showCommentsUi={showThread}
+            comments={showThread ? comments : undefined}
+            commentFormDisabled={showThread && !allowCommentPost}
             videoClassName="max-h-[min(80vh,40rem)] w-full object-contain"
             onVideoError={() => setVideoError(true)}
+            onAddComment={
+              showThread
+                ? async ({ content, timestampSeconds }) => {
+                    if (!token || !threadVideoId || !packageVideo) return
+                    await addPackageVideoComment(token, threadVideoId, {
+                      content,
+                      timestampSeconds,
+                      assetVersion: packageVideo.currentVersion,
+                    })
+                    await refresh()
+                    toast.success("Comment added")
+                  }
+                : undefined
+            }
           />
         </div>
       ) : (
