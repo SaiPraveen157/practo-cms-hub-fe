@@ -67,6 +67,7 @@ import {
   formatPackageFileSize,
   humanizeItemFeedbackField,
 } from "@/lib/package-ui"
+import { LanguageVideoPlayerWithThread } from "@/components/language-packages/language-video-player-with-thread"
 import { TrackStatusCallout } from "@/components/packages/track-status-callout"
 import {
   TagPillList,
@@ -154,6 +155,24 @@ function getLatestLanguageRejection(
         new Date(b.reviewedAt).getTime() - new Date(a.reviewedAt).getTime()
     )
   return rejects[0] ?? null
+}
+
+/** When Agency is not in resubmit mode — plain-language pipeline position. */
+function agencyLanguageVideoPipelineStatusText(
+  status: LanguageVideo["status"]
+): string {
+  switch (status) {
+    case "BRAND_REVIEW":
+      return "This video is currently with the Content / Brand team for review."
+    case "AWAITING_APPROVER":
+      return "This video is waiting for final approval from the Content Approver (Practo)."
+    case "APPROVED":
+      return "This video has been approved."
+    case "WITHDRAWN":
+      return "This video has been withdrawn."
+    default:
+      return ""
+  }
 }
 
 /** Line items Brand flagged with hasIssue — gates resubmits and drives the feedback list. */
@@ -390,9 +409,13 @@ function LanguageRejectionContextBlock({
 
 function LangSubmittedVideoPlayerPaneInner({
   fileUrl,
+  mediaKey,
+  languageVideo,
   compact,
 }: {
   fileUrl: string
+  mediaKey: string
+  languageVideo: LanguageVideo
   compact?: boolean
 }) {
   const [videoError, setVideoError] = useState(false)
@@ -400,17 +423,13 @@ function LangSubmittedVideoPlayerPaneInner({
   if (fileUrl && !videoError) {
     return (
       <div className={submittedVideoShellClass()}>
-        <video
-          key={fileUrl}
-          src={fileUrl}
-          controls
-          playsInline
-          preload="metadata"
-          className={VIDEO_INLINE_CLASS}
-          onError={() => setVideoError(true)}
-        >
-          Your browser cannot play this video inline.
-        </video>
+        <LanguageVideoPlayerWithThread
+          languageVideo={languageVideo}
+          fileUrl={fileUrl}
+          mediaKey={mediaKey}
+          videoClassName={VIDEO_INLINE_CLASS}
+          onVideoError={() => setVideoError(true)}
+        />
       </div>
     )
   }
@@ -675,6 +694,8 @@ export default function AgencyLanguagePackageDetailPage() {
     [pkg]
   )
 
+  const packageHasVideos = (pkg?.videos?.length ?? 0) > 0
+
   async function savePackageName() {
     if (!token || !pkg || !rename.trim()) return
     setSavingName(true)
@@ -850,7 +871,11 @@ export default function AgencyLanguagePackageDetailPage() {
               </Card>
             ) : null}
 
-            {!agencyLanguagePackageNeedsRevision(pkg) ? (
+            {agencyLanguagePackageNeedsRevision(pkg) ? (
+              <p className="text-sm text-muted-foreground">
+                Finish resubmitting rejected videos below.
+              </p>
+            ) : !packageHasVideos ? (
               <>
                 <Card>
                   <CardHeader>
@@ -952,12 +977,7 @@ export default function AgencyLanguagePackageDetailPage() {
                   </CardContent>
                 </Card>
               </>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Finish resubmitting rejected videos below. Rename and “add
-                another video” return once nothing here needs revision.
-              </p>
-            )}
+            ) : null}
 
             <div className="space-y-4">
               <h2 className="text-lg font-semibold">Videos</h2>
@@ -1221,13 +1241,6 @@ function AgencyLanguageVideoCard({
     }
   }
 
-  const rejects = [...(video.reviews ?? [])]
-    .filter((r) => r.decision === "REJECTED")
-    .sort(
-      (a, b) =>
-        new Date(b.reviewedAt).getTime() - new Date(a.reviewedAt).getTime()
-    )
-
   return (
     <Card className={cn(canResubmit && "overflow-hidden shadow-sm")}>
       <CardHeader
@@ -1281,13 +1294,11 @@ function AgencyLanguageVideoCard({
           <>
             {asset?.fileUrl ? (
               <div className={languageDetailShellClass()}>
-                <video
-                  key={asset.fileUrl}
-                  src={asset.fileUrl}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  className={VIDEO_CLASS}
+                <LanguageVideoPlayerWithThread
+                  languageVideo={video}
+                  fileUrl={asset.fileUrl}
+                  mediaKey={asset.id}
+                  videoClassName={VIDEO_CLASS}
                 />
               </div>
             ) : null}
@@ -1354,14 +1365,12 @@ function AgencyLanguageVideoCard({
               </div>
             ) : null}
 
-            {rejects[0]?.overallComments ? (
-              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
-                <p className="font-medium text-destructive">Latest feedback</p>
-                <p className="mt-1 whitespace-pre-wrap">
-                  {rejects[0].overallComments}
-                </p>
-              </div>
-            ) : null}
+            <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+              <p className="font-medium text-foreground">Where this video is</p>
+              <p className="mt-1 text-muted-foreground">
+                {agencyLanguageVideoPipelineStatusText(video.status)}
+              </p>
+            </div>
           </>
         ) : (
           <>
@@ -1445,6 +1454,8 @@ function AgencyLanguageVideoCard({
                       </p>
                       <LangSubmittedVideoPlayerPaneInner
                         fileUrl={asset.fileUrl}
+                        mediaKey={asset.id}
+                        languageVideo={video}
                         compact
                       />
                       <p className="font-mono text-xs wrap-break-word text-muted-foreground">

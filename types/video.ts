@@ -45,6 +45,15 @@ export interface VideoReview {
   }
 }
 
+/** Shipped on the new row after reject — summary of who rejected the prior version. */
+export interface VideoRejectionComment {
+  reviewerName: string
+  reviewerRole: string
+  comment: string
+  reviewedAt: string
+  fromVideoId: string
+}
+
 export interface Video {
   id: string
   scriptId: string
@@ -52,6 +61,15 @@ export interface Video {
   status: VideoStatus
   stage?: string
   version: number
+  /** Prior cut’s row id — use with GET …/comments?previousVideoId=… and to load the file for review. */
+  previousVideoId?: string | null
+  /** Present when this row was created after a rejection (optional). */
+  rejectionComment?: VideoRejectionComment | null
+  /**
+   * Timestamp thread comments from the rejected cut — embedded on GET /api/videos/:id
+   * (preferred over a separate comments request when present).
+   */
+  previousVideoComments?: VideoComment[] | null
   fileUrl: string | null
   fileName: string | null
   fileType: string | null
@@ -83,6 +101,8 @@ export interface SubmitVideoBody {
   fileName: string
   fileType: string
   fileSize: number
+  /** AGENCY_UPLOAD_PENDING row after reject — attach file to this version (First Line Up + First Cut). */
+  videoId?: string
 }
 
 export interface SubmitVideoResponse {
@@ -127,7 +147,19 @@ export interface VideoComment {
   id: string
   content: string
   createdAt: string
-  /** Playback position in seconds (normalized from API: `timestampSeconds`, `timeStamp`, snake_case variants). */
+  /**
+   * Playback position in seconds for video-file threads. The app only displays
+   * comments with a timestamp; metadata/copy feedback uses other APIs.
+   */
   timestampSeconds?: number | null
+  /**
+   * File/version snapshot this note applies to (First Line Up / First Cut
+   * `Video.version`, package `currentVersion`, language `currentVersion`).
+   * When omitted on legacy rows, the client treats them as version 1 only.
+   * Filled from GET `video.version` via `normalizeVideoComment`.
+   */
+  assetVersion?: number | null
+  /** Some GET responses nest version here; prefer `assetVersion` after normalize. */
+  video?: { version?: number }
   author?: { id: string; firstName: string; lastName: string; role: string }
 }

@@ -38,7 +38,7 @@ export function PackageTatProgress({
     <div className={cn("space-y-2", className)}>
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
         <span className="font-medium text-foreground">
-          SLA / TAT
+          SLA Timer
           {isOverdue && cycleNumber != null && (
             <span className="ml-1 font-normal text-muted-foreground">
               · Cycle {cycleNumber}

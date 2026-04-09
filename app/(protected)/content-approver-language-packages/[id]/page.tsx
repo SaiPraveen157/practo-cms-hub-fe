@@ -28,6 +28,7 @@ import {
   languageVideosSorted,
 } from "@/lib/language-package-video-helpers"
 import type { LanguagePackage } from "@/types/language-package"
+import { VideoPlayerTimeline } from "@/components/VideoPlayerTimeline"
 import { TagPillList } from "@/components/packages/tag-pill-list"
 import {
   formatLanguageLabel,
@@ -96,6 +97,7 @@ export default function ContentApproverLanguagePackageDetailPage() {
     () => sorted.filter((v) => v.status === "AWAITING_APPROVER"),
     [sorted]
   )
+
   const blockingBrandReview = useMemo(
     () => sorted.filter((v) => v.status === "BRAND_REVIEW"),
     [sorted]
@@ -243,20 +245,28 @@ export default function ContentApproverLanguagePackageDetailPage() {
 
                         {va.fileUrl ? (
                           <div className={languageDetailShellClass()}>
-                            <video
-                              key={va.fileUrl}
+                            <VideoPlayerTimeline
                               src={va.fileUrl}
-                              controls
-                              playsInline
-                              preload="metadata"
-                              className={VIDEO_CLASS}
+                              mediaKey={va.id}
+                              comments={[]}
+                              showCommentsUi={false}
+                              videoClassName={VIDEO_CLASS}
                             />
                           </div>
                         ) : null}
 
-                        {va.description ? (
-                          <p className="text-sm">{va.description}</p>
-                        ) : null}
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            Description
+                          </p>
+                          <p className="whitespace-pre-wrap text-sm text-foreground">
+                            {va.description?.trim() ? (
+                              va.description
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </p>
+                        </div>
 
                         {(va.tags?.length ?? 0) > 0 ? (
                           <div className="space-y-1">

@@ -29,9 +29,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useAuthStore } from "@/store"
-import { approvePackageVideo, getPackage } from "@/lib/packages-api"
+import {
+  approvePackageVideo,
+  getPackage,
+  getPackageVideoComments,
+} from "@/lib/packages-api"
 import {
   deliverableLabelsByVideoId,
+  displayThumbnailStatus,
   getCurrentVideoAsset,
   mergeVideoIntoPackage,
   packageReadyForContentApproverFullView,
@@ -60,6 +65,11 @@ import {
   Smartphone,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import {
+  VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+  videoThreadBlocksApprove,
+} from "@/lib/video-comment"
+import { usePackageVideoThreadBlockMap } from "@/hooks/use-package-video-thread-block-map"
 import { toast } from "sonner"
 
 function thumbBadgeClass(s: PackageThumbnailRecord["status"]) {
@@ -125,6 +135,16 @@ export default function ContentApproverPackageDetailPage() {
     [sortedVideos]
   )
 
+  const { threadBlockByVideoId } = usePackageVideoThreadBlockMap(
+    token,
+    awaitingVideos
+  )
+
+  const anyAwaitingThreadBlocked = useMemo(
+    () => awaitingVideos.some((v) => threadBlockByVideoId[v.id]),
+    [awaitingVideos, threadBlockByVideoId]
+  )
+
   useEffect(() => {
     if (!focusVideoId || loading) return
     const t = window.setTimeout(() => {
@@ -141,6 +161,16 @@ export default function ContentApproverPackageDetailPage() {
     const comment =
       approveComments.trim() || "Final approval for English final package."
     try {
+      for (const video of awaitingVideos) {
+        const list = await getPackageVideoComments(token, video.id)
+        if (videoThreadBlocksApprove(list, video.currentVersion)) {
+          toast.error("Cannot approve yet", {
+            description: `${deliverableLabels.get(video.id) ?? "A deliverable"}: ${VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}`,
+          })
+          setBusy(false)
+          return
+        }
+      }
       let updated = pkg
       for (const video of awaitingVideos) {
         const res = await approvePackageVideo(token, video.id, {
@@ -337,10 +367,16 @@ export default function ContentApproverPackageDetailPage() {
                         sign-off. One action records final approval for the
                         whole package (same optional note for each deliverable).
                       </p>
+                      {anyAwaitingThreadBlocked ? (
+                        <p className="text-sm text-amber-700 dark:text-amber-400">
+                          {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                   <Button
                     className="shrink-0 gap-2 bg-green-600 text-white hover:bg-green-700"
+                    disabled={anyAwaitingThreadBlocked}
                     onClick={() => setApproveOpen(true)}
                   >
                     <CheckCircle2 className="size-4" />
@@ -381,7 +417,6 @@ export default function ContentApproverPackageDetailPage() {
                             {" · "}
                             {video.id.slice(0, 8)}…
                           </p>
-                          <PackageVideoTatInline video={video} />
                         </div>
                         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                           <Badge
@@ -515,42 +550,48 @@ export default function ContentApproverPackageDetailPage() {
                           <p className="text-sm text-muted-foreground">—</p>
                         ) : (
                           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                            {thumbs.map((t) => (
-                              <li
-                                key={t.id}
-                                className="overflow-hidden rounded-lg border border-border bg-card"
-                              >
-                                <a
-                                  href={t.fileUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="block aspect-video bg-muted"
+                            {thumbs.map((t) => {
+                              const thumbUiStatus = displayThumbnailStatus(
+                                video,
+                                t.status
+                              )
+                              return (
+                                <li
+                                  key={t.id}
+                                  className="overflow-hidden rounded-lg border border-border bg-card"
                                 >
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img
-                                    src={t.fileUrl}
-                                    alt={t.fileName ?? "Thumbnail"}
-                                    className="size-full object-cover"
-                                  />
-                                </a>
-                                <div className="space-y-1 p-3">
-                                  <Badge
-                                    className={thumbBadgeClass(t.status)}
-                                    variant="secondary"
+                                  <a
+                                    href={t.fileUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="block aspect-video bg-muted"
                                   >
-                                    {t.status}
-                                  </Badge>
-                                  <p className="truncate text-xs text-muted-foreground">
-                                    {t.fileName}
-                                  </p>
-                                  {t.status === "REJECTED" && t.comment && (
-                                    <p className="text-xs text-destructive">
-                                      {t.comment}
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={t.fileUrl}
+                                      alt={t.fileName ?? "Thumbnail"}
+                                      className="size-full object-cover"
+                                    />
+                                  </a>
+                                  <div className="space-y-1 p-3">
+                                    <Badge
+                                      className={thumbBadgeClass(thumbUiStatus)}
+                                      variant="secondary"
+                                    >
+                                      {thumbUiStatus}
+                                    </Badge>
+                                    <p className="truncate text-xs text-muted-foreground">
+                                      {t.fileName}
                                     </p>
-                                  )}
-                                </div>
-                              </li>
-                            ))}
+                                    {t.status === "REJECTED" && t.comment && (
+                                      <p className="text-xs text-destructive">
+                                        {t.comment}
+                                      </p>
+                                    )}
+                                  </div>
+                                </li>
+                              )
+                            })}
                           </ul>
                         )}
                       </div>
@@ -610,7 +651,9 @@ export default function ContentApproverPackageDetailPage() {
             <Button
               className="bg-green-600 text-white hover:bg-green-700"
               onClick={() => void handleApprovePackage()}
-              disabled={busy || awaitingVideos.length === 0}
+              disabled={
+                busy || awaitingVideos.length === 0 || anyAwaitingThreadBlocked
+              }
             >
               {busy ? (
                 <Loader2 className="mr-2 size-4 animate-spin" />

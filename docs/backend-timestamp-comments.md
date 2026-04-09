@@ -24,25 +24,29 @@ export interface VideoComment {
   id: string
   content: string
   createdAt: string
-  /** Playback position in seconds (from API; see normalization below). */
   timestampSeconds?: number | null
+  /** Integer file version (Video.version / package currentVersion / language currentVersion). */
+  assetVersion?: number | null
   author?: { id: string; firstName: string; lastName: string; role: string }
 }
 ```
 
 ### What the frontend sends (`POST` body)
 
-`addVideoComment` sends:
+`addVideoComment` / package / language video comment POST sends:
 
 ```json
 {
   "content": "<required string>",
-  "timestampSeconds": 90.5
+  "timestampSeconds": 90.5,
+  "assetVersion": 2
 }
 ```
 
-- `content` is always sent.
-- `timestampSeconds` is sent **only when** the user posts from the video timeline UI with a playback time (see `VideoPlayerTimeline` on Medical Affairs, Content/Brand, Content Approver, Agency POC video detail pages). General comments without a seek time omit the field.
+- **`timestampSeconds`** — required (finite, ≥ 0).
+- **`assetVersion`** — required integer ≥ 1, matching the current file version for that video row. The UI only shows comments for the active version; approvers cannot approve while the current version still has any timestamped thread comment (client-side gate). The server should persist `assetVersion` and return it on GET so version bumps (Agency re-upload) hide prior-version notes.
+
+Same contract for Phase 6 (`/api/packages/videos/.../comments`) and Phase 7 (`/api/language-packages/videos/.../comments`).
 
 ### What the frontend accepts (`GET` / `POST` response comment objects)
 
@@ -56,7 +60,11 @@ Each comment in `comments[]` (and the `comment` object on create) is normalized 
 | `timeStamp`         | Legacy / alternate camelCase.                      |
 | `time_stamp`        | Snake case variant.                                |
 
-If none are present or the value is not a finite number, the UI treats the comment as **not** tied to a playback time (still shows in the list; no timeline marker).
+If none are present or the value is not a finite number, the client **drops** the comment from the thread list and timeline markers.
+
+**Product:** Video threads are **timestamp-only** — there is no separate “general” video comment path in the UI. Copy, thumbnails, and metadata use **their own** rejection / review flows (e.g. Phase 6 metadata track, thumbnail review), not `VideoComment` without a time.
+
+**File version on GET:** the API may return a nested object, e.g. `"video": { "version": 1 }`. `lib/video-comment.ts` maps that to `assetVersion` (and keeps `video.version` on the normalized object) so `filterVideoCommentsForAssetVersion` matches against `Video.version` / package `currentVersion` / language `currentVersion`. Flat `assetVersion` on the comment is still accepted if present.
 
 ### UI behavior today
 
@@ -94,13 +102,13 @@ These remain separate from timestamped thread comments.
 
 ## 4. Exact backend changes required
 
-The frontend is already wired for **optional, single-point** playback time in seconds. The backend must **persist** and **return** that value so mocks and production match.
+The frontend requires a **single-point** playback time in seconds on create and only displays comments that have a valid timestamp. The backend must **persist** and **return** that value so mocks and production match.
 
 ### 4.1 Database
 
 1. On the table/entity that stores **video comments** (one row per comment, scoped to `videoId` — or equivalent):
    - Add a nullable numeric column, e.g. **`timestamp_seconds`** `DOUBLE PRECISION` / `FLOAT` / `DECIMAL` (DB-specific), **nullable**.
-2. **Semantics:** `NULL` = comment not anchored to the timeline; non-`NULL` = position in the video in **seconds** (same clip as `videoId`; new Agency version = new `videoId` row, so old comments stay tied to old versions if that is your model).
+2. **Semantics:** For new comments, the app always sends a timestamp; **`NULL` may remain for legacy rows** (the client hides those). Non-`NULL` = position in the video in **seconds**.
 
 _(The frontend does **not** currently send or render `startSeconds` / `endSeconds` ranges. Adding ranges would be a separate API + UI contract.)_
 
@@ -108,7 +116,7 @@ _(The frontend does **not** currently send or render `startSeconds` / `endSecond
 
 1. **Accept** JSON:
    - `content` (string, required) — unchanged.
-   - `timestampSeconds` (number, **optional**) — float seconds ≥ 0 preferred; reject negative if you want strictness.
+   - `timestampSeconds` (number, **required**) — float seconds ≥ 0; reject missing or negative values to match the client.
 2. **Persist** `timestampSeconds` into `timestamp_seconds` (or your column name).
 3. **Response** (e.g. 201): return the created comment object including:
    - `id`, `videoId`, `authorId`, `content`, `createdAt`, `author` (as today),
@@ -122,12 +130,12 @@ _(The frontend does **not** currently send or render `startSeconds` / `endSecond
 
 ### 4.4 Validation (recommended)
 
-- If `timestampSeconds` is provided: must be a finite number; optionally `>= 0`; optionally `<= knownDuration` if the server stores duration for that video.
+- `timestampSeconds`: must be present, finite, and `>= 0`; optionally `<= knownDuration` if the server stores duration for that video.
 - `content`: keep existing max length / non-empty rules.
 
 ### 4.5 Postman & docs
 
-- Update the **Add Comment to Video** example body to include optional `timestampSeconds`.
+- Update the **Add Comment to Video** example body to include required `timestampSeconds`.
 - Document the **GET** response shape for each comment including `timestampSeconds`.
 
 ---
@@ -136,8 +144,8 @@ _(The frontend does **not** currently send or render `startSeconds` / `endSecond
 
 | Area                                    | Frontend                                                                                             | Backend must                                                                                                                      |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Video thread `/api/videos/:id/comments` | Sends optional `timestampSeconds` on POST; reads several aliases on GET; shows timeline UI when set. | Store nullable seconds per comment; accept `timestampSeconds` on POST; return it (or an accepted alias) on GET and POST response. |
+| Video thread `/api/videos/:id/comments` | Sends required `timestampSeconds` on POST; filters to timestamped rows client-side on GET; timeline UI only. | Require and store seconds for new comments; return `timestampSeconds` (or an accepted alias) on GET and POST. |
 | Script `/api/scripts/:id/comments`      | Document anchors only.                                                                               | No change for video timestamps.                                                                                                   |
 | Approve/reject `comments`               | Plain string on review.                                                                              | Unrelated to thread timestamps.                                                                                                   |
 
-**Bottom line:** the gap is **only** on the server: **persist and echo `timestampSeconds`** (or an alias the client already maps) on the video comment entity for **GET** and **POST** `/api/videos/:videoId/comments`. No frontend change is required for the minimal single-point feature beyond what is already in the repo.
+**Bottom line:** the server should **require `timestampSeconds` on POST** for video thread comments (Phases 4–7), **persist** it, and **return** it on GET/POST. Legacy rows without a timestamp are ignored in the UI until backfilled or migrated.

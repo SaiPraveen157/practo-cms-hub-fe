@@ -7,7 +7,13 @@ import {
   normalizeLanguagePackage,
   normalizeLanguageVideo,
 } from "@/lib/language-package-response-normalize"
+import {
+  ensureVideoCommentAssetVersion,
+  filterVideoCommentsWithTimestamp,
+  normalizeVideoComment,
+} from "@/lib/video-comment"
 import { uploadFileToPresignedUrl } from "@/lib/videos-api"
+import type { VideoComment } from "@/types/video"
 import type {
   ApproveLanguageVideoBody,
   CreateLanguagePackageBody,
@@ -397,6 +403,70 @@ export async function withdrawLanguageVideo(
     success: res.success,
     message: res.message,
     data: normalizeLanguageVideo(raw),
+  }
+}
+
+function extractLangCommentsArray(res: Record<string, unknown>): unknown[] {
+  const top = res.comments
+  if (Array.isArray(top)) return top
+  const inner = unwrapData<Record<string, unknown>>(res)
+  if (inner && Array.isArray(inner.comments)) return inner.comments
+  return []
+}
+
+/** GET /api/language-packages/videos/:videoId/comments */
+export async function getLanguageVideoComments(
+  token: string | null,
+  videoId: string
+): Promise<VideoComment[]> {
+  checkToken(token)
+  const res = await apiRequest<Record<string, unknown>>(
+    `/api/language-packages/videos/${videoId}/comments`,
+    { token }
+  )
+  return filterVideoCommentsWithTimestamp(
+    extractLangCommentsArray(res).map((c) =>
+      normalizeVideoComment(c as Record<string, unknown>)
+    )
+  )
+}
+
+/** POST /api/language-packages/videos/:videoId/comments — timestamp + `currentVersion`. */
+export async function addLanguageVideoComment(
+  token: string | null,
+  videoId: string,
+  body: { content: string; timestampSeconds: number; assetVersion: number }
+): Promise<{ success: boolean; comment: VideoComment }> {
+  checkToken(token)
+  const content = body.content.trim()
+  if (!content) throw new Error("Comment cannot be empty")
+  const ts = body.timestampSeconds
+  if (!Number.isFinite(ts) || ts < 0) {
+    throw new Error(
+      "Video comments must include a valid timestamp (scrub the timeline first)."
+    )
+  }
+  const av = body.assetVersion
+  if (!Number.isFinite(av) || av < 1) {
+    throw new Error("Video comments must include a valid asset version (≥ 1).")
+  }
+  const payload = {
+    content,
+    timestampSeconds: ts,
+    assetVersion: Math.trunc(av),
+  }
+  const res = await apiRequest<Record<string, unknown>>(
+    `/api/language-packages/videos/${videoId}/comments`,
+    { method: "POST", body: payload, token }
+  )
+  const inner = unwrapData<Record<string, unknown>>(res) ?? res
+  const raw = (inner.comment ?? res.comment) as Record<string, unknown> | undefined
+  return {
+    success: Boolean(res.success ?? true),
+    comment: ensureVideoCommentAssetVersion(
+      normalizeVideoComment(raw ?? {}),
+      payload.assetVersion
+    ),
   }
 }
 

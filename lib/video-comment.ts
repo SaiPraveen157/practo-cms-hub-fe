@@ -3,6 +3,79 @@ import type { VideoComment } from "@/types/video"
 /**
  * Parse timestamp from API comment payloads (camelCase or snake_case).
  */
+/** Integer asset / video version the comment belongs to (GET often nests under `video.version`). */
+export function parseVideoCommentAssetVersion(
+  raw: Record<string, unknown>
+): number | null {
+  const videoNest = raw.video
+  if (videoNest && typeof videoNest === "object") {
+    const vo = videoNest as Record<string, unknown>
+    const ver = vo.version ?? vo.video_version
+    if (ver != null && ver !== "") {
+      const n = typeof ver === "number" ? ver : Number(ver)
+      if (Number.isFinite(n) && n >= 1) return Math.trunc(n)
+    }
+  }
+  /** Phase 6/7 package & language rows often nest the deliverable on `packageVideo` / `languageVideo`. */
+  const packageVideoNest = raw.packageVideo ?? raw.package_video
+  if (packageVideoNest && typeof packageVideoNest === "object") {
+    const pv = packageVideoNest as Record<string, unknown>
+    const cv =
+      pv.currentVersion ?? pv.current_version ?? pv.version ?? pv.video_version
+    if (cv != null && cv !== "") {
+      const n = typeof cv === "number" ? cv : Number(cv)
+      if (Number.isFinite(n) && n >= 1) return Math.trunc(n)
+    }
+  }
+  const langNest = raw.languageVideo ?? raw.language_video
+  if (langNest && typeof langNest === "object") {
+    const lv = langNest as Record<string, unknown>
+    const cv =
+      lv.currentVersion ?? lv.current_version ?? lv.version ?? lv.video_version
+    if (cv != null && cv !== "") {
+      const n = typeof cv === "number" ? cv : Number(cv)
+      if (Number.isFinite(n) && n >= 1) return Math.trunc(n)
+    }
+  }
+  const candidates = [
+    raw.assetVersion,
+    raw.asset_version,
+    raw.videoVersion,
+    raw.video_version,
+    raw.packageAssetVersion,
+    raw.package_asset_version,
+    raw.currentVersion,
+    raw.current_version,
+  ]
+  for (const v of candidates) {
+    if (v == null || v === "") continue
+    const n = typeof v === "number" ? v : Number(v)
+    if (Number.isFinite(n) && n >= 1) return Math.trunc(n)
+  }
+  const only = raw.version
+  if (only != null && only !== "") {
+    const n = typeof only === "number" ? only : Number(only)
+    if (Number.isFinite(n) && n >= 1) return Math.trunc(n)
+  }
+  return null
+}
+
+/** After POST, fill `assetVersion` when the server omits it but the client sent one (Phase 6/7). */
+export function ensureVideoCommentAssetVersion(
+  comment: VideoComment,
+  fallbackVersion: number | null | undefined
+): VideoComment {
+  if (
+    fallbackVersion == null ||
+    !Number.isFinite(fallbackVersion) ||
+    fallbackVersion < 1
+  ) {
+    return comment
+  }
+  if (getVideoCommentAssetVersion(comment) != null) return comment
+  return { ...comment, assetVersion: Math.trunc(fallbackVersion) }
+}
+
 export function parseVideoCommentTimestampSeconds(
   raw: Record<string, unknown>
 ): number | null {
@@ -17,16 +90,67 @@ export function parseVideoCommentTimestampSeconds(
   return Number.isFinite(n) ? n : null
 }
 
+function normalizeCommentAuthor(
+  raw: Record<string, unknown>
+): VideoComment["author"] {
+  const a = raw.author
+  if (a && typeof a === "object") {
+    const o = a as Record<string, unknown>
+    return {
+      id: String(o.id ?? ""),
+      firstName: String(o.firstName ?? o.first_name ?? ""),
+      lastName: String(o.lastName ?? o.last_name ?? ""),
+      role: String(o.role ?? ""),
+    }
+  }
+  return undefined
+}
+
 /** Normalize GET/POST comment JSON to `VideoComment` with `timestampSeconds` set. */
 export function normalizeVideoComment(
   raw: Record<string, unknown>
 ): VideoComment {
+  const assetVersion = parseVideoCommentAssetVersion(raw)
+  const videoNest = raw.video
+  let nestedVersion: number | undefined
+  if (videoNest && typeof videoNest === "object") {
+    const vo = videoNest as Record<string, unknown>
+    const vv = vo.version ?? vo.video_version
+    if (vv != null && vv !== "") {
+      const n = typeof vv === "number" ? vv : Number(vv)
+      if (Number.isFinite(n) && n >= 1) nestedVersion = Math.trunc(n)
+    }
+  }
+  if (nestedVersion == null) {
+    const pkgOrLang =
+      raw.packageVideo ??
+      raw.package_video ??
+      raw.languageVideo ??
+      raw.language_video
+    if (pkgOrLang && typeof pkgOrLang === "object") {
+      const pv = pkgOrLang as Record<string, unknown>
+      const cv =
+        pv.currentVersion ??
+        pv.current_version ??
+        pv.version ??
+        pv.video_version
+      if (cv != null && cv !== "") {
+        const n = typeof cv === "number" ? cv : Number(cv)
+        if (Number.isFinite(n) && n >= 1) nestedVersion = Math.trunc(n)
+      }
+    }
+  }
+  const versionForVideoProp = nestedVersion ?? assetVersion ?? undefined
   return {
     id: String(raw.id ?? ""),
     content: String(raw.content ?? ""),
     createdAt: String(raw.createdAt ?? raw.created_at ?? ""),
     timestampSeconds: parseVideoCommentTimestampSeconds(raw),
-    author: raw.author as VideoComment["author"],
+    assetVersion,
+    ...(versionForVideoProp != null
+      ? { video: { version: versionForVideoProp } }
+      : {}),
+    author: normalizeCommentAuthor(raw),
   }
 }
 
@@ -39,4 +163,57 @@ export function getVideoCommentTimestampSeconds(
   return parseVideoCommentTimestampSeconds(
     c as unknown as Record<string, unknown>
   )
+}
+
+export function getVideoCommentAssetVersion(c: VideoComment): number | null {
+  const direct = c.assetVersion
+  if (direct != null && Number.isFinite(direct) && direct >= 1) {
+    return Math.trunc(direct)
+  }
+  const nv = c.video?.version
+  if (nv != null && Number.isFinite(nv) && nv >= 1) return Math.trunc(nv)
+  return parseVideoCommentAssetVersion(c as unknown as Record<string, unknown>)
+}
+
+/**
+ * Keep comments that belong to the current file version. Legacy comments with
+ * no `assetVersion` are shown only for version 1 so a new version (v2+) starts clean.
+ */
+export function filterVideoCommentsForAssetVersion(
+  comments: VideoComment[],
+  currentVersion: number
+): VideoComment[] {
+  if (!Number.isFinite(currentVersion) || currentVersion < 1) return comments
+  return comments.filter((c) => {
+    const v = getVideoCommentAssetVersion(c)
+    if (v == null) return currentVersion === 1
+    return v === currentVersion
+  })
+}
+
+/**
+ * True if any **timestamp** thread comment applies to this version (blocks approve).
+ * Phase 6 / 7 package & language video threads are timeline-only — entries without a time are ignored.
+ */
+export function videoThreadBlocksApprove(
+  comments: VideoComment[],
+  currentVersion: number
+): boolean {
+  const scoped = filterVideoCommentsForAssetVersion(comments, currentVersion)
+  return filterVideoCommentsWithTimestamp(scoped).length > 0
+}
+
+/** Shown near disabled Approve when `videoThreadBlocksApprove` is true. */
+export const VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION =
+  "Approve is disabled while this version has open timestamp comments on the video. Resolve or clear them first."
+
+/**
+ * Video file threads (Phases 4–5, 6, 7): **timestamp-only** by product — no separate
+ * “general” video comments in the UI. Title/description/thumbnails use metadata
+ * rejection / review flows, not this list.
+ */
+export function filterVideoCommentsWithTimestamp(
+  comments: VideoComment[]
+): VideoComment[] {
+  return comments.filter((c) => getVideoCommentTimestampSeconds(c) != null)
 }

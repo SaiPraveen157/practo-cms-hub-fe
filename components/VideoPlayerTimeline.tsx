@@ -8,7 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { getVideoCommentTimestampSeconds } from "@/lib/video-comment"
+import {
+  filterVideoCommentsWithTimestamp,
+  getVideoCommentTimestampSeconds,
+} from "@/lib/video-comment"
 import { formatVideoTimestamp } from "@/lib/video-timestamp"
 import type { VideoComment } from "@/types/video"
 import { VideoCommentTimestampPill } from "@/components/video-comment-timestamp-pill"
@@ -29,7 +32,7 @@ export type VideoPlayerTimelineProps = {
   poster?: string
   /** Remount video when URL changes (e.g. package asset id + file URL). Defaults to `src`. */
   mediaKey?: string
-  /** Comments to show in the list and as markers on the timeline (use `timestampSeconds` when present). */
+  /** Timestamp-only video thread comments; entries without `timestampSeconds` are not shown. */
   comments?: VideoComment[]
   /** Fired when the user picks a time on the timeline (seeks the player). */
   onTimestampSelect?: (seconds: number) => void
@@ -264,6 +267,18 @@ export default function VideoPlayerTimeline({
     let rafId = 0
     const tick = () => {
       syncProgressDisplay()
+      const el = videoRef.current
+      // Keep comment timestamp pill in sync with playhead while playing (not while scrub-dragging).
+      if (
+        el &&
+        showCommentsUi &&
+        onAddComment &&
+        !commentFormDisabled &&
+        !isDraggingRef.current &&
+        !el.paused
+      ) {
+        setSelectedTimestampSeconds(el.currentTime)
+      }
       const now = performance.now()
       if (now - ariaThrottleRef.current > 200) {
         ariaThrottleRef.current = now
@@ -280,7 +295,15 @@ export default function VideoPlayerTimeline({
     ariaThrottleRef.current = performance.now()
     rafId = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafId)
-  }, [playing, isDragging, effectiveDuration, syncProgressDisplay])
+  }, [
+    playing,
+    isDragging,
+    effectiveDuration,
+    syncProgressDisplay,
+    showCommentsUi,
+    onAddComment,
+    commentFormDisabled,
+  ])
 
   React.useEffect(() => {
     const el = videoRef.current
@@ -424,10 +447,10 @@ export default function VideoPlayerTimeline({
   )
 
   const sortedForList = React.useMemo(() => {
-    const list = [...comments]
+    const list = filterVideoCommentsWithTimestamp([...comments])
     list.sort((a, b) => {
-      const ta = getVideoCommentTimestampSeconds(a) ?? Infinity
-      const tb = getVideoCommentTimestampSeconds(b) ?? Infinity
+      const ta = getVideoCommentTimestampSeconds(a)!
+      const tb = getVideoCommentTimestampSeconds(b)!
       if (ta !== tb) return ta - tb
       return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     })
@@ -632,8 +655,9 @@ export default function VideoPlayerTimeline({
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                Scrub or click the video timeline above — the timestamp pill
-                updates with your playhead and is saved with this comment.
+                While the video plays, the timestamp matches the playhead. Scrub
+                the timeline to jump; the pill updates with playback and is
+                saved with this comment.
               </p>
             </div>
             <Button
@@ -654,63 +678,39 @@ export default function VideoPlayerTimeline({
         <Card size="sm">
           <CardHeader className="border-b border-border pb-3">
             <CardTitle className="text-base">
-              Comments ({comments.length})
+              Timestamp comments ({sortedForList.length})
             </CardTitle>
           </CardHeader>
           <CardContent className="max-h-72 overflow-y-auto pt-4">
             {sortedForList.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No comments yet.</p>
+              <p className="text-sm text-muted-foreground">
+                No timestamped comments yet. Scrub the timeline, then add a
+                comment at that moment.
+              </p>
             ) : (
               <ul className="space-y-3">
                 {sortedForList.map((c) => {
-                  const ts = getVideoCommentTimestampSeconds(c)
-                  const hasTs = ts != null
+                  const ts = getVideoCommentTimestampSeconds(c)!
                   return (
                     <li key={c.id}>
-                      <div
-                        className={cn(
-                          "flex gap-3 rounded-lg border border-border bg-card px-3 py-2 text-left text-sm transition-colors",
-                          hasTs && "border-l-4 border-l-amber-500"
-                        )}
-                      >
+                      <div className="flex gap-3 rounded-lg border border-l-4 border-border border-l-amber-500 bg-card px-3 py-2 text-left text-sm transition-colors">
                         <div className="shrink-0 pt-0.5">
-                          {hasTs && ts != null ? (
-                            <VideoCommentTimestampPill
-                              seconds={ts}
-                              onClick={() => seekTo(ts)}
-                            />
-                          ) : (
-                            <VideoCommentTimestampPill
-                              seconds={null}
-                              emptyLabel="00:00"
-                            />
-                          )}
+                          <VideoCommentTimestampPill
+                            seconds={ts}
+                            onClick={() => seekTo(ts)}
+                          />
                         </div>
                         <div
-                          className={cn(
-                            "min-w-0 flex-1",
-                            hasTs &&
-                              "cursor-pointer rounded-md hover:bg-muted/50"
-                          )}
-                          onClick={
-                            hasTs && ts != null
-                              ? () => {
-                                  seekTo(ts)
-                                }
-                              : undefined
-                          }
-                          onKeyDown={
-                            hasTs && ts != null
-                              ? (e) => {
-                                  if (e.key === "Enter" || e.key === " ") {
-                                    e.preventDefault()
-                                    seekTo(ts)
-                                  }
-                                }
-                              : undefined
-                          }
-                          role={hasTs ? "button" : undefined}
-                          tabIndex={hasTs ? 0 : undefined}
+                          className="min-w-0 flex-1 cursor-pointer rounded-md hover:bg-muted/50"
+                          onClick={() => seekTo(ts)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault()
+                              seekTo(ts)
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
                         >
                           {c.author ? (
                             <div className="text-xs text-muted-foreground">

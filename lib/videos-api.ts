@@ -4,10 +4,14 @@
  */
 
 import { apiRequest } from "@/lib/api"
-import { normalizeVideoComment } from "@/lib/video-comment"
+import {
+  filterVideoCommentsWithTimestamp,
+  normalizeVideoComment,
+} from "@/lib/video-comment"
 import type {
   Video,
   VideoPhase,
+  VideoStatus,
   UploadUrlResponse,
   SubmitVideoBody,
   SubmitVideoResponse,
@@ -18,8 +22,78 @@ import type {
   VideoComment,
 } from "@/types/video"
 
+const VIDEO_STATUSES: VideoStatus[] = [
+  "AGENCY_UPLOAD_PENDING",
+  "MEDICAL_REVIEW",
+  "CONTENT_BRAND_REVIEW",
+  "APPROVED",
+]
+
+/** Map API casing/aliases to canonical `VideoStatus` so UI gates (e.g. Agency upload) match. */
+function normalizeVideoStatus(raw: unknown): VideoStatus | undefined {
+  if (typeof raw !== "string") return undefined
+  const s = raw.trim().toUpperCase().replace(/-/g, "_")
+  return VIDEO_STATUSES.includes(s as VideoStatus) ? (s as VideoStatus) : undefined
+}
+
 function checkToken(token: string | null): asserts token is string {
   if (!token) throw new Error("Not authenticated")
+}
+
+/** Backend may return `video` at top level or under `data`. */
+function extractVideoFromResponse(
+  data: Record<string, unknown>
+): Video | undefined {
+  const top = data.video
+  if (top && typeof top === "object") return top as Video
+  const nest = data.data
+  if (nest && typeof nest === "object") {
+    const inner = nest as Record<string, unknown>
+    const v = inner.video
+    if (v && typeof v === "object") return v as Video
+  }
+  return undefined
+}
+
+function extractCommentsArrayFromResponse(
+  data: Record<string, unknown>
+): unknown[] {
+  const top = data.comments
+  if (Array.isArray(top)) return top
+  const nest = data.data
+  if (nest && typeof nest === "object") {
+    const inner = (nest as { comments?: unknown }).comments
+    if (Array.isArray(inner)) return inner
+  }
+  return []
+}
+
+/**
+ * When API omits `fileCategory`, infer from `fileType` so the player renders.
+ * Normalizes `status` casing so `AGENCY_UPLOAD_PENDING` checks work across backends.
+ */
+export function coerceVideoFileCategory(v: Video): Video {
+  const statusNorm = normalizeVideoStatus(v.status)
+  const base: Video = statusNorm ? { ...v, status: statusNorm } : v
+  const ft = base.fileType ?? ""
+  if (
+    base.fileCategory === "video" ||
+    base.fileCategory === "pdf" ||
+    base.fileCategory === "image" ||
+    base.fileCategory === "other"
+  ) {
+    return base
+  }
+  if (base.fileUrl && ft.startsWith("video/")) {
+    return { ...base, fileCategory: "video" }
+  }
+  if (base.fileUrl && ft.startsWith("image/")) {
+    return { ...base, fileCategory: "image" }
+  }
+  if (base.fileUrl && ft === "application/pdf") {
+    return { ...base, fileCategory: "pdf" }
+  }
+  return base
 }
 
 /** Step A: POST /api/videos/upload-url — get presigned S3 URL. */
@@ -71,7 +145,14 @@ export async function getVideoQueue(
   token: string | null
 ): Promise<VideoQueueResponse> {
   checkToken(token)
-  return apiRequest<VideoQueueResponse>("/api/videos/queue", { token })
+  const res = await apiRequest<VideoQueueResponse>("/api/videos/queue", {
+    token,
+  })
+  return {
+    ...res,
+    available: (res.available ?? []).map(coerceVideoFileCategory),
+    myReviews: (res.myReviews ?? []).map(coerceVideoFileCategory),
+  }
 }
 
 /** GET /api/videos/stats — dashboard counts. */
@@ -88,12 +169,13 @@ export async function getVideo(
   videoId: string
 ): Promise<{ video: Video }> {
   checkToken(token)
-  const data = await apiRequest<{ video?: Video } & Record<string, unknown>>(
+  const data = await apiRequest<Record<string, unknown>>(
     `/api/videos/${videoId}`,
     { token }
   )
-  if (data.video) return { video: data.video }
-  throw new Error("Video not found")
+  const video = extractVideoFromResponse(data)
+  if (!video) throw new Error("Video not found")
+  return { video: coerceVideoFileCategory(video) }
 }
 
 /**
@@ -155,28 +237,46 @@ export async function rejectVideo(
 /** GET /api/videos/:id/comments. */
 export async function getVideoComments(
   token: string | null,
-  videoId: string
+  videoId: string,
+  options?: { previousVideoId?: string | null }
 ): Promise<VideoComment[]> {
   checkToken(token)
-  const data = await apiRequest<
-    { comments?: Record<string, unknown>[] } & Record<string, unknown>
-  >(`/api/videos/${videoId}/comments`, { token })
-  const list = data.comments ?? []
-  return list.map((c) => normalizeVideoComment(c as Record<string, unknown>))
+  const params = new URLSearchParams()
+  if (options?.previousVideoId) {
+    params.set("previousVideoId", options.previousVideoId)
+  }
+  const qs = params.toString()
+  const path = `/api/videos/${videoId}/comments${qs ? `?${qs}` : ""}`
+  const data = await apiRequest<Record<string, unknown>>(path, { token })
+  const list = extractCommentsArrayFromResponse(data)
+  return filterVideoCommentsWithTimestamp(
+    list.map((c) => normalizeVideoComment(c as Record<string, unknown>))
+  )
 }
 
-/** POST /api/videos/:id/comments — optional timestampSeconds for timeline-scoped feedback. */
+/** POST /api/videos/:id/comments — timestamp + asset version (matches `Video.version`). */
 export async function addVideoComment(
   token: string | null,
   videoId: string,
-  body: { content: string; timestampSeconds?: number | null }
+  body: { content: string; timestampSeconds: number; assetVersion: number }
 ): Promise<{ success: boolean; comment: VideoComment }> {
   checkToken(token)
-  const payload: { content: string; timestampSeconds?: number } = {
-    content: body.content,
+  const trimmed = body.content.trim()
+  if (!trimmed) throw new Error("Comment cannot be empty")
+  const ts = body.timestampSeconds
+  if (!Number.isFinite(ts) || ts < 0) {
+    throw new Error(
+      "Video comments must include a valid timestamp (scrub the timeline first)."
+    )
   }
-  if (body.timestampSeconds != null && Number.isFinite(body.timestampSeconds)) {
-    payload.timestampSeconds = body.timestampSeconds
+  const av = body.assetVersion
+  if (!Number.isFinite(av) || av < 1) {
+    throw new Error("Video comments must include a valid asset version (≥ 1).")
+  }
+  const payload = {
+    content: trimmed,
+    timestampSeconds: ts,
+    assetVersion: Math.trunc(av),
   }
   const res = await apiRequest<{
     success: boolean
@@ -197,7 +297,8 @@ export async function uploadVideoFlow(
   token: string | null,
   file: File,
   scriptId: string,
-  phase: VideoPhase
+  phase: VideoPhase,
+  options?: { videoId?: string }
 ): Promise<Video> {
   const fileName = file.name
   const fileType = file.type || "application/octet-stream"
@@ -209,14 +310,18 @@ export async function uploadVideoFlow(
     fileSize,
   })
   await uploadFileToPresignedUrl(uploadUrl, file)
-  const res = await submitVideo(token, {
+  const body: SubmitVideoBody = {
     scriptId,
     phase,
     fileUrl,
     fileName,
     fileType,
     fileSize,
-  })
+  }
+  if (options?.videoId) {
+    body.videoId = options.videoId
+  }
+  const res = await submitVideo(token, body)
   if (!res.video) throw new Error("No video in response")
   return res.video
 }
