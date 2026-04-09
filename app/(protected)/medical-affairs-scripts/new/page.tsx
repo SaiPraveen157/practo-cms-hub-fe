@@ -18,6 +18,7 @@ import { ScriptRichTextEditor } from "@/components/script-rich-text-editor"
 import { toast } from "sonner"
 import { useAuthStore } from "@/store"
 import { createScript } from "@/lib/scripts-api"
+import { SCRIPT_TITLE_REQUIRED_MESSAGE } from "@/lib/script-title"
 import { ArrowLeft, Loader2 } from "lucide-react"
 
 export default function NewMedicalAffairsScriptPage() {
@@ -39,6 +40,10 @@ export default function NewMedicalAffairsScriptPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!title.trim()) {
+      setError(SCRIPT_TITLE_REQUIRED_MESSAGE)
+      return
+    }
     if (isEmptyHtml(content)) {
       setError("Script content is required.")
       return
@@ -48,7 +53,7 @@ export default function NewMedicalAffairsScriptPage() {
     setLoading(true)
     try {
       const res = await createScript(token, {
-        title: title.trim() || undefined,
+        title: title.trim(),
         insight: insight.trim() || undefined,
         content,
       })

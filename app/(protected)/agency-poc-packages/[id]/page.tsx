@@ -33,6 +33,7 @@ import {
   uploadPackageVideoFile,
   withdrawPackageVideo,
 } from "@/lib/packages-api"
+import { DELIVERABLE_VIDEO_INPUT_ACCEPT } from "@/lib/video-file-validation"
 import type {
   FinalPackage,
   PackageAsset,
@@ -335,7 +336,7 @@ function VideoReplacementUploadCell({
         ref={inputRef}
         id={id}
         type="file"
-        accept="video/*"
+        accept={DELIVERABLE_VIDEO_INPUT_ACCEPT}
         className="hidden"
         aria-label="Choose replacement video file"
         onChange={(e) => {

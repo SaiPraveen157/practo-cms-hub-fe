@@ -368,7 +368,8 @@ export default function AgencyNewLanguagePackagePage() {
       )
       router.push(`/agency-poc-language-packages/${packageId}`)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Submit failed")
+      const message = err instanceof Error ? err.message : "Submit failed"
+      toast.error("Could not create language package", { description: message })
     } finally {
       setSubmitting(false)
     }

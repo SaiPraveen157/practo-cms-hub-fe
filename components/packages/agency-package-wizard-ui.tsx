@@ -49,6 +49,7 @@ import {
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { DELIVERABLE_VIDEO_INPUT_ACCEPT } from "@/lib/video-file-validation"
 
 export const WIZARD_COLUMN =
   "mx-auto w-full max-w-3xl px-4 sm:px-6 lg:px-8"
@@ -788,7 +789,7 @@ export function VideoDeliverableCard({
           <MediaDropZone
             id={dropId}
             compactLabel="Drop video or browse"
-            accept="video/*"
+            accept={DELIVERABLE_VIDEO_INPUT_ACCEPT}
             file={file}
             onFile={onFile}
             emphasized={emphasized}

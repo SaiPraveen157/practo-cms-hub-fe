@@ -37,6 +37,7 @@ import {
   uploadLanguagePackageVideoFile,
   withdrawLanguageVideo,
 } from "@/lib/language-packages-api"
+import { DELIVERABLE_VIDEO_INPUT_ACCEPT } from "@/lib/video-file-validation"
 import {
   agencyLanguagePackageNeedsRevision,
   agencyLanguageVideoNeedsRevision,
@@ -578,7 +579,7 @@ function VideoReplacementUploadCell({
         ref={inputRef}
         id={id}
         type="file"
-        accept="video/*"
+        accept={DELIVERABLE_VIDEO_INPUT_ACCEPT}
         className="hidden"
         aria-label="Choose replacement video file"
         onChange={(e) => {
@@ -920,7 +921,7 @@ export default function AgencyLanguagePackageDetailPage() {
                       <Label>Video file</Label>
                       <Input
                         type="file"
-                        accept="video/*"
+                        accept={DELIVERABLE_VIDEO_INPUT_ACCEPT}
                         onChange={(e) =>
                           setAddVideoFile(e.target.files?.[0] ?? null)
                         }

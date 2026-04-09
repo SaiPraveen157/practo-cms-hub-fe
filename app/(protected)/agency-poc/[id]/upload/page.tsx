@@ -22,6 +22,10 @@ import {
   submitVideo,
   getVideoQueue,
 } from "@/lib/videos-api"
+import {
+  assertDeliverableVideoFileIfVideo,
+  FIRST_LINE_UP_MIXED_INPUT_ACCEPT,
+} from "@/lib/video-file-validation"
 import type { Script } from "@/types/script"
 import type { Video, VideoPhase } from "@/types/video"
 import { ScriptDetailSkeleton } from "@/components/loading/script-detail-skeleton"
@@ -148,6 +152,14 @@ export default function AgencyPocUploadPage() {
   async function handleUploadFile() {
     if (!token || !script || !file) return
     setError(null)
+    try {
+      assertDeliverableVideoFileIfVideo(file)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Invalid file"
+      setError(msg)
+      toast.error("Invalid file", { description: msg })
+      return
+    }
     setUploading(true)
     setUploadStep("url")
     try {
@@ -363,7 +375,7 @@ export default function AgencyPocUploadPage() {
             <div className="space-y-2">
               <input
                 type="file"
-                accept="video/mp4,video/quicktime,video/x-msvideo,application/pdf,image/jpeg,image/png"
+                accept={FIRST_LINE_UP_MIXED_INPUT_ACCEPT}
                 className="w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-foreground file:hover:bg-primary/90"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 disabled={uploading}
