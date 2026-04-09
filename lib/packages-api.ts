@@ -21,6 +21,7 @@ import type {
   FinalPackage,
   PackageMyReviewsResponse,
   PackageQueueResponse,
+  PackageSpecialtyOption,
   PackageStatsResponse,
   PackageUploadUrlAssetType,
   PackageUploadUrlResponse,
@@ -290,6 +291,46 @@ export async function reviewPackageThumbnail(
   }>(`/api/packages/thumbnails/${thumbnailId}/review`, {
     method: "PATCH",
     body,
+    token,
+  })
+}
+
+/** GET /api/packages/specialties — populate specialty dropdown (Phase 6 + 7). */
+export async function getPackageSpecialties(
+  token: string | null
+): Promise<PackageSpecialtyOption[]> {
+  checkToken(token)
+  const data = await apiRequest<{
+    success?: boolean
+    specialties?: unknown
+  }>("/api/packages/specialties", { token })
+  const raw = data.specialties
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((row) => {
+      if (!row || typeof row !== "object") return null
+      const o = row as Record<string, unknown>
+      const value = String(o.value ?? "").trim()
+      const label = String(o.label ?? o.value ?? "").trim()
+      if (!value) return null
+      return { value, label: label || value }
+    })
+    .filter(Boolean) as PackageSpecialtyOption[]
+}
+
+/** DELETE /api/packages/thumbnails/:id — Agency: remove one rejected thumbnail. */
+export async function deletePackageThumbnail(
+  token: string | null,
+  thumbnailId: string
+): Promise<{
+  success?: boolean
+  message?: string
+  id?: string
+  deleted?: boolean
+}> {
+  checkToken(token)
+  return apiRequest(`/api/packages/thumbnails/${thumbnailId}`, {
+    method: "DELETE",
     token,
   })
 }

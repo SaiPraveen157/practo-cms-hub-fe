@@ -43,11 +43,13 @@ import {
 import {
   addPackageVideo,
   getPackageByScriptId,
+  getPackageSpecialties,
   submitPackage,
   uploadPackageThumbnailFile,
   uploadPackageVideoFile,
 } from "@/lib/packages-api"
-import type { FinalPackage } from "@/types/package"
+import { optionalDoctorSpecialtyPayload } from "@/lib/package-specialty-label"
+import type { FinalPackage, PackageSpecialtyOption } from "@/types/package"
 import type { Script } from "@/types/script"
 import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import {
@@ -142,6 +144,7 @@ export default function AgencySubmitPackagePage() {
   )
   /** POST /api/packages `name` for new packages only (not used when adding to existing). */
   const [packageName, setPackageName] = useState("")
+  const [specialties, setSpecialties] = useState<PackageSpecialtyOption[]>([])
 
   const role = user?.role as UserRole | undefined
   const isAgency = role === "AGENCY_POC" || role === "SUPER_ADMIN"
@@ -237,6 +240,22 @@ export default function AgencySubmitPackagePage() {
   }, [token, isAgency, scriptId, runGate])
 
   useEffect(() => {
+    if (!token || !isAgency) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const list = await getPackageSpecialties(token)
+        if (!cancelled) setSpecialties(list)
+      } catch {
+        if (!cancelled) setSpecialties([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [token, isAgency])
+
+  useEffect(() => {
     if (!scriptId || gateLoading || gateError || !scriptContext) {
       return
     }
@@ -320,6 +339,7 @@ export default function AgencySubmitPackagePage() {
             videoType:
               s?.videoType === "SHORT_FORM" ? "SHORT_FORM" : "LONG_FORM",
             meta: {
+              ...EMPTY_VIDEO_META,
               title: typeof s?.meta?.title === "string" ? s.meta.title : "",
               description:
                 typeof s?.meta?.description === "string"
@@ -330,6 +350,16 @@ export default function AgencySubmitPackagePage() {
                 typeof s?.meta?.tagDraft === "string"
                   ? s.meta.tagDraft
                   : undefined,
+              doctorName:
+                typeof (s?.meta as { doctorName?: string })?.doctorName ===
+                "string"
+                  ? (s.meta as { doctorName: string }).doctorName
+                  : "",
+              specialty:
+                typeof (s?.meta as { specialty?: string })?.specialty ===
+                "string"
+                  ? (s.meta as { specialty: string }).specialty
+                  : "",
             },
             file: normalizeRestoredFile(
               s?.file,
@@ -528,6 +558,7 @@ export default function AgencySubmitPackagePage() {
             title: slot.meta.title.trim(),
             description: slot.meta.description.trim(),
             tags: effectiveTagsFromMeta(slot.meta),
+            ...optionalDoctorSpecialtyPayload(slot.meta),
             thumbnails: thumbs.map((t) => ({
               fileUrl: t.fileUrl,
               fileName: t.fileName,
@@ -570,6 +601,7 @@ export default function AgencySubmitPackagePage() {
         title: first.meta.title.trim(),
         description: first.meta.description.trim(),
         tags: effectiveTagsFromMeta(first.meta),
+        ...optionalDoctorSpecialtyPayload(first.meta),
         thumbnails: firstThumbs.map((t) => ({
           fileUrl: t.fileUrl,
           fileName: t.fileName,
@@ -597,6 +629,7 @@ export default function AgencySubmitPackagePage() {
           title: slot.meta.title.trim(),
           description: slot.meta.description.trim(),
           tags: effectiveTagsFromMeta(slot.meta),
+          ...optionalDoctorSpecialtyPayload(slot.meta),
           thumbnails: thumbs.map((t) => ({
             fileUrl: t.fileUrl,
             fileName: t.fileName,
@@ -937,6 +970,7 @@ export default function AgencySubmitPackagePage() {
                         }
                         idPrefix={`v-${slot.id}`}
                         spacious
+                        specialties={specialties}
                       />
                     </div>
                   ))}
@@ -1031,6 +1065,7 @@ export default function AgencySubmitPackagePage() {
                   existingPackageDisplayName={existingPackageTitle}
                   packageName={packageName}
                   onPackageNameChange={setPackageName}
+                  specialties={specialties}
                 />
               </div>
             )}
@@ -1068,6 +1103,7 @@ function ReviewSummaryCard({
   existingPackageDisplayName,
   packageName = "",
   onPackageNameChange,
+  specialties = [],
 }: {
   videoSlots: PackageVideoSlot[]
   mergedTags: string[]
@@ -1078,6 +1114,7 @@ function ReviewSummaryCard({
   existingPackageDisplayName?: string
   packageName?: string
   onPackageNameChange?: (value: string) => void
+  specialties?: PackageSpecialtyOption[]
 }) {
   return (
     <Card className="overflow-hidden border-0 shadow-lg ring-1 ring-border/60">
@@ -1130,6 +1167,7 @@ function ReviewSummaryCard({
                 meta={slot.meta}
                 file={slot.file}
                 ok={isVideoMetaComplete(slot.meta) && Boolean(slot.file)}
+                specialties={specialties}
               />
             ))}
           </ul>

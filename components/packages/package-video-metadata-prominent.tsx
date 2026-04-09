@@ -7,6 +7,8 @@ export function PackageVideoMetadataProminent({
   title,
   description,
   tags,
+  doctorName,
+  specialtyLabel,
   className,
   variant = "card",
 }: {
@@ -14,6 +16,10 @@ export function PackageVideoMetadataProminent({
   title: string | null | undefined
   description: string | null | undefined
   tags: string[] | null | undefined
+  /** Optional — doctor display name on the deliverable. */
+  doctorName?: string | null
+  /** Precomputed label for specialty (e.g. from GET /api/packages/specialties). */
+  specialtyLabel?: string | null
   className?: string
   /** `embedded` sits inside a parent Card — avoids double borders. */
   variant?: "card" | "embedded"
@@ -29,8 +35,33 @@ export function PackageVideoMetadataProminent({
     </div>
   )
 
+  const doctorLine = doctorName?.trim()
+  const specLine = specialtyLabel?.trim()
+
   const metaBlock = (
     <div className="space-y-3">
+      {doctorLine || specLine ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {doctorLine ? (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground">Doctor</p>
+              <p className="mt-1.5 text-sm text-foreground sm:text-base">
+                {doctorLine}
+              </p>
+            </div>
+          ) : null}
+          {specLine ? (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground">
+                Specialty
+              </p>
+              <p className="mt-1.5 text-sm text-foreground sm:text-base">
+                {specLine}
+              </p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div>
         <p className="text-xs font-medium text-muted-foreground">Description</p>
         <p className="mt-1.5 text-sm leading-relaxed text-foreground sm:text-base">

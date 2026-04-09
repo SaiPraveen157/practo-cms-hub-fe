@@ -26,6 +26,7 @@ import type { UserRole } from "@/types/auth"
 import type {
   PackageItemFeedbackEntry,
   PackageItemFeedbackField,
+  PackageSpecialtyOption,
 } from "@/types/package"
 import {
   addLanguagePackageVideo,
@@ -37,6 +38,11 @@ import {
   uploadLanguagePackageVideoFile,
   withdrawLanguageVideo,
 } from "@/lib/language-packages-api"
+import { getPackageSpecialties } from "@/lib/packages-api"
+import {
+  labelForSpecialtyValue,
+  optionalDoctorSpecialtyPayload,
+} from "@/lib/package-specialty-label"
 import { DELIVERABLE_VIDEO_INPUT_ACCEPT } from "@/lib/video-file-validation"
 import {
   agencyLanguagePackageNeedsRevision,
@@ -669,7 +675,12 @@ export default function AgencyLanguagePackageDetailPage() {
   const [addTitle, setAddTitle] = useState("")
   const [addDesc, setAddDesc] = useState("")
   const [addTags, setAddTags] = useState("")
+  const [addDoctor, setAddDoctor] = useState("")
+  const [addSpecialty, setAddSpecialty] = useState("")
   const [addingVideo, setAddingVideo] = useState(false)
+  const [specialtyOptions, setSpecialtyOptions] = useState<
+    PackageSpecialtyOption[]
+  >([])
 
   const load = useCallback(async () => {
     if (!token || !id) return
@@ -689,6 +700,22 @@ export default function AgencyLanguagePackageDetailPage() {
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const list = await getPackageSpecialties(token)
+        if (!cancelled) setSpecialtyOptions(list)
+      } catch {
+        if (!cancelled) setSpecialtyOptions([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [token])
 
   const sortedVideos = useMemo(
     () => (pkg ? languageVideosSorted(pkg) : []),
@@ -740,6 +767,10 @@ export default function AgencyLanguagePackageDetailPage() {
         title: addTitle.trim() || undefined,
         description: addDesc.trim() || undefined,
         tags: tags.length ? tags : undefined,
+        ...optionalDoctorSpecialtyPayload({
+          doctorName: addDoctor,
+          specialty: addSpecialty,
+        }),
         thumbnails: thumbs.length ? thumbs : [],
       })
       setPkg((p) =>
@@ -752,6 +783,8 @@ export default function AgencyLanguagePackageDetailPage() {
       setAddTitle("")
       setAddDesc("")
       setAddTags("")
+      setAddDoctor("")
+      setAddSpecialty("")
       toast.success("Video added")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Add failed")
@@ -962,6 +995,31 @@ export default function AgencyLanguagePackageDetailPage() {
                         rows={2}
                       />
                     </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>Doctor (optional)</Label>
+                        <Input
+                          value={addDoctor}
+                          onChange={(e) => setAddDoctor(e.target.value)}
+                          placeholder="e.g. Dr. Ramesh Kumar"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Specialty (optional)</Label>
+                        <select
+                          value={addSpecialty}
+                          onChange={(e) => setAddSpecialty(e.target.value)}
+                          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] dark:bg-input/30"
+                        >
+                          <option value="">Select specialty…</option>
+                          {specialtyOptions.map((s) => (
+                            <option key={s.value} value={s.value}>
+                              {s.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                     <Button
                       type="button"
                       onClick={() => void submitAddVideo()}
@@ -988,6 +1046,7 @@ export default function AgencyLanguagePackageDetailPage() {
                   video={v}
                   token={token}
                   isSuper={isSuper}
+                  specialtyOptions={specialtyOptions}
                   onUpdated={(nv) =>
                     setPkg((p) => (p ? mergeLanguageVideoIntoPackage(p, nv) : p))
                   }
@@ -1005,11 +1064,13 @@ function AgencyLanguageVideoCard({
   video,
   token,
   isSuper,
+  specialtyOptions,
   onUpdated,
 }: {
   video: LanguageVideo
   token: string
   isSuper: boolean
+  specialtyOptions: PackageSpecialtyOption[]
   onUpdated: (v: LanguageVideo) => void
 }) {
   const asset = getCurrentLanguageVideoAsset(video)
@@ -1037,6 +1098,10 @@ function AgencyLanguageVideoCard({
   const [metaTitle, setMetaTitle] = useState(asset?.title ?? "")
   const [metaDesc, setMetaDesc] = useState(asset?.description ?? "")
   const [metaTags, setMetaTags] = useState((asset?.tags ?? []).join(", "))
+  const [metaDoctor, setMetaDoctor] = useState(asset?.doctorName?.trim() ?? "")
+  const [metaSpecialty, setMetaSpecialty] = useState(
+    asset?.specialty?.trim() ?? ""
+  )
   const [replacementThumbFiles, setReplacementThumbFiles] = useState<
     Record<string, File | null>
   >({})
@@ -1106,6 +1171,8 @@ function AgencyLanguageVideoCard({
     setMetaTitle(asset?.title ?? "")
     setMetaDesc(asset?.description ?? "")
     setMetaTags((asset?.tags ?? []).join(", "))
+    setMetaDoctor(asset?.doctorName?.trim() ?? "")
+    setMetaSpecialty(asset?.specialty?.trim() ?? "")
     setReplacementThumbFiles({})
     setReplaceFile(null)
   }, [
@@ -1115,6 +1182,8 @@ function AgencyLanguageVideoCard({
     asset?.title,
     asset?.description,
     asset?.tags,
+    asset?.doctorName,
+    asset?.specialty,
   ])
 
   async function resubmitVideo() {
@@ -1216,6 +1285,10 @@ function AgencyLanguageVideoCard({
         title: metaTitle.trim(),
         description: metaDesc.trim(),
         tags: tags.length ? tags : undefined,
+        ...optionalDoctorSpecialtyPayload({
+          doctorName: metaDoctor,
+          specialty: metaSpecialty,
+        }),
         thumbnails: thumbnailsPayload,
       })
       onUpdated(res.data)
@@ -1315,6 +1388,23 @@ function AgencyLanguageVideoCard({
 
             {asset?.description ? (
               <p className="text-sm">{asset.description}</p>
+            ) : null}
+
+            {asset?.doctorName?.trim() || asset?.specialty ? (
+              <div className="grid gap-2 text-sm sm:grid-cols-2">
+                {asset?.doctorName?.trim() ? (
+                  <p>
+                    <span className="text-muted-foreground">Doctor: </span>
+                    {asset.doctorName}
+                  </p>
+                ) : null}
+                {asset?.specialty ? (
+                  <p>
+                    <span className="text-muted-foreground">Specialty: </span>
+                    {labelForSpecialtyValue(asset.specialty, specialtyOptions)}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
 
             {(asset?.tags?.length ?? 0) > 0 ? (
@@ -1627,6 +1717,41 @@ function AgencyLanguageVideoCard({
                           </span>
                         }
                       />
+                    </div>
+                  </div>
+                </section>
+
+                <section className="space-y-4 rounded-lg border border-border bg-background/80 p-4 shadow-sm dark:bg-background/40">
+                  <h4 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                    Doctor & specialty (optional)
+                  </h4>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor={`lang-mt-doctor-${video.id}`}>Doctor</Label>
+                      <Input
+                        id={`lang-mt-doctor-${video.id}`}
+                        value={metaDoctor}
+                        onChange={(e) => setMetaDoctor(e.target.value)}
+                        placeholder="e.g. Dr. Ramesh Kumar"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`lang-mt-spec-${video.id}`}>
+                        Specialty
+                      </Label>
+                      <select
+                        id={`lang-mt-spec-${video.id}`}
+                        value={metaSpecialty}
+                        onChange={(e) => setMetaSpecialty(e.target.value)}
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] dark:bg-input/30"
+                      >
+                        <option value="">Select specialty…</option>
+                        {specialtyOptions.map((s) => (
+                          <option key={s.value} value={s.value}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 </section>
