@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { getLanguageVideoComments } from "@/lib/language-packages-api"
-import { filterVideoCommentsForAssetVersion } from "@/lib/video-comment"
+import {
+  filterVideoCommentsForAssetVersion,
+  filterVideoCommentsWithTimestamp,
+} from "@/lib/video-comment"
 import { useAuthStore } from "@/store"
 import type { VideoComment } from "@/types/video"
 
@@ -31,14 +34,13 @@ export function useLanguageVideoThreadComments(
   }, [refresh, assetVersion])
 
   const scoped = useMemo(() => {
-    if (
+    const byVersion =
       assetVersion == null ||
       !Number.isFinite(assetVersion) ||
       assetVersion < 1
-    ) {
-      return comments
-    }
-    return filterVideoCommentsForAssetVersion(comments, assetVersion)
+        ? comments
+        : filterVideoCommentsForAssetVersion(comments, assetVersion)
+    return filterVideoCommentsWithTimestamp(byVersion)
   }, [comments, assetVersion])
 
   return { comments: scoped, refresh }

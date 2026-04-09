@@ -157,6 +157,24 @@ function getLatestLanguageRejection(
   return rejects[0] ?? null
 }
 
+/** When Agency is not in resubmit mode — plain-language pipeline position. */
+function agencyLanguageVideoPipelineStatusText(
+  status: LanguageVideo["status"]
+): string {
+  switch (status) {
+    case "BRAND_REVIEW":
+      return "This video is currently with the Content / Brand team for review."
+    case "AWAITING_APPROVER":
+      return "This video is waiting for final approval from the Content Approver (Practo)."
+    case "APPROVED":
+      return "This video has been approved."
+    case "WITHDRAWN":
+      return "This video has been withdrawn."
+    default:
+      return ""
+  }
+}
+
 /** Line items Brand flagged with hasIssue — gates resubmits and drives the feedback list. */
 function languageValidationIssues(
   review: LanguageVideoReview | null
@@ -1223,13 +1241,6 @@ function AgencyLanguageVideoCard({
     }
   }
 
-  const rejects = [...(video.reviews ?? [])]
-    .filter((r) => r.decision === "REJECTED")
-    .sort(
-      (a, b) =>
-        new Date(b.reviewedAt).getTime() - new Date(a.reviewedAt).getTime()
-    )
-
   return (
     <Card className={cn(canResubmit && "overflow-hidden shadow-sm")}>
       <CardHeader
@@ -1354,14 +1365,12 @@ function AgencyLanguageVideoCard({
               </div>
             ) : null}
 
-            {rejects[0]?.overallComments ? (
-              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
-                <p className="font-medium text-destructive">Latest feedback</p>
-                <p className="mt-1 whitespace-pre-wrap">
-                  {rejects[0].overallComments}
-                </p>
-              </div>
-            ) : null}
+            <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+              <p className="font-medium text-foreground">Where this video is</p>
+              <p className="mt-1 text-muted-foreground">
+                {agencyLanguageVideoPipelineStatusText(video.status)}
+              </p>
+            </div>
           </>
         ) : (
           <>

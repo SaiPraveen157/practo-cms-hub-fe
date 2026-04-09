@@ -8,6 +8,7 @@ import {
   normalizeLanguageVideo,
 } from "@/lib/language-package-response-normalize"
 import {
+  ensureVideoCommentAssetVersion,
   filterVideoCommentsWithTimestamp,
   normalizeVideoComment,
 } from "@/lib/video-comment"
@@ -462,7 +463,10 @@ export async function addLanguageVideoComment(
   const raw = (inner.comment ?? res.comment) as Record<string, unknown> | undefined
   return {
     success: Boolean(res.success ?? true),
-    comment: normalizeVideoComment(raw ?? {}),
+    comment: ensureVideoCommentAssetVersion(
+      normalizeVideoComment(raw ?? {}),
+      payload.assetVersion
+    ),
   }
 }
 

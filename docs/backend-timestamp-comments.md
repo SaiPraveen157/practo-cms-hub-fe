@@ -60,7 +60,9 @@ Each comment in `comments[]` (and the `comment` object on create) is normalized 
 | `timeStamp`         | Legacy / alternate camelCase.                      |
 | `time_stamp`        | Snake case variant.                                |
 
-If none are present or the value is not a finite number, the client **drops** the comment from the thread list and timeline markers (legacy rows without a time are not shown).
+If none are present or the value is not a finite number, the client **drops** the comment from the thread list and timeline markers.
+
+**Product:** Video threads are **timestamp-only** — there is no separate “general” video comment path in the UI. Copy, thumbnails, and metadata use **their own** rejection / review flows (e.g. Phase 6 metadata track, thumbnail review), not `VideoComment` without a time.
 
 **File version on GET:** the API may return a nested object, e.g. `"video": { "version": 1 }`. `lib/video-comment.ts` maps that to `assetVersion` (and keeps `video.version` on the normalized object) so `filterVideoCommentsForAssetVersion` matches against `Video.version` / package `currentVersion` / language `currentVersion`. Flat `assetVersion` on the comment is still accepted if present.
 

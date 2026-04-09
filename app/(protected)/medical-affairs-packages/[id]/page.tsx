@@ -69,6 +69,7 @@ import {
   VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
   videoThreadBlocksApprove,
 } from "@/lib/video-comment"
+import { usePackageVideoThreadBlockMap } from "@/hooks/use-package-video-thread-block-map"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -96,7 +97,6 @@ export default function MedicalPackageDetailPage() {
     Record<string, string>
   >({})
   const [busy, setBusy] = useState(false)
-  const [approveThreadBlocked, setApproveThreadBlocked] = useState(false)
 
   const load = useCallback(async () => {
     if (!token || !id) return
@@ -144,6 +144,24 @@ export default function MedicalPackageDetailPage() {
     [pkg]
   )
 
+  const packageVideosForThreadGate = useMemo(
+    () =>
+      sortedVideos.filter(
+        (v) =>
+          v.status === "MEDICAL_REVIEW" &&
+          v.videoTrackStatus === "PENDING" &&
+          canAccess
+      ),
+    [sortedVideos, canAccess]
+  )
+
+  const { threadBlockByVideoId, recheckThreadBlocks } =
+    usePackageVideoThreadBlockMap(token, packageVideosForThreadGate)
+
+  const approveThreadBlocked = activeVideo
+    ? Boolean(threadBlockByVideoId[activeVideo.id])
+    : false
+
   const deliverableLabels = useMemo(
     () => deliverableLabelsByVideoId(sortedVideos),
     [sortedVideos]
@@ -158,23 +176,6 @@ export default function MedicalPackageDetailPage() {
     }, 100)
     return () => window.clearTimeout(t)
   }, [focusVideoId, loading])
-
-  useEffect(() => {
-    if (!approveOpen || !token || !activeVideo) {
-      setApproveThreadBlocked(false)
-      return
-    }
-    let cancelled = false
-    void getPackageVideoComments(token, activeVideo.id).then((list) => {
-      if (cancelled) return
-      setApproveThreadBlocked(
-        videoThreadBlocksApprove(list, activeVideo.currentVersion)
-      )
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [approveOpen, token, activeVideo])
 
   async function handleApprove() {
     if (!token || !activeVideo) return
@@ -313,7 +314,9 @@ export default function MedicalPackageDetailPage() {
             This page shows only the <strong>video file</strong> for each
             deliverable. Title, description, tags, and thumbnails are{" "}
             <strong>not</strong> shown here — Content/Brand reviews metadata in
-            their own workflow.
+            their own workflow. Feedback on the video uses{" "}
+            <strong>timestamp comments</strong> on the player only (no separate
+            generic comment stream).
           </p>
         </header>
 
@@ -389,21 +392,30 @@ export default function MedicalPackageDetailPage() {
                         icon={icon}
                         videoOnly
                         packageVideo={video}
+                        onPackageVideoCommentsUpdated={recheckThreadBlocks}
                       />
                     </div>
 
                     {canReview ? (
                       <div className="flex flex-col gap-4 rounded-lg border border-primary/25 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between dark:bg-primary/10">
-                        <p className="text-sm text-foreground">
-                          <span className="font-medium">Action required</span>
-                          <span className="text-muted-foreground">
-                            {" "}
-                            — approve or reject this video file (not metadata)
-                          </span>
-                        </p>
+                        <div className="min-w-0 space-y-2">
+                          <p className="text-sm text-foreground">
+                            <span className="font-medium">Action required</span>
+                            <span className="text-muted-foreground">
+                              {" "}
+                              — approve or reject this video file (not metadata)
+                            </span>
+                          </p>
+                          {threadBlockByVideoId[video.id] ? (
+                            <p className="text-xs text-amber-700 dark:text-amber-400">
+                              {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+                            </p>
+                          ) : null}
+                        </div>
                         <div className="flex flex-wrap gap-2 sm:shrink-0">
                           <Button
                             size="sm"
+                            disabled={Boolean(threadBlockByVideoId[video.id])}
                             onClick={() => {
                               setActiveVideo(video)
                               setApproveOpen(true)
@@ -449,7 +461,7 @@ export default function MedicalPackageDetailPage() {
             })}
           </section>
 
-          <div className="space-y-3">
+          {/* <div className="space-y-3">
             <h2 className="text-base font-semibold tracking-tight">
               Video-track feedback &amp; revisions
             </h2>
@@ -461,7 +473,7 @@ export default function MedicalPackageDetailPage() {
               pkg={pkg}
               trackFilter="VIDEO_TRACK"
             />
-          </div>
+          </div> */}
         </div>
       </div>
 

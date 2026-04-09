@@ -38,6 +38,8 @@ export function PackageInlineVideoCard({
   videoOnly = false,
   /** When set, loads `/api/packages/videos/:id/comments` for this deliverable and shows timeline UI. */
   packageVideo = null,
+  /** Called after a timestamp comment is posted (e.g. refresh approve-block state on the parent page). */
+  onPackageVideoCommentsUpdated = null,
   /** Accepted for API compatibility; unified thumbnails are plain images (no selection UI). */
   selectedThumbnailId: _selectedThumbnailId,
 }: {
@@ -49,6 +51,7 @@ export function PackageInlineVideoCard({
   unifiedMetadata?: boolean
   videoOnly?: boolean
   packageVideo?: PackageVideo | null
+  onPackageVideoCommentsUpdated?: (() => void) | null
   selectedThumbnailId?: string | null
 }) {
   void _selectedThumbnailId
@@ -87,6 +90,7 @@ export function PackageInlineVideoCard({
                       assetVersion: packageVideo.currentVersion,
                     })
                     await refresh()
+                    onPackageVideoCommentsUpdated?.()
                     toast.success("Comment added")
                   }
                 : undefined

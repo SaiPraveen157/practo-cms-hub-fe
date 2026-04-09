@@ -49,6 +49,7 @@ import {
 import {
   aggregatePackageDisplayStatus,
   deliverableLabelsByVideoId,
+  displayThumbnailStatus,
   getCurrentVideoAsset,
   getMetadataTrackFeedbackItems,
   getVideoTrackFeedbackItems,
@@ -106,10 +107,13 @@ function thumbnailStatusSurfaceClass(s: PackageThumbnailRecord["status"]) {
 function AgencyMetadataThumbnailsGrid({
   thumbs,
   headingId,
+  video,
 }: {
   thumbs: PackageThumbnailRecord[]
   /** Optional id for aria-labelledby on section */
   headingId?: string
+  /** When set, thumbnail badges use track-aligned display status (see `displayThumbnailStatus`). */
+  video?: PackageVideo
 }) {
   if (thumbs.length === 0) {
     return (
@@ -123,42 +127,47 @@ function AgencyMetadataThumbnailsGrid({
       className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
       aria-labelledby={headingId}
     >
-      {thumbs.map((t) => (
-        <li
-          key={t.id}
-          className="overflow-hidden rounded-lg border border-border bg-card shadow-sm"
-        >
-          <a
-            href={t.fileUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block aspect-video bg-muted"
+      {thumbs.map((t) => {
+        const uiStatus = video
+          ? displayThumbnailStatus(video, t.status)
+          : t.status
+        return (
+          <li
+            key={t.id}
+            className="overflow-hidden rounded-lg border border-border bg-card shadow-sm"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={t.fileUrl}
-              alt={t.fileName ?? "Thumbnail"}
-              className="size-full object-cover"
-            />
-          </a>
-          <div className="space-y-1.5 p-3">
-            <Badge
-              className={thumbnailStatusSurfaceClass(t.status)}
-              variant="secondary"
+            <a
+              href={t.fileUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block aspect-video bg-muted"
             >
-              {t.status}
-            </Badge>
-            <p className="truncate text-xs text-muted-foreground">
-              {t.fileName}
-            </p>
-            {t.status === "REJECTED" && t.comment ? (
-              <p className="text-xs leading-snug text-destructive">
-                {t.comment}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={t.fileUrl}
+                alt={t.fileName ?? "Thumbnail"}
+                className="size-full object-cover"
+              />
+            </a>
+            <div className="space-y-1.5 p-3">
+              <Badge
+                className={thumbnailStatusSurfaceClass(uiStatus)}
+                variant="secondary"
+              >
+                {uiStatus}
+              </Badge>
+              <p className="truncate text-xs text-muted-foreground">
+                {t.fileName}
               </p>
-            ) : null}
-          </div>
-        </li>
-      ))}
+              {t.status === "REJECTED" && t.comment ? (
+                <p className="text-xs leading-snug text-destructive">
+                  {t.comment}
+                </p>
+              ) : null}
+            </div>
+          </li>
+        )
+      })}
     </ul>
   )
 }
@@ -955,7 +964,7 @@ function VideoRevisionPanel({
                 ) : null}
               </TrackStatusCallout>
 
-              {needsVideoResubmit && latest ? (
+              {/* {needsVideoResubmit && latest ? (
                 <Card className="border-destructive/40 bg-destructive/5 shadow-none">
                   <CardHeader className="space-y-1 pb-3">
                     <CardTitle className="text-lg font-semibold text-destructive">
@@ -977,41 +986,68 @@ function VideoRevisionPanel({
                     ) : null}
                   </CardContent>
                 </Card>
-              ) : null}
+              ) : null} */}
 
               {asset ? (
                 needsVideoResubmit ? (
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                        Current file
-                      </p>
-                      <PackageInlineVideoCard
-                        asset={asset}
-                        label={label}
-                        icon={icon}
-                        videoOnly
-                        packageVideo={video}
-                      />
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-start">
+                      <div className="flex min-w-0 flex-col gap-2">
+                        <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                          Current file
+                        </p>
+                        <PackageInlineVideoCard
+                          asset={asset}
+                          label={label}
+                          icon={icon}
+                          videoOnly
+                          packageVideo={video}
+                        />
+                      </div>
+                      <div className="flex min-w-0 flex-col gap-2">
+                        <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                          Replacement
+                        </p>
+                        <Card className="overflow-hidden border-0 shadow-md ring-1 ring-border/70">
+                          <CardContent className="space-y-4 p-4 sm:p-6">
+                            <LocalReplacementVideoPreview
+                              compact
+                              file={replaceFileByVideoId[video.id] ?? null}
+                            />
+                            <VideoReplacementUploadCell
+                              assetId={video.id}
+                              file={replaceFileByVideoId[video.id] ?? null}
+                              onFileChange={(f) =>
+                                setReplaceFileByVideoId((prev) => ({
+                                  ...prev,
+                                  [video.id]: f,
+                                }))
+                              }
+                            />
+                          </CardContent>
+                        </Card>
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold tracking-wide text-primary uppercase">
-                        Replacement
-                      </p>
-                      <LocalReplacementVideoPreview
-                        compact
-                        file={replaceFileByVideoId[video.id] ?? null}
-                      />
-                      <VideoReplacementUploadCell
-                        assetId={video.id}
-                        file={replaceFileByVideoId[video.id] ?? null}
-                        onFileChange={(f) =>
-                          setReplaceFileByVideoId((prev) => ({
-                            ...prev,
-                            [video.id]: f,
-                          }))
-                        }
-                      />
+                    <div className="rounded-lg border border-border bg-muted/30 px-4 py-4 sm:px-6">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-sm text-muted-foreground">
+                          When the replacement preview looks correct, submit the
+                          new file for Medical review.
+                        </p>
+                        <Button
+                          type="button"
+                          className="w-full shrink-0 sm:w-auto"
+                          onClick={() => void handleResubmitVideoFile(video.id)}
+                          disabled={busyVideoId === video.id || !token}
+                        >
+                          {busyVideoId === video.id ? (
+                            <Loader2 className="mr-2 size-4 animate-spin" />
+                          ) : (
+                            <Upload className="mr-2 size-4" />
+                          )}
+                          Resubmit video file
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -1027,21 +1063,6 @@ function VideoRevisionPanel({
                   No current asset for this video.
                 </p>
               )}
-
-              {needsVideoResubmit ? (
-                <Button
-                  type="button"
-                  onClick={() => void handleResubmitVideoFile(video.id)}
-                  disabled={busyVideoId === video.id || !token}
-                >
-                  {busyVideoId === video.id ? (
-                    <Loader2 className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <Upload className="mr-2 size-4" />
-                  )}
-                  Resubmit video file
-                </Button>
-              ) : null}
             </CardContent>
           </Card>
         )
@@ -1278,6 +1299,7 @@ function MetadataResubmitFields({
           <ul className="space-y-4">
             {thumbs.map((t, idx) => {
               const needsFile = agencyThumbnailNeedsReplacement(t)
+              const thumbUiStatus = displayThumbnailStatus(video, t.status)
               const file = replacementFiles[t.id] ?? null
               const previewKey = file
                 ? `${file.name}-${file.size}-${file.lastModified}`
@@ -1307,10 +1329,10 @@ function MetadataResubmitFields({
                           Thumbnail {idx + 1}
                         </span>
                         <Badge
-                          className={thumbnailStatusSurfaceClass(t.status)}
+                          className={thumbnailStatusSurfaceClass(thumbUiStatus)}
                           variant="secondary"
                         >
-                          {t.status}
+                          {thumbUiStatus}
                         </Badge>
                       </div>
                       <p className="truncate text-xs text-muted-foreground">
@@ -1346,7 +1368,7 @@ function MetadataResubmitFields({
                             />
                           ) : null}
                         </div>
-                      ) : t.status === "APPROVED" ? (
+                      ) : thumbUiStatus === "APPROVED" ? (
                         <p className="rounded-md border border-green-500/30 bg-green-500/5 px-3 py-2 text-xs text-green-800 dark:text-green-200">
                           Approved — this file is reused; no upload needed.
                         </p>
@@ -1596,6 +1618,7 @@ function MetadataRevisionPanel({
                         <AgencyMetadataThumbnailsGrid
                           thumbs={thumbs}
                           headingId={thumbsHeadingId}
+                          video={video}
                         />
                       </div>
                     </div>
@@ -1643,6 +1666,7 @@ function MetadataRevisionPanel({
                     <AgencyMetadataThumbnailsGrid
                       thumbs={thumbs}
                       headingId={thumbsHeadingId}
+                      video={video}
                     />
                   </div>
                 </div>

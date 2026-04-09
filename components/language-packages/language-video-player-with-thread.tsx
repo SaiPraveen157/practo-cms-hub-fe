@@ -15,12 +15,15 @@ export function LanguageVideoPlayerWithThread({
   mediaKey,
   videoClassName,
   onVideoError,
+  onCommentsUpdated,
 }: {
   languageVideo: LanguageVideo
   fileUrl: string
   mediaKey: string
   videoClassName?: string
   onVideoError?: () => void
+  /** After a timestamp comment is saved — parent can refresh thread-block / approve state. */
+  onCommentsUpdated?: () => void
 }) {
   const token = useAuthStore((s) => s.token)
   const user = useAuthStore((s) => s.user)
@@ -48,6 +51,7 @@ export function LanguageVideoPlayerWithThread({
           assetVersion: languageVideo.currentVersion,
         })
         await refresh()
+        onCommentsUpdated?.()
         toast.success("Comment added")
       }}
     />

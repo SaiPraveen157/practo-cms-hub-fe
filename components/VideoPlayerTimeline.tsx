@@ -32,7 +32,7 @@ export type VideoPlayerTimelineProps = {
   poster?: string
   /** Remount video when URL changes (e.g. package asset id + file URL). Defaults to `src`. */
   mediaKey?: string
-  /** Timestamped thread comments (Phase 4+); entries without `timestampSeconds` are ignored in the list. */
+  /** Timestamp-only video thread comments; entries without `timestampSeconds` are not shown. */
   comments?: VideoComment[]
   /** Fired when the user picks a time on the timeline (seeks the player). */
   onTimestampSelect?: (seconds: number) => void
@@ -656,8 +656,8 @@ export default function VideoPlayerTimeline({
               </div>
               <p className="text-xs text-muted-foreground">
                 While the video plays, the timestamp matches the playhead. Scrub
-                the timeline to jump; the pill updates with playback and is saved
-                with this comment.
+                the timeline to jump; the pill updates with playback and is
+                saved with this comment.
               </p>
             </div>
             <Button

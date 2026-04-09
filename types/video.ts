@@ -148,8 +148,8 @@ export interface VideoComment {
   content: string
   createdAt: string
   /**
-   * Playback position in seconds for Phase 4+ video threads. Required on POST;
-   * GET may omit for legacy rows (those are filtered out in the client).
+   * Playback position in seconds for video-file threads. The app only displays
+   * comments with a timestamp; metadata/copy feedback uses other APIs.
    */
   timestampSeconds?: number | null
   /**

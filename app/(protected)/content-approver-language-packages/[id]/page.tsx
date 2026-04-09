@@ -21,7 +21,6 @@ import type { UserRole } from "@/types/auth"
 import {
   approveLanguageVideo,
   getLanguagePackage,
-  getLanguageVideoComments,
 } from "@/lib/language-packages-api"
 import {
   getCurrentLanguageVideoAsset,
@@ -29,7 +28,7 @@ import {
   languageVideosSorted,
 } from "@/lib/language-package-video-helpers"
 import type { LanguagePackage } from "@/types/language-package"
-import { LanguageVideoPlayerWithThread } from "@/components/language-packages/language-video-player-with-thread"
+import { VideoPlayerTimeline } from "@/components/VideoPlayerTimeline"
 import { TagPillList } from "@/components/packages/tag-pill-list"
 import {
   formatLanguageLabel,
@@ -39,10 +38,6 @@ import {
 } from "@/lib/language-package-ui"
 import { formatPackageDate } from "@/lib/package-ui"
 import { ArrowLeft, ImageIcon, Loader2 } from "lucide-react"
-import {
-  VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
-  videoThreadBlocksApprove,
-} from "@/lib/video-comment"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -102,6 +97,7 @@ export default function ContentApproverLanguagePackageDetailPage() {
     () => sorted.filter((v) => v.status === "AWAITING_APPROVER"),
     [sorted]
   )
+
   const blockingBrandReview = useMemo(
     () => sorted.filter((v) => v.status === "BRAND_REVIEW"),
     [sorted]
@@ -122,16 +118,6 @@ export default function ContentApproverLanguagePackageDetailPage() {
     setBusy(true)
     const overallComments = approveComment.trim() || undefined
     try {
-      for (const v of targets) {
-        const list = await getLanguageVideoComments(token, v.id)
-        if (videoThreadBlocksApprove(list, v.currentVersion)) {
-          toast.error("Cannot approve yet", {
-            description: VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
-          })
-          setBusy(false)
-          return
-        }
-      }
       for (const v of targets) {
         const res = await approveLanguageVideo(token, v.id, {
           overallComments,
@@ -259,18 +245,28 @@ export default function ContentApproverLanguagePackageDetailPage() {
 
                         {va.fileUrl ? (
                           <div className={languageDetailShellClass()}>
-                            <LanguageVideoPlayerWithThread
-                              languageVideo={video}
-                              fileUrl={va.fileUrl}
+                            <VideoPlayerTimeline
+                              src={va.fileUrl}
                               mediaKey={va.id}
+                              comments={[]}
+                              showCommentsUi={false}
                               videoClassName={VIDEO_CLASS}
                             />
                           </div>
                         ) : null}
 
-                        {va.description ? (
-                          <p className="text-sm">{va.description}</p>
-                        ) : null}
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            Description
+                          </p>
+                          <p className="whitespace-pre-wrap text-sm text-foreground">
+                            {va.description?.trim() ? (
+                              va.description
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </p>
+                        </div>
 
                         {(va.tags?.length ?? 0) > 0 ? (
                           <div className="space-y-1">

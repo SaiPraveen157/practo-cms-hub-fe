@@ -42,6 +42,7 @@ import {
 import {
   contentBrandPlaybackQualityActionsAvailable,
   deliverableLabelsByVideoId,
+  displayThumbnailStatus,
   getCurrentVideoAsset,
   mergeVideoIntoPackage,
   packageVideosSorted,
@@ -81,6 +82,7 @@ import {
   VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
   videoThreadBlocksApprove,
 } from "@/lib/video-comment"
+import { usePackageVideoThreadBlockMap } from "@/hooks/use-package-video-thread-block-map"
 import { toast } from "sonner"
 
 type BrandReviewTab = "videos" | "metadata"
@@ -177,10 +179,6 @@ export default function ContentBrandPackageDetailPage() {
   const [brandApproveVideo, setBrandApproveVideo] =
     useState<PackageVideo | null>(null)
   const [brandApproveComment, setBrandApproveComment] = useState("")
-  const [metaApproveThreadBlocked, setMetaApproveThreadBlocked] =
-    useState(false)
-  const [brandApproveThreadBlocked, setBrandApproveThreadBlocked] =
-    useState(false)
 
   const load = useCallback(async () => {
     if (!token || !id) return
@@ -260,39 +258,18 @@ export default function ContentBrandPackageDetailPage() {
     else setReviewTab("metadata")
   }, [searchParams, pkg?.id, videoQualityCount, metaQueueCount])
 
-  useEffect(() => {
-    if (!token || !metaApproveVideo) {
-      setMetaApproveThreadBlocked(false)
-      return
-    }
-    let cancelled = false
-    void getPackageVideoComments(token, metaApproveVideo.id).then((list) => {
-      if (cancelled) return
-      setMetaApproveThreadBlocked(
-        videoThreadBlocksApprove(list, metaApproveVideo.currentVersion)
-      )
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [token, metaApproveVideo])
+  /** Timestamp threads block only **brand video quality** approval — metadata track is independent (Phase 6). */
+  const packageVideosForThreadGate = useMemo(
+    () => sortedVideos.filter(contentBrandPlaybackQualityActionsAvailable),
+    [sortedVideos]
+  )
 
-  useEffect(() => {
-    if (!token || !brandApproveVideo) {
-      setBrandApproveThreadBlocked(false)
-      return
-    }
-    let cancelled = false
-    void getPackageVideoComments(token, brandApproveVideo.id).then((list) => {
-      if (cancelled) return
-      setBrandApproveThreadBlocked(
-        videoThreadBlocksApprove(list, brandApproveVideo.currentVersion)
-      )
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [token, brandApproveVideo])
+  const { threadBlockByVideoId, recheckThreadBlocks } =
+    usePackageVideoThreadBlockMap(token, packageVideosForThreadGate)
+
+  const brandApproveThreadBlocked = brandApproveVideo
+    ? Boolean(threadBlockByVideoId[brandApproveVideo.id])
+    : false
 
   async function handleApproveMetadata() {
     if (!token || !metaApproveVideo) return
@@ -307,18 +284,6 @@ export default function ContentBrandPackageDetailPage() {
     }
     const pending = thumbs.filter((t) => t.status === "PENDING")
     await run(`meta-approve-${metaApproveVideo.id}`, async () => {
-      const threadList = await getPackageVideoComments(
-        token,
-        metaApproveVideo.id
-      )
-      if (
-        videoThreadBlocksApprove(threadList, metaApproveVideo.currentVersion)
-      ) {
-        toast.error("Cannot approve yet", {
-          description: VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
-        })
-        return
-      }
       for (const t of pending) {
         await reviewPackageThumbnail(token, t.id, {
           status: "APPROVED",
@@ -627,6 +592,8 @@ export default function ContentBrandPackageDetailPage() {
                   setBrandApproveVideo={setBrandApproveVideo}
                   setBrandRejectVideo={setBrandRejectVideo}
                   isPending={isPending}
+                  threadBlockByVideoId={threadBlockByVideoId}
+                  onPackageVideoCommentsUpdated={recheckThreadBlocks}
                 />
               )}
             </div>
@@ -648,11 +615,6 @@ export default function ContentBrandPackageDetailPage() {
               approved here.
             </DialogDescription>
           </DialogHeader>
-          {metaApproveThreadBlocked ? (
-            <p className="text-sm text-muted-foreground">
-              {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
-            </p>
-          ) : null}
           <Textarea
             value={metaApproveComment}
             onChange={(e) => setMetaApproveComment(e.target.value)}
@@ -666,7 +628,6 @@ export default function ContentBrandPackageDetailPage() {
               onClick={() => void handleApproveMetadata()}
               disabled={
                 !metaApproveVideo ||
-                metaApproveThreadBlocked ||
                 isPending(`meta-approve-${metaApproveVideo.id}`)
               }
             >
@@ -1184,45 +1145,48 @@ function BrandMetadataPanel({
                   )}
                 </h3>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {thumbs.map((t) => (
-                    <Card key={t.id} className="overflow-hidden">
-                      <a
-                        href={t.fileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block aspect-video bg-muted"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={t.fileUrl}
-                          alt={t.fileName}
-                          className="size-full object-cover"
-                        />
-                      </a>
-                      <CardContent className="space-y-2 p-3">
-                        <Badge
-                          className={thumbBadgeClass(t.status)}
-                          variant="secondary"
+                  {thumbs.map((t) => {
+                    const thumbUiStatus = displayThumbnailStatus(video, t.status)
+                    return (
+                      <Card key={t.id} className="overflow-hidden">
+                        <a
+                          href={t.fileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block aspect-video bg-muted"
                         >
-                          {t.status}
-                        </Badge>
-                        {t.status === "REJECTED" && t.comment && (
-                          <p className="text-xs text-destructive">
-                            {t.comment}
-                          </p>
-                        )}
-                        {t.status === "PENDING" && canMeta ? (
-                          <p className="text-xs text-muted-foreground">
-                            Will be approved when you confirm{" "}
-                            <span className="font-medium text-foreground">
-                              Approve metadata
-                            </span>
-                            .
-                          </p>
-                        ) : null}
-                      </CardContent>
-                    </Card>
-                  ))}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={t.fileUrl}
+                            alt={t.fileName}
+                            className="size-full object-cover"
+                          />
+                        </a>
+                        <CardContent className="space-y-2 p-3">
+                          <Badge
+                            className={thumbBadgeClass(thumbUiStatus)}
+                            variant="secondary"
+                          >
+                            {thumbUiStatus}
+                          </Badge>
+                          {t.status === "REJECTED" && t.comment && (
+                            <p className="text-xs text-destructive">
+                              {t.comment}
+                            </p>
+                          )}
+                          {t.status === "PENDING" && canMeta ? (
+                            <p className="text-xs text-muted-foreground">
+                              Will be approved when you confirm{" "}
+                              <span className="font-medium text-foreground">
+                                Approve metadata
+                              </span>
+                              .
+                            </p>
+                          ) : null}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
                 </div>
               </div>
 
@@ -1293,6 +1257,8 @@ function BrandVideoQualityPanel({
   setBrandApproveVideo,
   setBrandRejectVideo,
   isPending,
+  threadBlockByVideoId,
+  onPackageVideoCommentsUpdated,
 }: {
   sortedVideos: PackageVideo[]
   deliverableLabels: Map<string, string>
@@ -1300,6 +1266,8 @@ function BrandVideoQualityPanel({
   setBrandApproveVideo: (v: PackageVideo | null) => void
   setBrandRejectVideo: (v: PackageVideo | null) => void
   isPending: (key: string) => boolean
+  threadBlockByVideoId: Record<string, boolean>
+  onPackageVideoCommentsUpdated: () => void
 }) {
   return (
     <div className="space-y-8">
@@ -1401,15 +1369,24 @@ function BrandVideoQualityPanel({
                 icon={icon}
                 videoOnly
                 packageVideo={video}
+                onPackageVideoCommentsUpdated={onPackageVideoCommentsUpdated}
               />
 
               {showQualityUi ? (
-                <div className="flex flex-wrap gap-2">
+                <div className="space-y-2">
+                  {threadBlockByVideoId[video.id] ? (
+                    <p className="text-sm text-amber-700 dark:text-amber-400">
+                      {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap gap-2">
                   <Button
                     size="sm"
                     className="bg-green-600 text-white hover:bg-green-700"
                     disabled={
-                      !canBrandQuality || isPending(`brand-approve-${video.id}`)
+                      !canBrandQuality ||
+                      isPending(`brand-approve-${video.id}`) ||
+                      Boolean(threadBlockByVideoId[video.id])
                     }
                     onClick={() => setBrandApproveVideo(video)}
                   >
@@ -1436,6 +1413,7 @@ function BrandVideoQualityPanel({
                     )}
                     Reject video
                   </Button>
+                  </div>
                 </div>
               ) : null}
             </CardContent>

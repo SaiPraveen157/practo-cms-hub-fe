@@ -43,6 +43,7 @@ import type {
   LanguageVideo,
   LanguageVideoAsset,
 } from "@/types/language-package"
+import type { VideoComment } from "@/types/video"
 import {
   formatLanguageLabel,
   languageDetailShellClass,
@@ -55,9 +56,12 @@ import { languageVideoAwaitingAgencyAfterBrandRejectOnCurrentAsset } from "@/lib
 import { formatPackageDate } from "@/lib/package-ui"
 import { ArrowLeft, ImageIcon, Loader2, XCircle } from "lucide-react"
 import {
+  filterVideoCommentsForAssetVersion,
   VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
   videoThreadBlocksApprove,
 } from "@/lib/video-comment"
+import { formatVideoTimestamp } from "@/lib/video-timestamp"
+import { useLanguageVideoThreadBlockMap } from "@/hooks/use-language-video-thread-block-map"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -71,7 +75,6 @@ type LangRejectThumbRow = { reject: boolean; comment: string }
 
 type LangRejectDraft = {
   overallComments: string
-  video: LangRejectFieldState
   title: LangRejectFieldState
   description: LangRejectFieldState
   tags: LangRejectFieldState
@@ -87,7 +90,6 @@ function emptyLangRejectDraft(
   }
   return {
     overallComments: "",
-    video: { flag: false, comment: "" },
     title: { flag: false, comment: "" },
     description: { flag: false, comment: "" },
     tags: { flag: false, comment: "" },
@@ -111,7 +113,6 @@ export default function ContentBrandLanguagePackageDetailPage() {
   const [approveVideoId, setApproveVideoId] = useState<string | null>(null)
   const [approveComment, setApproveComment] = useState("")
   const [approveBusy, setApproveBusy] = useState(false)
-  const [approveThreadBlocked, setApproveThreadBlocked] = useState(false)
 
   const [rejectOpen, setRejectOpen] = useState(false)
   const [rejectTargetVideo, setRejectTargetVideo] =
@@ -120,6 +121,10 @@ export default function ContentBrandLanguagePackageDetailPage() {
     emptyLangRejectDraft(undefined)
   )
   const [rejectBusy, setRejectBusy] = useState(false)
+  const [rejectTimelineComments, setRejectTimelineComments] = useState<
+    VideoComment[]
+  >([])
+  const [rejectTimelineLoading, setRejectTimelineLoading] = useState(false)
 
   /**
    * GET payloads sometimes omit `reviews`; after reject, hide actions until
@@ -175,29 +180,17 @@ export default function ContentBrandLanguagePackageDetailPage() {
 
   const sorted = useMemo(() => (pkg ? languageVideosSorted(pkg) : []), [pkg])
 
-  useEffect(() => {
-    if (!token || !approveOpen || !approveVideoId) {
-      setApproveThreadBlocked(false)
-      return
-    }
-    const v =
-      sorted.find((x) => x.id === approveVideoId) ??
-      pkg?.videos?.find((x) => x.id === approveVideoId)
-    if (!v) {
-      setApproveThreadBlocked(false)
-      return
-    }
-    let cancelled = false
-    void getLanguageVideoComments(token, approveVideoId).then((list) => {
-      if (cancelled) return
-      setApproveThreadBlocked(
-        videoThreadBlocksApprove(list, v.currentVersion)
-      )
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [token, approveOpen, approveVideoId, sorted, pkg?.videos])
+  const languageVideosForThreadGate = useMemo(
+    () => sorted.filter((v) => v.status === "BRAND_REVIEW"),
+    [sorted]
+  )
+
+  const { threadBlockByVideoId, recheckThreadBlocks } =
+    useLanguageVideoThreadBlockMap(token, languageVideosForThreadGate)
+
+  const approveThreadBlocked = approveVideoId
+    ? Boolean(threadBlockByVideoId[approveVideoId])
+    : false
 
   const rejectAsset = useMemo(
     () =>
@@ -226,6 +219,34 @@ export default function ContentBrandLanguagePackageDetailPage() {
     }, 100)
     return () => window.clearTimeout(t)
   }, [searchParams, sorted.length, id])
+
+  useEffect(() => {
+    if (!rejectOpen || !rejectTargetVideo || !token) return
+    let cancelled = false
+    setRejectTimelineLoading(true)
+    void getLanguageVideoComments(token, rejectTargetVideo.id)
+      .then((list) => {
+        if (cancelled) return
+        const scoped = filterVideoCommentsForAssetVersion(
+          list,
+          rejectTargetVideo.currentVersion
+        )
+        const sorted = [...scoped].sort(
+          (a, b) =>
+            (a.timestampSeconds ?? 0) - (b.timestampSeconds ?? 0)
+        )
+        setRejectTimelineComments(sorted)
+      })
+      .catch(() => {
+        if (!cancelled) setRejectTimelineComments([])
+      })
+      .finally(() => {
+        if (!cancelled) setRejectTimelineLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [rejectOpen, rejectTargetVideo, token])
 
   function openApproveDialog(videoId: string) {
     setApproveVideoId(videoId)
@@ -292,19 +313,17 @@ export default function ContentBrandLanguagePackageDetailPage() {
     const itemFeedback: LanguageItemFeedbackEntry[] = []
 
     const pushField = (
-      field: "video" | "title" | "description" | "tags",
+      field: "title" | "description" | "tags",
       state: LangRejectFieldState
     ) => {
       if (!state.flag) return
       if (!state.comment.trim()) {
         throw new Error(
-          field === "video"
-            ? "Add a comment for the video file."
-            : field === "title"
-              ? "Add a comment for the title."
-              : field === "description"
-                ? "Add a comment for the description."
-                : "Add a comment for the tags."
+          field === "title"
+            ? "Add a comment for the title."
+            : field === "description"
+              ? "Add a comment for the description."
+              : "Add a comment for the tags."
         )
       }
       itemFeedback.push({
@@ -316,7 +335,6 @@ export default function ContentBrandLanguagePackageDetailPage() {
     }
 
     try {
-      pushField("video", d.video)
       pushField("title", d.title)
       pushField("description", d.description)
       pushField("tags", d.tags)
@@ -346,10 +364,28 @@ export default function ContentBrandLanguagePackageDetailPage() {
     }
 
     if (itemFeedback.length === 0) {
-      toast.error(
-        "Flag at least one of video, title, description, or tags, or reject at least one thumbnail — each flagged item needs a comment."
+      const timelineForVersion = filterVideoCommentsForAssetVersion(
+        await getLanguageVideoComments(token, rejectTargetVideo.id),
+        rejectTargetVideo.currentVersion
       )
-      return
+      const summary = d.overallComments.trim()
+      const videoOnlyComment =
+        summary ||
+        (timelineForVersion.length > 0
+          ? "Video feedback — see timestamp comments on the video."
+          : "")
+      if (!videoOnlyComment) {
+        toast.error(
+          "Add timestamp comments on the video, write an overall summary, or flag title, description, tags, or thumbnails — each flagged item needs a comment."
+        )
+        return
+      }
+      itemFeedback.push({
+        videoAssetId: asset.id,
+        field: "video",
+        hasIssue: true,
+        comment: videoOnlyComment,
+      })
     }
 
     const overall =
@@ -514,6 +550,7 @@ export default function ContentBrandLanguagePackageDetailPage() {
                               fileUrl={va.fileUrl}
                               mediaKey={va.id}
                               videoClassName={VIDEO_CLASS}
+                              onCommentsUpdated={recheckThreadBlocks}
                             />
                           </div>
                         ) : null}
@@ -570,9 +607,16 @@ export default function ContentBrandLanguagePackageDetailPage() {
 
                         {video.status === "BRAND_REVIEW" &&
                         !brandActionsBlocked ? (
-                          <div className="flex flex-wrap gap-2 border-t pt-4">
+                          <div className="space-y-3 border-t pt-4">
+                            {threadBlockByVideoId[video.id] ? (
+                              <p className="text-sm text-amber-700 dark:text-amber-400">
+                                {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+                              </p>
+                            ) : null}
+                            <div className="flex flex-wrap gap-2">
                             <Button
                               type="button"
+                              disabled={Boolean(threadBlockByVideoId[video.id])}
                               onClick={() => openApproveDialog(video.id)}
                               className="bg-green-600 text-white hover:bg-green-700"
                             >
@@ -586,6 +630,7 @@ export default function ContentBrandLanguagePackageDetailPage() {
                             >
                               Reject package
                             </Button>
+                            </div>
                           </div>
                         ) : null}
                       </CardContent>
@@ -664,6 +709,8 @@ export default function ContentBrandLanguagePackageDetailPage() {
           if (!open) {
             setRejectTargetVideo(null)
             setRejectDraft(emptyLangRejectDraft(undefined))
+            setRejectTimelineComments([])
+            setRejectTimelineLoading(false)
           }
         }}
       >
@@ -681,10 +728,14 @@ export default function ContentBrandLanguagePackageDetailPage() {
               }
               draft={rejectDraft}
               setDraft={setRejectDraft}
+              timelineComments={rejectTimelineComments}
+              timelineLoading={rejectTimelineLoading}
               onCancel={() => {
                 setRejectOpen(false)
                 setRejectTargetVideo(null)
                 setRejectDraft(emptyLangRejectDraft(undefined))
+                setRejectTimelineComments([])
+                setRejectTimelineLoading(false)
               }}
               onSubmit={() => void submitReject()}
               isPending={rejectBusy}
@@ -701,6 +752,8 @@ function RejectLanguageVideoDialogBody({
   videoLabel,
   draft,
   setDraft,
+  timelineComments,
+  timelineLoading,
   onCancel,
   onSubmit,
   isPending,
@@ -709,13 +762,14 @@ function RejectLanguageVideoDialogBody({
   videoLabel: string
   draft: LangRejectDraft
   setDraft: Dispatch<SetStateAction<LangRejectDraft>>
+  timelineComments: VideoComment[]
+  timelineLoading: boolean
   onCancel: () => void
   onSubmit: () => void
   isPending: boolean
 }) {
   const titlePreview = (asset.title ?? "").trim() || "—"
   const descPreview = (asset.description ?? "").trim() || "—"
-  const fileLabel = asset.fileName?.trim() || "Encoded video file"
 
   return (
     <>
@@ -723,15 +777,61 @@ function RejectLanguageVideoDialogBody({
         <DialogTitle>Reject language video</DialogTitle>
         <DialogDescription>
           <span className="font-medium text-foreground">{videoLabel}</span> —
-          Flag each problem area and add a comment. For thumbnails, check only
-          the images to reject and add a comment for each (same as Phase 6). At
-          least one issue is required. Thumbnail reviews are saved first, then
-          the video rejection is sent.
+          Review the timestamp comments below before sending. You can reject
+          using those only, or add an overall summary. Flag title, description,
+          or tags, or reject thumbnails — each flagged item needs a comment.
+          Thumbnail reviews are saved first, then the rejection is sent.
         </DialogDescription>
       </DialogHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         <div className="space-y-6">
+          <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-4">
+            <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+              Video — timestamp comments (this version)
+            </p>
+            {timelineLoading ? (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin shrink-0" />
+                Loading comments…
+              </p>
+            ) : timelineComments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No timestamp comments on this version yet. Add them on the video
+                player, or use the overall summary and metadata sections below.
+              </p>
+            ) : (
+              <ul className="max-h-[min(12rem,40vh)] space-y-3 overflow-y-auto pr-1">
+                {timelineComments.map((c) => {
+                  const ts = c.timestampSeconds
+                  const label =
+                    ts != null && Number.isFinite(ts)
+                      ? formatVideoTimestamp(ts)
+                      : "—"
+                  const author =
+                    c.author &&
+                    `${c.author.firstName ?? ""} ${c.author.lastName ?? ""}`.trim()
+                  return (
+                    <li
+                      key={c.id}
+                      className="rounded-md border border-border bg-background p-3 text-sm"
+                    >
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                        <span className="font-mono font-medium tabular-nums text-foreground">
+                          {label}
+                        </span>
+                        {author ? <span>{author}</span> : null}
+                      </div>
+                      <p className="mt-1.5 whitespace-pre-wrap text-foreground">
+                        {c.content}
+                      </p>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="lang-reject-overall">
               Overall summary (optional)
@@ -743,48 +843,9 @@ function RejectLanguageVideoDialogBody({
                 setDraft((d) => ({ ...d, overallComments: e.target.value }))
               }
               rows={2}
-              placeholder="High-level note for the rejection record…"
+              placeholder="Optional note for the rejection record (e.g. if you only use timestamp comments on the video, you can leave this blank)."
               className="resize-y"
             />
-          </div>
-
-          <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
-            <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-              Video file
-            </p>
-            <label className="flex cursor-pointer gap-3 rounded-md border border-transparent p-2 hover:bg-muted/40 has-checked:border-border has-checked:bg-background">
-              <input
-                type="checkbox"
-                checked={draft.video.flag}
-                onChange={(e) =>
-                  setDraft((d) => ({
-                    ...d,
-                    video: { ...d.video, flag: e.target.checked },
-                  }))
-                }
-                className="mt-1 size-4 shrink-0 rounded border-input"
-              />
-              <div className="min-w-0 flex-1 space-y-2">
-                <span className="text-sm font-medium">
-                  Encoded video / playback
-                </span>
-                <p className="text-xs text-muted-foreground">{fileLabel}</p>
-                {draft.video.flag ? (
-                  <Textarea
-                    value={draft.video.comment}
-                    onChange={(e) =>
-                      setDraft((d) => ({
-                        ...d,
-                        video: { ...d.video, comment: e.target.value },
-                      }))
-                    }
-                    rows={3}
-                    placeholder="e.g. Audio sync, branding, length, compression…"
-                    className="resize-y text-sm"
-                  />
-                ) : null}
-              </div>
-            </label>
           </div>
 
           <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
