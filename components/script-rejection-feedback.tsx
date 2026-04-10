@@ -31,12 +31,17 @@ export function ScriptRejectionFeedback({ script }: { script: Script }) {
 
   return (
     <div className="space-y-1">
-      <p className="text-xs font-medium text-muted-foreground">Rejection feedback</p>
-      <div className="border-l-2 border-destructive/40 pl-4 py-1">
+      <p className="text-xs font-medium text-muted-foreground">
+        Rejection feedback
+      </p>
+      <div className="border-l-2 border-destructive/40 py-1 pl-4">
         <p className="text-xs text-muted-foreground">
-          Rejected by {formatRejectedBy(rejection.rejectedBy)} · {formatDate(rejection.reviewedAt)}
+          Rejected by {formatRejectedBy(rejection.rejectedBy)} ·{" "}
+          {formatDate(rejection.reviewedAt)}
         </p>
-        <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{rejection.comments}</p>
+        <p className="mt-1 text-sm whitespace-pre-wrap text-foreground">
+          {rejection.comments}
+        </p>
       </div>
     </div>
   )

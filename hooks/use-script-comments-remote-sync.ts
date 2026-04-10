@@ -81,12 +81,11 @@ export function useScriptCommentsRemoteSync({
           for (const id of nextIds) {
             if (!prevIds.has(id)) {
               const c = next[id]
-              const anchor: ScriptCommentAnchor =
-                c.anchor ?? {
-                  space: "plain_text_utf16",
-                  startOffset: 0,
-                  endOffset: 0,
-                }
+              const anchor: ScriptCommentAnchor = c.anchor ?? {
+                space: "plain_text_utf16",
+                startOffset: 0,
+                endOffset: 0,
+              }
               await createScriptComment(token, scriptId, {
                 id: c.id,
                 body: c.body,
@@ -99,7 +98,8 @@ export function useScriptCommentsRemoteSync({
               const a = prev[id]
               const b = next[id]
               const anchorChanged =
-                JSON.stringify(a.anchor ?? null) !== JSON.stringify(b.anchor ?? null)
+                JSON.stringify(a.anchor ?? null) !==
+                JSON.stringify(b.anchor ?? null)
               if (
                 a.body !== b.body ||
                 Boolean(a.resolved) !== Boolean(b.resolved) ||

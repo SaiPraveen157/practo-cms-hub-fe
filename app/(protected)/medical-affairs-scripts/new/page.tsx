@@ -18,7 +18,6 @@ import { ScriptRichTextEditor } from "@/components/script-rich-text-editor"
 import { toast } from "sonner"
 import { useAuthStore } from "@/store"
 import { createScript } from "@/lib/scripts-api"
-import type { ScriptFeedbackSticker } from "@/types/script"
 import { ArrowLeft, Loader2 } from "lucide-react"
 
 export default function NewMedicalAffairsScriptPage() {
@@ -28,9 +27,6 @@ export default function NewMedicalAffairsScriptPage() {
   const [title, setTitle] = useState("")
   const [insight, setInsight] = useState("")
   const [content, setContent] = useState("")
-  const [feedbackStickers, setFeedbackStickers] = useState<
-    Record<string, ScriptFeedbackSticker>
-  >({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -51,13 +47,10 @@ export default function NewMedicalAffairsScriptPage() {
     setError(null)
     setLoading(true)
     try {
-      const commentList = Object.values(feedbackStickers)
       const res = await createScript(token, {
         title: title.trim() || undefined,
         insight: insight.trim() || undefined,
         content,
-        comments: commentList,
-        feedbackStickers: commentList,
       })
       const id = res.script?.id
       toast.success("Script created", {
@@ -162,10 +155,7 @@ export default function NewMedicalAffairsScriptPage() {
                   onChange={setContent}
                   placeholder="Enter the full script content..."
                   minHeight="280px"
-                  feedbackStickers={feedbackStickers}
-                  onFeedbackStickersChange={setFeedbackStickers}
-                  feedbackStickerToolbar
-                  feedbackStickerAuthorId={user?.id ?? null}
+                  feedbackCommentsSidebar={false}
                 />
               </div>
 

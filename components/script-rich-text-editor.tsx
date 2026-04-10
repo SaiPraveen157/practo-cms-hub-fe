@@ -10,7 +10,9 @@ import {
 } from "react"
 import { useEditor, EditorContent, type Editor } from "@tiptap/react"
 import type { EditorView } from "@tiptap/pm/view"
+import { Extension } from "@tiptap/core"
 import StarterKit from "@tiptap/starter-kit"
+import { Plugin, PluginKey } from "@tiptap/pm/state"
 import Link from "@tiptap/extension-link"
 import Placeholder from "@tiptap/extension-placeholder"
 import TextAlign from "@tiptap/extension-text-align"
@@ -56,6 +58,7 @@ import {
   commentAnchorFromEditorSelection,
   commentAnchorOffsetsFromEditorState,
 } from "@/lib/script-comment-offsets"
+import { scriptDocContentFingerprint } from "@/lib/script-doc-content-fingerprint"
 
 export interface ScriptRichTextEditorProps {
   /** Initial HTML content (used on mount and when id changes). */
@@ -77,7 +80,15 @@ export interface ScriptRichTextEditorProps {
   feedbackCommentsSidebar?: boolean
   /** Set on new stickers as `authorId` when saving. */
   feedbackStickerAuthorId?: string | null
+  /**
+   * When true, the script body (text, marks, structure) cannot change; only inline
+   * feedback stickers may be added/edited/removed. Use with `feedbackStickerToolbar`
+   * and `onFeedbackStickersChange` for reviewer flows (e.g. Content/Brand).
+   */
+  contentReadOnly?: boolean
 }
+
+const scriptContentLockPluginKey = new PluginKey("scriptContentReadOnlyLock")
 
 function getBaseExtensions(placeholderText: string) {
   return [
@@ -141,8 +152,10 @@ export function ScriptRichTextEditor({
   feedbackStickerToolbar = false,
   feedbackCommentsSidebar,
   feedbackStickerAuthorId,
+  contentReadOnly = false,
 }: ScriptRichTextEditorProps) {
   const stickersRef = useRef<Record<string, ScriptFeedbackSticker>>({})
+  const contentReadOnlyRef = useRef(false)
   const onOpenDetailRef = useRef<(id: string) => void>(() => {})
   const editorShellRef = useRef<HTMLDivElement | null>(null)
   const [detailStickerId, setDetailStickerId] = useState<string | null>(null)
@@ -174,7 +187,8 @@ export function ScriptRichTextEditor({
     onFeedbackStickersChangeRef.current = onFeedbackStickersChange
     addStickerOpenRef.current = addStickerOpen
     disabledRef.current = disabled
-  }, [showStickerTools, onFeedbackStickersChange, addStickerOpen, disabled])
+    contentReadOnlyRef.current = Boolean(contentReadOnly)
+  }, [showStickerTools, onFeedbackStickersChange, addStickerOpen, disabled, contentReadOnly])
 
   useLayoutEffect(() => {
     stickersRef.current = feedbackStickers ?? {}
@@ -201,6 +215,28 @@ export function ScriptRichTextEditor({
       ...getBaseExtensions(placeholder),
       // eslint-disable-next-line react-hooks/refs -- options read refs only inside TipTap / ProseMirror callbacks
       FeedbackSticker.configure(stickerExtOptions),
+      Extension.create({
+        name: "scriptContentReadOnlyLock",
+        addProseMirrorPlugins() {
+          return [
+            new Plugin({
+              key: scriptContentLockPluginKey,
+              filterTransaction(tr, state) {
+                if (!contentReadOnlyRef.current) return true
+                if (!tr.docChanged) return true
+                // Must not call `state.apply(tr)` here — it re-runs plugin filters and overflows the stack.
+                const a = scriptDocContentFingerprint(
+                  state.doc.toJSON() as Record<string, unknown>
+                )
+                const b = scriptDocContentFingerprint(
+                  tr.doc.toJSON() as Record<string, unknown>
+                )
+                return a === b
+              },
+            }),
+          ]
+        },
+      }),
     ]
   }, [placeholder, stickerExtOptions])
 
@@ -277,11 +313,14 @@ export function ScriptRichTextEditor({
     []
   )
 
+  const editorEditable =
+    !disabled || Boolean(contentReadOnly && onFeedbackStickersChange)
+
   const editor = useEditor({
     immediatelyRender: false,
     extensions,
     content: initialContent || "",
-    editable: !disabled,
+    editable: editorEditable,
     editorProps: commentEditorProps,
     onUpdate: ({ editor: ed }) => {
       onChange?.(ed.getHTML())
@@ -356,8 +395,10 @@ export function ScriptRichTextEditor({
   }, [initialContent, setContent])
 
   useEffect(() => {
-    editor?.setEditable(!disabled)
-  }, [editor, disabled])
+    editor?.setEditable(
+      !disabled || Boolean(contentReadOnly && onFeedbackStickersChange)
+    )
+  }, [editor, disabled, contentReadOnly, onFeedbackStickersChange])
 
   const handleConfirmAddSticker = () => {
     if (!editor || !onFeedbackStickersChange) return
@@ -445,6 +486,9 @@ export function ScriptRichTextEditor({
   const detailSticker =
     detailStickerId != null ? (feedbackStickers ?? {})[detailStickerId] : undefined
 
+  /** Same toolbar everywhere; formatting actions are disabled when the doc body must not be edited. */
+  const formattingLocked = disabled || contentReadOnly
+
   return (
     <>
       <div
@@ -462,130 +506,153 @@ export function ScriptRichTextEditor({
             showCommentsSidebar && "min-w-0 border-b border-input lg:border-b-0 lg:border-r"
           )}
         >
-        {!disabled ? (
-        <div className="flex flex-wrap items-center gap-0.5 border-b border-input bg-muted/30 p-1">
-          <ToolbarButton
-            onClick={() => editor.chain().focus().undo().run()}
-            disabled={!editor.can().undo()}
-            title="Undo"
-          >
-            <Undo2 className="size-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().redo().run()}
-            disabled={!editor.can().redo()}
-            title="Redo"
-          >
-            <Redo2 className="size-4" />
-          </ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarButton
-            onClick={() => editor.chain().focus().setParagraph().run()}
-            isActive={editor.isActive("paragraph")}
-            title="Paragraph"
-          >
-            <Pilcrow className="size-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-            isActive={editor.isActive("heading", { level: 1 })}
-            title="Heading 1"
-          >
-            <span className="text-xs font-bold">H1</span>
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-            isActive={editor.isActive("heading", { level: 2 })}
-            title="Heading 2"
-          >
-            <span className="text-xs font-bold">H2</span>
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-            isActive={editor.isActive("heading", { level: 3 })}
-            title="Heading 3"
-          >
-            <span className="text-xs font-bold">H3</span>
-          </ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleBold().run()}
-            isActive={editor.isActive("bold")}
-            title="Bold"
-          >
-            <Bold className="size-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleItalic().run()}
-            isActive={editor.isActive("italic")}
-            title="Italic"
-          >
-            <Italic className="size-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleUnderline().run()}
-            isActive={editor.isActive("underline")}
-            title="Underline"
-          >
-            <UnderlineIcon className="size-4" />
-          </ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarButton
-            onClick={() => editor.chain().focus().setTextAlign("left").run()}
-            isActive={editor.isActive({ textAlign: "left" })}
-            title="Align left"
-          >
-            <AlignLeft className="size-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().setTextAlign("center").run()}
-            isActive={editor.isActive({ textAlign: "center" })}
-            title="Align center"
-          >
-            <AlignCenter className="size-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().setTextAlign("right").run()}
-            isActive={editor.isActive({ textAlign: "right" })}
-            title="Align right"
-          >
-            <AlignRight className="size-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().setTextAlign("justify").run()}
-            isActive={editor.isActive({ textAlign: "justify" })}
-            title="Justify"
-          >
-            <AlignJustify className="size-4" />
-          </ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleBulletList().run()}
-            isActive={editor.isActive("bulletList")}
-            title="Bullet list"
-          >
-            <List className="size-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            isActive={editor.isActive("orderedList")}
-            title="Ordered list"
-          >
-            <ListOrdered className="size-4" />
-          </ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarButton
-            onClick={() => {
-              const url = window.prompt("URL")
-              if (url) editor.chain().focus().setLink({ href: url }).run()
-            }}
-            isActive={editor.isActive("link")}
-            title="Insert link"
-          >
-            <LinkIcon className="size-4" />
-          </ToolbarButton>
+        <div className="border-b border-input bg-muted/30">
+          <div className="flex flex-wrap items-center gap-0.5 p-1">
+            <ToolbarButton
+              onClick={() => editor.chain().focus().undo().run()}
+              disabled={formattingLocked || !editor.can().undo()}
+              title="Undo"
+            >
+              <Undo2 className="size-4" />
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().redo().run()}
+              disabled={formattingLocked || !editor.can().redo()}
+              title="Redo"
+            >
+              <Redo2 className="size-4" />
+            </ToolbarButton>
+            <ToolbarDivider />
+            <ToolbarButton
+              onClick={() => editor.chain().focus().setParagraph().run()}
+              isActive={editor.isActive("paragraph")}
+              disabled={formattingLocked}
+              title="Paragraph"
+            >
+              <Pilcrow className="size-4" />
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+              isActive={editor.isActive("heading", { level: 1 })}
+              disabled={formattingLocked}
+              title="Heading 1"
+            >
+              <span className="text-xs font-bold">H1</span>
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+              isActive={editor.isActive("heading", { level: 2 })}
+              disabled={formattingLocked}
+              title="Heading 2"
+            >
+              <span className="text-xs font-bold">H2</span>
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+              isActive={editor.isActive("heading", { level: 3 })}
+              disabled={formattingLocked}
+              title="Heading 3"
+            >
+              <span className="text-xs font-bold">H3</span>
+            </ToolbarButton>
+            <ToolbarDivider />
+            <ToolbarButton
+              onClick={() => editor.chain().focus().toggleBold().run()}
+              isActive={editor.isActive("bold")}
+              disabled={formattingLocked}
+              title="Bold"
+            >
+              <Bold className="size-4" />
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().toggleItalic().run()}
+              isActive={editor.isActive("italic")}
+              disabled={formattingLocked}
+              title="Italic"
+            >
+              <Italic className="size-4" />
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().toggleUnderline().run()}
+              isActive={editor.isActive("underline")}
+              disabled={formattingLocked}
+              title="Underline"
+            >
+              <UnderlineIcon className="size-4" />
+            </ToolbarButton>
+            <ToolbarDivider />
+            <ToolbarButton
+              onClick={() => editor.chain().focus().setTextAlign("left").run()}
+              isActive={editor.isActive({ textAlign: "left" })}
+              disabled={formattingLocked}
+              title="Align left"
+            >
+              <AlignLeft className="size-4" />
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().setTextAlign("center").run()}
+              isActive={editor.isActive({ textAlign: "center" })}
+              disabled={formattingLocked}
+              title="Align center"
+            >
+              <AlignCenter className="size-4" />
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().setTextAlign("right").run()}
+              isActive={editor.isActive({ textAlign: "right" })}
+              disabled={formattingLocked}
+              title="Align right"
+            >
+              <AlignRight className="size-4" />
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().setTextAlign("justify").run()}
+              isActive={editor.isActive({ textAlign: "justify" })}
+              disabled={formattingLocked}
+              title="Justify"
+            >
+              <AlignJustify className="size-4" />
+            </ToolbarButton>
+            <ToolbarDivider />
+            <ToolbarButton
+              onClick={() => editor.chain().focus().toggleBulletList().run()}
+              isActive={editor.isActive("bulletList")}
+              disabled={formattingLocked}
+              title="Bullet list"
+            >
+              <List className="size-4" />
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().toggleOrderedList().run()}
+              isActive={editor.isActive("orderedList")}
+              disabled={formattingLocked}
+              title="Ordered list"
+            >
+              <ListOrdered className="size-4" />
+            </ToolbarButton>
+            <ToolbarDivider />
+            <ToolbarButton
+              onClick={() => {
+                const url = window.prompt("URL")
+                if (url) editor.chain().focus().setLink({ href: url }).run()
+              }}
+              isActive={editor.isActive("link")}
+              disabled={formattingLocked}
+              title="Insert link"
+            >
+              <LinkIcon className="size-4" />
+            </ToolbarButton>
+          </div>
+          {contentReadOnly && showStickerTools ? (
+            <div className="border-t border-border/60 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
+              <span className="font-medium text-foreground/80">Inline comments</span> — highlight
+              script text to attach feedback, or use{" "}
+              <kbd className="rounded border bg-background px-1 font-mono text-[10px]">⌘⇧M</kbd> /{" "}
+              <kbd className="rounded border bg-background px-1 font-mono text-[10px]">Ctrl⇧M</kbd>{" "}
+              at the cursor. The script body is read-only.
+            </div>
+          ) : null}
         </div>
-        ) : null}
         <div
           ref={editorShellRef}
           className={cn(showCommentsSidebar && "min-h-0 flex-1 overflow-y-auto")}

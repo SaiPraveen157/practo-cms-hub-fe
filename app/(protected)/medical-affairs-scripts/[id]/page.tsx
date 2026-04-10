@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useRouter, useParams, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -33,10 +33,12 @@ import {
   approveScript,
   rejectScript,
 } from "@/lib/scripts-api"
-import type { Script, ScriptFeedbackSticker, ScriptStatus } from "@/types/script"
+import type {
+  Script,
+  ScriptFeedbackSticker,
+  ScriptStatus,
+} from "@/types/script"
 import {
-  canonicalStickersJsonFromArray,
-  canonicalStickersJsonFromRecord,
   recordFromStickerArray,
   scriptCommentsListFromScript,
 } from "@/lib/feedback-sticker-sync"
@@ -104,15 +106,18 @@ export default function MedicalAffairsScriptDetailPage() {
     Record<string, ScriptFeedbackSticker>
   >({})
 
-  const onCommentsMergedFromApi = useCallback((list: ScriptFeedbackSticker[]) => {
-    setFeedbackStickers(recordFromStickerArray(list))
-  }, [])
+  const onCommentsMergedFromApi = useCallback(
+    (list: ScriptFeedbackSticker[]) => {
+      setFeedbackStickers(recordFromStickerArray(list))
+    },
+    []
+  )
 
   const { notifyStickersChanged, syncBaseline } = useScriptCommentsRemoteSync({
     token,
     scriptId: id,
-    fetchEnabled: Boolean(token && id),
-    pushEnabled: Boolean(token && id && isDraft),
+    fetchEnabled: Boolean(token && id && script && script.status !== "DRAFT"),
+    pushEnabled: Boolean(token && id && script?.status === "MEDICAL_REVIEW"),
     onMergeFromServer: onCommentsMergedFromApi,
   })
 
@@ -124,21 +129,11 @@ export default function MedicalAffairsScriptDetailPage() {
     [notifyStickersChanged]
   )
 
-  const serverStickersKey = useMemo(
-    () => canonicalStickersJsonFromArray(scriptCommentsListFromScript(script)),
-    [script?.comments, script?.feedbackStickers]
-  )
-  const editStickersKey = useMemo(
-    () => canonicalStickersJsonFromRecord(feedbackStickers),
-    [feedbackStickers]
-  )
-
   const hasUnsavedChanges =
     !!script &&
     (editTitle !== (script.title ?? "") ||
       editInsight !== (script.insight ?? "") ||
-      editContent !== (script.content ?? "") ||
-      serverStickersKey !== editStickersKey)
+      editContent !== (script.content ?? ""))
 
   function refetchScript() {
     if (!token || !id) return
@@ -153,7 +148,9 @@ export default function MedicalAffairsScriptDetailPage() {
           setEditTitle(s.title ?? "")
           setEditInsight(s.insight ?? "")
           setEditContent(s.content ?? "")
-          const stickerMap = recordFromStickerArray(scriptCommentsListFromScript(s))
+          const stickerMap = recordFromStickerArray(
+            scriptCommentsListFromScript(s)
+          )
           setFeedbackStickers(stickerMap)
           syncBaseline(stickerMap)
         }
@@ -182,7 +179,9 @@ export default function MedicalAffairsScriptDetailPage() {
         setEditTitle(s.title ?? "")
         setEditInsight(s.insight ?? "")
         setEditContent(s.content ?? "")
-        const stickerMap = recordFromStickerArray(scriptCommentsListFromScript(s))
+        const stickerMap = recordFromStickerArray(
+          scriptCommentsListFromScript(s)
+        )
         setFeedbackStickers(stickerMap)
         syncBaseline(stickerMap)
       })
@@ -209,13 +208,10 @@ export default function MedicalAffairsScriptDetailPage() {
     setError(null)
     setSaving(true)
     try {
-      const commentList = Object.values(feedbackStickers)
       await updateScript(token, id, {
         title: editTitle.trim() || undefined,
         insight: editInsight.trim() || undefined,
         content: editContent,
-        comments: commentList,
-        feedbackStickers: commentList,
       })
       refetchScript()
       toast.success("Changes saved", { description: "Draft updated." })
@@ -328,7 +324,7 @@ export default function MedicalAffairsScriptDetailPage() {
 
   return (
     <div className="p-6 md:p-8">
-      <div className="mx-auto max-w-4xl space-y-6">
+      <div className="max-w-5xl mx-auto space-y-6">
         <div className="space-y-4">
           <Button variant="ghost" size="sm" className="-ml-2" asChild>
             <Link href="/medical-affairs-scripts">
@@ -405,10 +401,7 @@ export default function MedicalAffairsScriptDetailPage() {
                     onChange={setEditContent}
                     placeholder="Enter the full script content..."
                     minHeight="280px"
-                    feedbackStickers={feedbackStickers}
-                    onFeedbackStickersChange={handleFeedbackStickersChange}
-                    feedbackStickerToolbar
-                    feedbackStickerAuthorId={user?.id ?? null}
+                    feedbackCommentsSidebar={false}
                   />
                 </div>
                 <Button type="submit" disabled={saving} variant="outline">
@@ -469,11 +462,22 @@ export default function MedicalAffairsScriptDetailPage() {
                   <ScriptRichTextEditor
                     key={`${script.id}-view-${script.updatedAt}`}
                     initialContent={script.content ?? ""}
-                    disabled
                     minHeight="200px"
-                    className="mt-1 rounded-lg bg-muted/50"
+                    className="mt-1"
                     feedbackStickers={feedbackStickers}
-                    feedbackCommentsSidebar
+                    {...(isMedicalReview
+                      ? {
+                          contentReadOnly: true,
+                          onFeedbackStickersChange:
+                            handleFeedbackStickersChange,
+                          feedbackStickerToolbar: true,
+                          feedbackStickerAuthorId: user?.id ?? null,
+                          feedbackCommentsSidebar: true,
+                        }
+                      : {
+                          disabled: true,
+                          feedbackCommentsSidebar: true,
+                        })}
                   />
                 </div>
               </CardContent>

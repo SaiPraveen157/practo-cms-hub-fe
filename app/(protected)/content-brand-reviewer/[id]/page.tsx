@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -25,7 +25,17 @@ import {
 import { toast } from "sonner"
 import { useAuthStore } from "@/store"
 import { getScriptQueue, approveScript, rejectScript } from "@/lib/scripts-api"
-import type { Script, ScriptStatus } from "@/types/script"
+import type {
+  Script,
+  ScriptFeedbackSticker,
+  ScriptStatus,
+} from "@/types/script"
+import { ScriptRichTextEditor } from "@/components/script-rich-text-editor"
+import {
+  recordFromStickerArray,
+  scriptCommentsListFromScript,
+} from "@/lib/feedback-sticker-sync"
+import { useScriptCommentsRemoteSync } from "@/hooks/use-script-comments-remote-sync"
 import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import { ScriptDetailSkeleton } from "@/components/loading/script-detail-skeleton"
 import { ScriptRejectionFeedback } from "@/components/script-rejection-feedback"
@@ -72,11 +82,43 @@ export default function ContentBrandReviewerScriptPage() {
   const [rejectComments, setRejectComments] = useState("")
   const [approving, setApproving] = useState(false)
   const [rejecting, setRejecting] = useState(false)
+  const [feedbackStickers, setFeedbackStickers] = useState<
+    Record<string, ScriptFeedbackSticker>
+  >({})
 
   const isContentBrand = user?.role === "CONTENT_BRAND"
   const canReview = script?.status === "CONTENT_BRAND_REVIEW"
   const canFinalApprove = script?.status === "CONTENT_BRAND_APPROVAL"
   const canTakeAction = canReview || canFinalApprove
+
+  /** Open stickers only gate approval during first Brand review (reject path exists). */
+  const hasPendingStickerComments = useMemo(() => {
+    if (!canReview) return false
+    return Object.values(feedbackStickers).some((s) => s.resolved !== true)
+  }, [feedbackStickers, canReview])
+
+  const onCommentsMergedFromApi = useCallback(
+    (list: ScriptFeedbackSticker[]) => {
+      setFeedbackStickers(recordFromStickerArray(list))
+    },
+    []
+  )
+
+  const { notifyStickersChanged, syncBaseline } = useScriptCommentsRemoteSync({
+    token,
+    scriptId: id,
+    fetchEnabled: Boolean(token && id && canReview),
+    pushEnabled: Boolean(token && id && canReview),
+    onMergeFromServer: onCommentsMergedFromApi,
+  })
+
+  const handleFeedbackStickersChange = useCallback(
+    (next: Record<string, ScriptFeedbackSticker>) => {
+      setFeedbackStickers(next)
+      notifyStickersChanged(next)
+    },
+    [notifyStickersChanged]
+  )
 
   useEffect(() => {
     if (!token || !id) return
@@ -96,6 +138,16 @@ export default function ContentBrandReviewerScriptPage() {
           return
         }
         setScript(s)
+        if (s.status === "CONTENT_BRAND_APPROVAL") {
+          setFeedbackStickers({})
+          syncBaseline({})
+        } else {
+          const stickerMap = recordFromStickerArray(
+            scriptCommentsListFromScript(s)
+          )
+          setFeedbackStickers(stickerMap)
+          syncBaseline(stickerMap)
+        }
       })
       .catch((err) => {
         if (!cancelled)
@@ -107,10 +159,17 @@ export default function ContentBrandReviewerScriptPage() {
     return () => {
       cancelled = true
     }
-  }, [token, id])
+  }, [token, id, syncBaseline])
 
   async function handleApprove() {
     if (!token || !id) return
+    if (hasPendingStickerComments) {
+      toast.error("Resolve or remove all inline comments first", {
+        description:
+          "Mark each comment thread as resolved in the editor, or delete it, before approving.",
+      })
+      return
+    }
     setError(null)
     setApproving(true)
     try {
@@ -182,7 +241,7 @@ export default function ContentBrandReviewerScriptPage() {
 
   return (
     <div className="p-6 md:p-8">
-      <div className="mx-auto max-w-3xl space-y-6">
+      <div className="mx-auto max-w-5xl space-y-6">
         <div className="space-y-4">
           <Button variant="ghost" size="sm" className="-ml-2" asChild>
             <Link href="/content-brand-reviewer">
@@ -238,8 +297,10 @@ export default function ContentBrandReviewerScriptPage() {
             <CardTitle>Script content</CardTitle>
             <CardDescription>
               {canFinalApprove
-                ? "Approved by Medical Affairs. Final approve to send to Content Approver for lock."
-                : "Submitted by Medical Affairs for your review. Approve to send to Agency Production, or reject with feedback so they can revise and resubmit."}
+                ? "Approved by Medical Affairs. Final approve to send to Content Approver for lock. Optional notes can be added in the approve dialog."
+                : canTakeAction
+                  ? "Submitted by Medical Affairs for your review. Use inline comments on the script for specific feedback; approve to send to Agency Production, or reject with a summary so they can revise and resubmit."
+                  : "Submitted by Medical Affairs for your review. Approve to send to Agency Production, or reject with feedback so they can revise and resubmit."}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -253,39 +314,67 @@ export default function ContentBrandReviewerScriptPage() {
                 </p>
               </div>
             )}
-            <div>
+            <div className="space-y-2">
               <p className="text-sm font-medium text-muted-foreground">
                 Script
               </p>
-              <div
-                className="mt-1 rounded-lg bg-muted/50 p-4 text-sm leading-relaxed [&_a]:text-primary [&_a]:underline [&_ol]:list-decimal [&_p]:mb-2 [&_ul]:list-disc"
-                dangerouslySetInnerHTML={{ __html: script.content ?? "" }}
+              <ScriptRichTextEditor
+                key={`${script.id}-${script.updatedAt}`}
+                initialContent={script.content ?? ""}
+                minHeight="min(480px, 55vh)"
+                className="mt-1"
+                {...(canReview
+                  ? {
+                      feedbackStickers,
+                      feedbackCommentsSidebar: true,
+                      contentReadOnly: true,
+                      onFeedbackStickersChange: handleFeedbackStickersChange,
+                      feedbackStickerToolbar: true,
+                      feedbackStickerAuthorId: user?.id ?? null,
+                    }
+                  : {
+                      disabled: true,
+                      feedbackCommentsSidebar: false,
+                    })}
               />
             </div>
           </CardContent>
         </Card>
 
         {canTakeAction && (
-          <div className="flex flex-wrap gap-2 border-t pt-6">
-            {canReview && (
+          <div className="space-y-3 border-t pt-6">
+            {hasPendingStickerComments ? (
+              <p className="text-sm text-amber-800 dark:text-amber-200/90">
+                You have open inline comments. Resolve or delete each one in the
+                script editor before you can approve.
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              {canReview && (
+                <Button
+                  variant="outline"
+                  className="text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-500/30 dark:text-red-500 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+                  onClick={() => setRejectDialogOpen(true)}
+                >
+                  <XCircle className="mr-2 size-4" />
+                  Needs changes
+                </Button>
+              )}
               <Button
                 variant="outline"
-                className="text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-500/30 dark:text-red-500 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-                onClick={() => setRejectDialogOpen(true)}
+                className="text-green-600 hover:bg-green-50 hover:text-green-700 focus-visible:ring-green-500/30 dark:text-green-500 dark:hover:bg-green-950/50 dark:hover:text-green-400"
+                onClick={() => setApproveDialogOpen(true)}
+                disabled={hasPendingStickerComments}
+                title={
+                  hasPendingStickerComments
+                    ? "Resolve or remove all open inline comments before approving"
+                    : undefined
+                }
               >
-                <XCircle className="mr-2 size-4" />
-                Needs changes
+                <CheckCircle className="mr-2 size-4" />
+                Approve
               </Button>
-            )}
-            <Button
-              variant="outline"
-              className="text-green-600 hover:bg-green-50 hover:text-green-700 focus-visible:ring-green-500/30 dark:text-green-500 dark:hover:bg-green-950/50 dark:hover:text-green-400"
-              onClick={() => setApproveDialogOpen(true)}
-            >
-              <CheckCircle className="mr-2 size-4" />
-              {/* {canFinalApprove ? "Final approve" : "Approve"} */}
-              Approve
-            </Button>
+            </div>
           </div>
         )}
 
@@ -305,6 +394,12 @@ export default function ContentBrandReviewerScriptPage() {
                 ? "The script will move to Content Approver Review. Content Approver can then lock it for production. You can add optional comments."
                 : "The script will move to Agency Production. Medical Affairs will no longer edit this version. You can add optional comments for the record."}
             </DialogDescription>
+            {canReview && hasPendingStickerComments ? (
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-200/90">
+                Approve is blocked until every inline comment is resolved or
+                removed.
+              </p>
+            ) : null}
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="approve-comments">Comments (optional)</Label>
@@ -328,7 +423,7 @@ export default function ContentBrandReviewerScriptPage() {
             <Button
               variant="outline"
               onClick={handleApprove}
-              disabled={approving}
+              disabled={approving || hasPendingStickerComments}
               className="text-green-600 hover:bg-green-50 hover:text-green-700 focus-visible:ring-green-500/30 dark:text-green-500 dark:hover:bg-green-950/50 dark:hover:text-green-400"
             >
               {approving && <Loader2 className="mr-2 size-4 animate-spin" />}
@@ -347,8 +442,9 @@ export default function ContentBrandReviewerScriptPage() {
             </DialogTitle>
             <DialogDescription className="max-w-[42ch] text-sm leading-relaxed">
               The script will return to Draft. Medical Affairs will be notified
-              and can revise and resubmit. Please provide feedback so they know
-              what to change. TAT 24 hours.
+              and can revise and resubmit. Add inline comments in the script
+              above for specific passages, and summarize below so they know what
+              to change. TAT 24 hours.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
