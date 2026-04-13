@@ -13,7 +13,8 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { TagPillList } from "@/components/packages/tag-pill-list"
 import { Label } from "@/components/ui/label"
-import type { PackageAsset } from "@/types/package"
+import type { PackageAsset, PackageSpecialtyOption } from "@/types/package"
+import { labelForSpecialtyValue } from "@/lib/package-specialty-label"
 import { parseAgencyDeliverableBlockBody } from "@/lib/package-composed-description"
 import { formatPackageFileSize, thumbnailsForVideo } from "@/lib/package-ui"
 import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
@@ -42,6 +43,8 @@ export function PackageInlineVideoCard({
   onPackageVideoCommentsUpdated = null,
   /** Accepted for API compatibility; unified thumbnails are plain images (no selection UI). */
   selectedThumbnailId: _selectedThumbnailId,
+  /** Map `asset.specialty` enum to label (from GET /api/packages/specialties). */
+  specialtyOptions = [],
 }: {
   asset: PackageAsset
   label: string
@@ -53,6 +56,7 @@ export function PackageInlineVideoCard({
   packageVideo?: PackageVideo | null
   onPackageVideoCommentsUpdated?: (() => void) | null
   selectedThumbnailId?: string | null
+  specialtyOptions?: PackageSpecialtyOption[]
 }) {
   void _selectedThumbnailId
   const [videoError, setVideoError] = useState(false)
@@ -149,12 +153,41 @@ export function PackageInlineVideoCard({
   const metaTags =
     asset.tags && asset.tags.length > 0 ? asset.tags : parsed.tags
   const nestedThumbs = thumbnailsForVideo(asset)
+  const doctorLine = asset.doctorName?.trim()
+  const specialtyLine = labelForSpecialtyValue(
+    asset.specialty ?? undefined,
+    specialtyOptions
+  )
 
   const metadataBlock = (
     <div className="flex h-full min-h-0 flex-col space-y-5 rounded-xl border border-border bg-muted/20 p-4 sm:p-6">
       <p className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
         Video Metadata
       </p>
+      {doctorLine || specialtyLine ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {doctorLine ? (
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Doctor
+              </Label>
+              <p className="text-base leading-snug text-foreground">
+                {doctorLine}
+              </p>
+            </div>
+          ) : null}
+          {specialtyLine ? (
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Specialty
+              </Label>
+              <p className="text-base leading-snug text-foreground">
+                {specialtyLine}
+              </p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {metaTitle ? (
         <div className="space-y-1.5">
           <Label className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
@@ -183,7 +216,11 @@ export function PackageInlineVideoCard({
           <TagPillList tags={metaTags} />
         </div>
       ) : null}
-      {!metaTitle && !metaDescription && metaTags.length === 0 ? (
+      {!metaTitle &&
+      !metaDescription &&
+      metaTags.length === 0 &&
+      !doctorLine &&
+      !specialtyLine ? (
         <p className="text-base text-muted-foreground">
           No title, description, or tags on this asset or deliverable block.
         </p>

@@ -88,6 +88,8 @@ function normalizeLanguageAsset(a: unknown): LanguageVideoAsset | null {
     title: (x.title as string | null) ?? null,
     description: (x.description as string | null) ?? null,
     tags: (x.tags as string[] | null) ?? null,
+    doctorName: (x.doctorName ?? x.doctor_name) as string | null | undefined,
+    specialty: (x.specialty as string | null) ?? null,
     thumbnails,
     createdAt: (x.createdAt ?? x.created_at) as string | undefined,
   }

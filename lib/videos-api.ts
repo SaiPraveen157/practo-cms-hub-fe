@@ -4,6 +4,7 @@
  */
 
 import { apiRequest } from "@/lib/api"
+import { assertDeliverableVideoFileIfVideo } from "@/lib/video-file-validation"
 import {
   filterVideoCommentsWithTimestamp,
   normalizeVideoComment,
@@ -300,6 +301,7 @@ export async function uploadVideoFlow(
   phase: VideoPhase,
   options?: { videoId?: string }
 ): Promise<Video> {
+  assertDeliverableVideoFileIfVideo(file)
   const fileName = file.name
   const fileType = file.type || "application/octet-stream"
   const fileSize = file.size

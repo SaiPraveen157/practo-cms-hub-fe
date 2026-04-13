@@ -27,6 +27,7 @@ import {
 import { useAuthStore } from "@/store"
 import { toast } from "sonner"
 import { getScriptQueue, updateScript, submitRevision } from "@/lib/scripts-api"
+import { SCRIPT_TITLE_REQUIRED_MESSAGE } from "@/lib/script-title"
 import type { Script, ScriptStatus } from "@/types/script"
 import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import { ScriptDetailSkeleton } from "@/components/loading/script-detail-skeleton"
@@ -140,11 +141,15 @@ export default function AgencyPocScriptPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!token || !id || !canEdit) return
+    if (!editTitle.trim()) {
+      setError(SCRIPT_TITLE_REQUIRED_MESSAGE)
+      return
+    }
     setError(null)
     setSaving(true)
     try {
       await updateScript(token, id, {
-        title: editTitle.trim() || undefined,
+        title: editTitle.trim(),
         insight: editInsight.trim() || undefined,
         content: editContent,
       })

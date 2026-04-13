@@ -3,6 +3,7 @@
  */
 
 import { apiRequest } from "@/lib/api"
+import { assertDeliverableVideoFile } from "@/lib/video-file-validation"
 import {
   normalizeLanguagePackage,
   normalizeLanguageVideo,
@@ -75,6 +76,7 @@ export async function uploadLanguagePackageVideoFile(
   token: string | null,
   file: File
 ): Promise<UploadedLanguageFileMeta> {
+  assertDeliverableVideoFile(file)
   const fileName = file.name
   const fileType = file.type || "application/octet-stream"
   const { uploadUrl, fileUrl } = await getLanguagePackageUploadUrl(token, {

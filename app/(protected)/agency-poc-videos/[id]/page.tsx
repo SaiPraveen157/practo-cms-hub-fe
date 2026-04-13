@@ -24,6 +24,10 @@ import {
   uploadFileToPresignedUrl,
 } from "@/lib/videos-api"
 import {
+  assertDeliverableVideoFileIfVideo,
+  FIRST_LINE_UP_MIXED_INPUT_ACCEPT,
+} from "@/lib/video-file-validation"
+import {
   findPriorVideoVersionInQueue,
   isAgencyRejectedReturn,
 } from "@/lib/agency-video-resubmit"
@@ -363,6 +367,13 @@ export default function AgencyPocVideoDetailPage() {
   const uploadSelectedFileToStorage = useCallback(
     async (file: File) => {
       if (!token || !video) return
+      try {
+        assertDeliverableVideoFileIfVideo(file)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Invalid file"
+        toast.error("Invalid file", { description: msg })
+        return
+      }
       setUploadingToStorage(true)
       try {
         const fileName = file.name
@@ -626,7 +637,7 @@ export default function AgencyPocVideoDetailPage() {
               <div className="space-y-3">
                 <input
                   type="file"
-                  accept="video/mp4,video/quicktime,video/x-msvideo,application/pdf,image/jpeg,image/png"
+                  accept={FIRST_LINE_UP_MIXED_INPUT_ACCEPT}
                   className="w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-foreground file:hover:bg-primary/90"
                   onChange={(e) => {
                     const f = e.target.files?.[0] ?? null

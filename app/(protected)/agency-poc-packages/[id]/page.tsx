@@ -26,17 +26,22 @@ import { useAuthStore } from "@/store"
 import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
 import type { UserRole } from "@/types/auth"
 import {
+  deletePackageThumbnail,
   getPackage,
+  getPackageSpecialties,
   resubmitPackageMetadata,
   resubmitPackageVideoFile,
   uploadPackageThumbnailFile,
   uploadPackageVideoFile,
   withdrawPackageVideo,
 } from "@/lib/packages-api"
+import { labelForSpecialtyValue, optionalDoctorSpecialtyPayload } from "@/lib/package-specialty-label"
+import { DELIVERABLE_VIDEO_INPUT_ACCEPT } from "@/lib/video-file-validation"
 import type {
   FinalPackage,
   PackageAsset,
   PackageItemFeedbackEntry,
+  PackageSpecialtyOption,
   PackageStatus,
   PackageThumbnailRecord,
   PackageVideo,
@@ -86,6 +91,7 @@ import {
   Info,
   Loader2,
   Smartphone,
+  Trash2,
   Upload,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -335,7 +341,7 @@ function VideoReplacementUploadCell({
         ref={inputRef}
         id={id}
         type="file"
-        accept="video/*"
+        accept={DELIVERABLE_VIDEO_INPUT_ACCEPT}
         className="hidden"
         aria-label="Choose replacement video file"
         onChange={(e) => {
@@ -444,6 +450,9 @@ export default function AgencyPackageDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [revisionTab, setRevisionTab] = useState<RevisionTab>("videos")
   const revisionTabInit = useRef(false)
+  const [specialtyOptions, setSpecialtyOptions] = useState<
+    PackageSpecialtyOption[]
+  >([])
 
   const role = user?.role as UserRole | undefined
   const isAgency = role === "AGENCY_POC" || role === "SUPER_ADMIN"
@@ -465,6 +474,22 @@ export default function AgencyPackageDetailPage() {
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const list = await getPackageSpecialties(token)
+        if (!cancelled) setSpecialtyOptions(list)
+      } catch {
+        if (!cancelled) setSpecialtyOptions([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [token])
 
   useEffect(() => {
     revisionTabInit.current = false
@@ -723,6 +748,7 @@ export default function AgencyPackageDetailPage() {
                   token={token}
                   role={role}
                   onPackageUpdated={setPkg}
+                  specialtyOptions={specialtyOptions}
                 />
               )}
             </div>
@@ -1083,6 +1109,7 @@ function MetadataResubmitFields({
   asset,
   thumbs,
   onUpdated,
+  specialtyOptions,
 }: {
   video: PackageVideo
   pkg: FinalPackage
@@ -1091,21 +1118,27 @@ function MetadataResubmitFields({
   asset: PackageAsset
   thumbs: PackageThumbnailRecord[]
   onUpdated: (p: FinalPackage) => void
+  specialtyOptions: PackageSpecialtyOption[]
 }) {
   const [title, setTitle] = useState(asset.title?.trim() ?? "")
   const [description, setDescription] = useState(
     asset.description?.trim() ?? ""
   )
   const [tagsInput, setTagsInput] = useState((asset.tags ?? []).join(", "))
+  const [doctorName, setDoctorName] = useState(asset.doctorName?.trim() ?? "")
+  const [specialty, setSpecialty] = useState(asset.specialty?.trim() ?? "")
   const [replacementFiles, setReplacementFiles] = useState<
     Record<string, File | null>
   >({})
   const [busy, setBusy] = useState(false)
+  const [deletingThumbId, setDeletingThumbId] = useState<string | null>(null)
 
   useEffect(() => {
     setTitle(asset.title?.trim() ?? "")
     setDescription(asset.description?.trim() ?? "")
     setTagsInput((asset.tags ?? []).join(", "))
+    setDoctorName(asset.doctorName?.trim() ?? "")
+    setSpecialty(asset.specialty?.trim() ?? "")
     setReplacementFiles({})
   }, [
     video.id,
@@ -1114,7 +1147,26 @@ function MetadataResubmitFields({
     asset.title,
     asset.description,
     asset.tags,
+    asset.doctorName,
+    asset.specialty,
   ])
+
+  async function handleDeleteThumbnail(thumbnailId: string) {
+    if (!token) return
+    setDeletingThumbId(thumbnailId)
+    try {
+      await deletePackageThumbnail(token, thumbnailId)
+      const fresh = await getPackage(token, pkg.id)
+      onUpdated(fresh.package)
+      toast.success(
+        "Thumbnail removed. Finish edits and resubmit metadata when ready."
+      )
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not delete thumbnail")
+    } finally {
+      setDeletingThumbId(null)
+    }
+  }
 
   const approvedCount = thumbs.filter((t) => t.status === "APPROVED").length
   const rejectedCount = thumbs.filter((t) => t.status === "REJECTED").length
@@ -1178,6 +1230,7 @@ function MetadataResubmitFields({
         title: title.trim(),
         description: description.trim(),
         tags,
+        ...optionalDoctorSpecialtyPayload({ doctorName, specialty }),
         thumbnails,
       })
       onUpdated(mergeVideoIntoPackage(pkg, res.video))
@@ -1199,8 +1252,9 @@ function MetadataResubmitFields({
         <CardDescription className="leading-relaxed">
           Fix copy as needed. <strong>Approved</strong> (and any still{" "}
           <strong>pending</strong>) thumbnails keep their current file — only{" "}
-          <strong>rejected</strong> images need a replacement upload. Your video
-          file is unchanged; Content/Brand reviews the metadata track again.
+          <strong>rejected</strong> images need a replacement upload (or remove
+          an extra rejected image when allowed). Your video file is unchanged;
+          Content/Brand reviews the metadata track again.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6 border-t border-border/60 pt-6">
@@ -1260,6 +1314,39 @@ function MetadataResubmitFields({
         </section>
 
         <section className="space-y-4 rounded-lg border border-border bg-background/80 p-4 shadow-sm dark:bg-background/40">
+          <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+            Doctor & specialty (optional)
+          </h3>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor={`mt-doctor-${video.id}`}>Doctor</Label>
+              <Input
+                id={`mt-doctor-${video.id}`}
+                value={doctorName}
+                onChange={(e) => setDoctorName(e.target.value)}
+                placeholder="e.g. Dr. Ramesh Kumar"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`mt-specialty-${video.id}`}>Specialty</Label>
+              <select
+                id={`mt-specialty-${video.id}`}
+                value={specialty}
+                onChange={(e) => setSpecialty(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] dark:bg-input/30"
+              >
+                <option value="">Select specialty…</option>
+                {specialtyOptions.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <section className="space-y-4 rounded-lg border border-border bg-background/80 p-4 shadow-sm dark:bg-background/40">
           <h3 className="flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             <ImageIcon className="size-4 shrink-0" aria-hidden />
             Thumbnails (same order as current version)
@@ -1304,6 +1391,10 @@ function MetadataResubmitFields({
               const previewKey = file
                 ? `${file.name}-${file.size}-${file.lastModified}`
                 : ""
+              const canDeleteThumb =
+                t.status === "REJECTED" &&
+                video.metadataTrackStatus === "REJECTED" &&
+                thumbs.length > 1
               return (
                 <li
                   key={t.id}
@@ -1342,6 +1433,31 @@ function MetadataResubmitFields({
                         <p className="text-xs leading-snug text-destructive">
                           {t.comment}
                         </p>
+                      ) : null}
+                      {canDeleteThumb ? (
+                        <div className="space-y-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            disabled={
+                              busy || deletingThumbId === t.id || !token
+                            }
+                            onClick={() => void handleDeleteThumbnail(t.id)}
+                          >
+                            {deletingThumbId === t.id ? (
+                              <Loader2 className="mr-2 size-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="mr-2 size-4" />
+                            )}
+                            Remove rejected thumbnail
+                          </Button>
+                          <p className="text-xs text-muted-foreground">
+                            You must still resubmit metadata with the remaining
+                            thumbnails.
+                          </p>
+                        </div>
                       ) : null}
                       {needsFile ? (
                         <div className="space-y-2 border-t border-border pt-3">
@@ -1409,11 +1525,13 @@ function MetadataRevisionPanel({
   token,
   role,
   onPackageUpdated,
+  specialtyOptions,
 }: {
   pkg: FinalPackage
   token: string | null
   role: UserRole | undefined
   onPackageUpdated: (p: FinalPackage) => void
+  specialtyOptions: PackageSpecialtyOption[]
 }) {
   const videos = useMemo(() => packageVideosSorted(pkg), [pkg])
   const deliverableLabels = useMemo(
@@ -1606,6 +1724,11 @@ function MetadataRevisionPanel({
                         title={asset.title}
                         description={asset.description}
                         tags={asset.tags ?? undefined}
+                        doctorName={asset.doctorName}
+                        specialtyLabel={labelForSpecialtyValue(
+                          asset.specialty,
+                          specialtyOptions
+                        )}
                       />
                       <div>
                         <h4
@@ -1631,6 +1754,7 @@ function MetadataRevisionPanel({
                     asset={asset}
                     thumbs={thumbs}
                     onUpdated={onPackageUpdated}
+                    specialtyOptions={specialtyOptions}
                   />
                 </div>
               ) : null}
@@ -1648,6 +1772,11 @@ function MetadataRevisionPanel({
                         title={asset.title}
                         description={asset.description}
                         tags={asset.tags ?? undefined}
+                        doctorName={asset.doctorName}
+                        specialtyLabel={labelForSpecialtyValue(
+                          asset.specialty,
+                          specialtyOptions
+                        )}
                       />
                     </div>
                   </div>

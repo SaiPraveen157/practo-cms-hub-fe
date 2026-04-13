@@ -27,6 +27,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import type { Script } from "@/types/script"
+import type { PackageSpecialtyOption } from "@/types/package"
 import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import {
   getAuthorDisplayName,
@@ -49,6 +50,7 @@ import {
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { DELIVERABLE_VIDEO_INPUT_ACCEPT } from "@/lib/video-file-validation"
 
 export const WIZARD_COLUMN =
   "mx-auto w-full max-w-3xl px-4 sm:px-6 lg:px-8"
@@ -58,6 +60,10 @@ export type PerVideoMeta = {
   description: string
   tags: string[]
   tagDraft?: string
+  /** Optional — doctor display name on the deliverable. */
+  doctorName: string
+  /** Optional — specialty enum value from GET /api/packages/specialties. */
+  specialty: string
 }
 
 export const EMPTY_VIDEO_META: PerVideoMeta = {
@@ -65,6 +71,8 @@ export const EMPTY_VIDEO_META: PerVideoMeta = {
   description: "",
   tags: [],
   tagDraft: "",
+  doctorName: "",
+  specialty: "",
 }
 
 export function mergePackageTags(...groups: string[][]): string[] {
@@ -402,13 +410,20 @@ export function ReviewVideoRow({
   meta,
   file,
   ok,
+  specialties = [],
 }: {
   label: string
   meta: PerVideoMeta
   file: File | null
   ok: boolean
+  specialties?: PackageSpecialtyOption[]
 }) {
   const reviewTags = effectiveTagsFromMeta(meta)
+  const specLabel =
+    meta.specialty?.trim() !== ""
+      ? specialties.find((s) => s.value === meta.specialty)?.label ??
+        meta.specialty
+      : ""
   return (
     <li
       className={cn(
@@ -448,6 +463,22 @@ export function ReviewVideoRow({
               }
             />
           </div>
+          {(meta.doctorName?.trim() || specLabel) && (
+            <div className="grid gap-2 text-sm sm:grid-cols-2">
+              {meta.doctorName?.trim() ? (
+                <p>
+                  <span className="text-muted-foreground">Doctor: </span>
+                  <span className="text-foreground">{meta.doctorName.trim()}</span>
+                </p>
+              ) : null}
+              {specLabel ? (
+                <p>
+                  <span className="text-muted-foreground">Specialty: </span>
+                  <span className="text-foreground">{specLabel}</span>
+                </p>
+              ) : null}
+            </div>
+          )}
           <p className="font-mono text-xs break-all text-muted-foreground">
             {file?.name ?? "—"}
             {file ? ` · ${formatBytes(file.size)}` : ""}
@@ -679,6 +710,7 @@ export function VideoDeliverableCard({
   idPrefix,
   spacious,
   incompleteMetaHint = "Title, description & tags required",
+  specialties = [],
 }: {
   badge: string
   heading: string
@@ -694,6 +726,8 @@ export function VideoDeliverableCard({
   spacious?: boolean
   /** Shown next to the badge until title, description, tags, and file are ready (Phase 7 can pass clearer copy). */
   incompleteMetaHint?: string
+  /** From GET /api/packages/specialties — optional doctor + specialty fields. */
+  specialties?: PackageSpecialtyOption[]
 }) {
   const metaOk = isVideoMetaComplete(meta)
   return (
@@ -777,6 +811,51 @@ export function VideoDeliverableCard({
             onMetaChange={onMetaChange}
             spacious={spacious}
           />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor={`${idPrefix}-doctor`} className="text-base">
+                Doctor (optional)
+              </Label>
+              <Input
+                id={`${idPrefix}-doctor`}
+                value={meta.doctorName}
+                onChange={(e) =>
+                  onMetaChange((m) => ({
+                    ...m,
+                    doctorName: e.target.value,
+                  }))
+                }
+                placeholder="e.g. Dr. Ramesh Kumar"
+                className={cn("h-11", spacious && "h-12 text-base")}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`${idPrefix}-specialty`} className="text-base">
+                Specialty (optional)
+              </Label>
+              <select
+                id={`${idPrefix}-specialty`}
+                value={meta.specialty}
+                onChange={(e) =>
+                  onMetaChange((m) => ({
+                    ...m,
+                    specialty: e.target.value,
+                  }))
+                }
+                className={cn(
+                  "flex h-11 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50",
+                  spacious && "h-12"
+                )}
+              >
+                <option value="">Select specialty…</option>
+                {specialties.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
         <div
           className={cn(
@@ -788,7 +867,7 @@ export function VideoDeliverableCard({
           <MediaDropZone
             id={dropId}
             compactLabel="Drop video or browse"
-            accept="video/*"
+            accept={DELIVERABLE_VIDEO_INPUT_ACCEPT}
             file={file}
             onFile={onFile}
             emphasized={emphasized}

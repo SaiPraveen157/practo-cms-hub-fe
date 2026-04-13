@@ -114,6 +114,8 @@ export function videoAssetToPackageAsset(va: PackageVideoAsset): PackageAsset {
     title: va.title,
     description: va.description,
     tags: va.tags ?? undefined,
+    doctorName: va.doctorName ?? undefined,
+    specialty: va.specialty ?? undefined,
     thumbnails: thumbAssets,
   }
 }

@@ -32,8 +32,10 @@ import { useAuthStore } from "@/store"
 import {
   approvePackageVideo,
   getPackage,
+  getPackageSpecialties,
   getPackageVideoComments,
 } from "@/lib/packages-api"
+import { labelForSpecialtyValue } from "@/lib/package-specialty-label"
 import {
   deliverableLabelsByVideoId,
   displayThumbnailStatus,
@@ -44,7 +46,11 @@ import {
   thumbnailsOnAsset,
   videoAssetToPackageAsset,
 } from "@/lib/package-video-helpers"
-import type { FinalPackage, PackageThumbnailRecord } from "@/types/package"
+import type {
+  FinalPackage,
+  PackageSpecialtyOption,
+  PackageThumbnailRecord,
+} from "@/types/package"
 import type { UserRole } from "@/types/auth"
 import {
   TRACK_STATUS_LABELS,
@@ -98,6 +104,9 @@ export default function ContentApproverPackageDetailPage() {
   const [pkg, setPkg] = useState<FinalPackage | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [specialtyOptions, setSpecialtyOptions] = useState<
+    PackageSpecialtyOption[]
+  >([])
   const [approveOpen, setApproveOpen] = useState(false)
   const [approveComments, setApproveComments] = useState("")
   const [busy, setBusy] = useState(false)
@@ -119,6 +128,22 @@ export default function ContentApproverPackageDetailPage() {
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const list = await getPackageSpecialties(token)
+        if (!cancelled) setSpecialtyOptions(list)
+      } catch {
+        if (!cancelled) setSpecialtyOptions([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [token])
 
   const sortedVideos = useMemo(
     () => (pkg ? packageVideosSorted(pkg) : []),
@@ -526,6 +551,7 @@ export default function ContentApproverPackageDetailPage() {
                           label={label}
                           icon={icon}
                           videoOnly
+                          specialtyOptions={specialtyOptions}
                         />
                       </div>
 
@@ -539,6 +565,11 @@ export default function ContentApproverPackageDetailPage() {
                           title={asset.title}
                           description={asset.description}
                           tags={asset.tags ?? undefined}
+                          doctorName={asset.doctorName}
+                          specialtyLabel={labelForSpecialtyValue(
+                            asset.specialty,
+                            specialtyOptions
+                          )}
                         />
                       </div>
 

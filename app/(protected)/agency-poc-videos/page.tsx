@@ -19,6 +19,7 @@ import {
   getVideoStats,
   uploadVideoFlow,
 } from "@/lib/videos-api"
+import { FIRST_LINE_UP_MIXED_INPUT_ACCEPT } from "@/lib/video-file-validation"
 import { isAgencyRejectedReturn } from "@/lib/agency-video-resubmit"
 import { getScriptQueue } from "@/lib/scripts-api"
 import { getAgencyVideoCardPhaseTags } from "@/lib/agency-video-phase-tags"
@@ -627,7 +628,7 @@ export default function AgencyPocVideosPage() {
           <div className="space-y-4">
             <input
               type="file"
-              accept="video/mp4,video/quicktime,video/x-msvideo,application/pdf,image/jpeg,image/png"
+              accept={FIRST_LINE_UP_MIXED_INPUT_ACCEPT}
               className="w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-foreground file:hover:bg-primary/90"
               onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
               disabled={uploading}

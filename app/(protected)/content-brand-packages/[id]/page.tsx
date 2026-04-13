@@ -35,10 +35,12 @@ import { useAuthStore } from "@/store"
 import {
   approvePackageVideo,
   getPackage,
+  getPackageSpecialties,
   getPackageVideoComments,
   rejectPackageVideo,
   reviewPackageThumbnail,
 } from "@/lib/packages-api"
+import { labelForSpecialtyValue } from "@/lib/package-specialty-label"
 import {
   contentBrandPlaybackQualityActionsAvailable,
   deliverableLabelsByVideoId,
@@ -52,6 +54,7 @@ import {
 import type {
   FinalPackage,
   PackageItemFeedbackEntry,
+  PackageSpecialtyOption,
   PackageThumbnailRecord,
   PackageVideo,
 } from "@/types/package"
@@ -179,6 +182,9 @@ export default function ContentBrandPackageDetailPage() {
   const [brandApproveVideo, setBrandApproveVideo] =
     useState<PackageVideo | null>(null)
   const [brandApproveComment, setBrandApproveComment] = useState("")
+  const [specialtyOptions, setSpecialtyOptions] = useState<
+    PackageSpecialtyOption[]
+  >([])
 
   const load = useCallback(async () => {
     if (!token || !id) return
@@ -197,6 +203,22 @@ export default function ContentBrandPackageDetailPage() {
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const list = await getPackageSpecialties(token)
+        if (!cancelled) setSpecialtyOptions(list)
+      } catch {
+        if (!cancelled) setSpecialtyOptions([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [token])
 
   useEffect(() => {
     if (!metaRejectVideo) {
@@ -583,6 +605,7 @@ export default function ContentBrandPackageDetailPage() {
                   setMetaApproveVideo={setMetaApproveVideo}
                   setMetaRejectVideo={setMetaRejectVideo}
                   isPending={isPending}
+                  specialtyOptions={specialtyOptions}
                 />
               ) : (
                 <BrandVideoQualityPanel
@@ -594,6 +617,7 @@ export default function ContentBrandPackageDetailPage() {
                   isPending={isPending}
                   threadBlockByVideoId={threadBlockByVideoId}
                   onPackageVideoCommentsUpdated={recheckThreadBlocks}
+                  specialtyOptions={specialtyOptions}
                 />
               )}
             </div>
@@ -1037,6 +1061,7 @@ function BrandMetadataPanel({
   setMetaApproveVideo,
   setMetaRejectVideo,
   isPending,
+  specialtyOptions,
 }: {
   sortedVideos: PackageVideo[]
   deliverableLabels: Map<string, string>
@@ -1044,6 +1069,7 @@ function BrandMetadataPanel({
   setMetaApproveVideo: (v: PackageVideo | null) => void
   setMetaRejectVideo: (v: PackageVideo | null) => void
   isPending: (key: string) => boolean
+  specialtyOptions: PackageSpecialtyOption[]
 }) {
   return (
     <div className="space-y-8">
@@ -1103,6 +1129,11 @@ function BrandMetadataPanel({
                 title={asset.title}
                 description={asset.description}
                 tags={asset.tags ?? undefined}
+                doctorName={asset.doctorName}
+                specialtyLabel={labelForSpecialtyValue(
+                  asset.specialty,
+                  specialtyOptions
+                )}
               />
 
               {!inMetaStage && (
@@ -1259,6 +1290,7 @@ function BrandVideoQualityPanel({
   isPending,
   threadBlockByVideoId,
   onPackageVideoCommentsUpdated,
+  specialtyOptions,
 }: {
   sortedVideos: PackageVideo[]
   deliverableLabels: Map<string, string>
@@ -1268,6 +1300,7 @@ function BrandVideoQualityPanel({
   isPending: (key: string) => boolean
   threadBlockByVideoId: Record<string, boolean>
   onPackageVideoCommentsUpdated: () => void
+  specialtyOptions: PackageSpecialtyOption[]
 }) {
   return (
     <div className="space-y-8">
@@ -1370,6 +1403,7 @@ function BrandVideoQualityPanel({
                 videoOnly
                 packageVideo={video}
                 onPackageVideoCommentsUpdated={onPackageVideoCommentsUpdated}
+                specialtyOptions={specialtyOptions}
               />
 
               {showQualityUi ? (
