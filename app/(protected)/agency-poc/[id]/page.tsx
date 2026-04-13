@@ -33,6 +33,7 @@ import {
 import { useAuthStore } from "@/store"
 import { toast } from "sonner"
 import { getScriptQueue, updateScript, submitRevision } from "@/lib/scripts-api"
+import { SCRIPT_TITLE_REQUIRED_MESSAGE } from "@/lib/script-title"
 import type {
   Script,
   ScriptFeedbackSticker,
