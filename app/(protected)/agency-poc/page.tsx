@@ -20,7 +20,14 @@ import { ScriptListSkeleton } from "@/components/loading/script-list-skeleton"
 import { ScriptListingCard } from "@/components/script-listing-card"
 import { ScriptListPagination } from "@/components/ui/pagination"
 import { ScriptStatsCards } from "@/components/script-stats-cards"
-import { Clapperboard, FileText, Package, Search, Send, Upload } from "lucide-react"
+import {
+  Clapperboard,
+  FileText,
+  Package,
+  Search,
+  Send,
+  Upload,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 10
@@ -298,8 +305,10 @@ export default function AgencyPocPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             {displayedScripts.map((script) => {
               const finalPackageId = finalPackageIdByScriptId.get(script.id)
-              const needsFirstLineUpUpload =
-                scriptNeedsAgencyFirstLineUpUpload(script, videos)
+              const needsFirstLineUpUpload = scriptNeedsAgencyFirstLineUpUpload(
+                script,
+                videos
+              )
               return (
                 <ScriptListingCard
                   key={script.id}

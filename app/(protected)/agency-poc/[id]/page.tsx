@@ -1,6 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -28,7 +34,18 @@ import { useAuthStore } from "@/store"
 import { toast } from "sonner"
 import { getScriptQueue, updateScript, submitRevision } from "@/lib/scripts-api"
 import { SCRIPT_TITLE_REQUIRED_MESSAGE } from "@/lib/script-title"
-import type { Script, ScriptStatus } from "@/types/script"
+import type {
+  Script,
+  ScriptFeedbackSticker,
+  ScriptStatus,
+} from "@/types/script"
+import {
+  mergeStickersFromQueuePayload,
+  recordFromStickerArray,
+  scriptCommentsListFromScript,
+} from "@/lib/feedback-sticker-sync"
+import { useScriptCommentsRemoteSync } from "@/hooks/use-script-comments-remote-sync"
+import type { ScriptCommentsMergeMeta } from "@/hooks/use-script-comments-remote-sync"
 import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import { ScriptDetailSkeleton } from "@/components/loading/script-detail-skeleton"
 import { ScriptRejectionFeedback } from "@/components/script-rejection-feedback"
@@ -76,9 +93,69 @@ export default function AgencyPocScriptPage() {
   const [editTitle, setEditTitle] = useState("")
   const [editInsight, setEditInsight] = useState("")
   const [editContent, setEditContent] = useState("")
+  const [feedbackStickers, setFeedbackStickers] = useState<
+    Record<string, ScriptFeedbackSticker>
+  >({})
+
+  const scriptRef = useRef<Script | null>(null)
+  useLayoutEffect(() => {
+    scriptRef.current = script
+  }, [script])
+
+  const commentsMergeHandlerRef = useRef<
+    (list: ScriptFeedbackSticker[], meta?: ScriptCommentsMergeMeta) => void
+  >(() => {})
+
+  const onCommentsMergeFromApiStable = useCallback(
+    (list: ScriptFeedbackSticker[], meta?: ScriptCommentsMergeMeta) => {
+      commentsMergeHandlerRef.current(list, meta)
+    },
+    []
+  )
 
   const isAgencyPoc = user?.role === "AGENCY_POC"
   const canEdit = script?.status === "AGENCY_PRODUCTION"
+
+  const { syncBaseline } = useScriptCommentsRemoteSync({
+    token,
+    scriptId: id,
+    fetchEnabled: Boolean(
+      isAgencyPoc &&
+      token &&
+      id &&
+      (script == null || script.status === "AGENCY_PRODUCTION")
+    ),
+    pushEnabled: false,
+    commentsRefetchKey: script?.version,
+    onMergeFromServer: onCommentsMergeFromApiStable,
+  })
+
+  const onCommentsMergedFromApi = useCallback(
+    (list: ScriptFeedbackSticker[], _meta?: ScriptCommentsMergeMeta) => {
+      const fromApi = recordFromStickerArray(list)
+      if (Object.keys(fromApi).length > 0) {
+        setFeedbackStickers(fromApi)
+        syncBaseline(fromApi)
+        return
+      }
+      const s = scriptRef.current
+      const fromScript = s
+        ? recordFromStickerArray(scriptCommentsListFromScript(s))
+        : {}
+      if (Object.keys(fromScript).length > 0) {
+        setFeedbackStickers(fromScript)
+        syncBaseline(fromScript)
+      } else {
+        setFeedbackStickers({})
+        syncBaseline({})
+      }
+    },
+    [syncBaseline]
+  )
+
+  useLayoutEffect(() => {
+    commentsMergeHandlerRef.current = onCommentsMergedFromApi
+  }, [onCommentsMergedFromApi])
 
   const hasUnsavedChanges =
     !!script &&
@@ -99,6 +176,11 @@ export default function AgencyPocScriptPage() {
           setEditTitle(s.title ?? "")
           setEditInsight(s.insight ?? "")
           setEditContent(s.content ?? "")
+          setFeedbackStickers((prev) => {
+            const next = mergeStickersFromQueuePayload(prev, s)
+            syncBaseline(next)
+            return next
+          })
         }
       })
       .catch(() => {})
@@ -125,6 +207,11 @@ export default function AgencyPocScriptPage() {
         setEditTitle(s.title ?? "")
         setEditInsight(s.insight ?? "")
         setEditContent(s.content ?? "")
+        setFeedbackStickers((prev) => {
+          const next = mergeStickersFromQueuePayload(prev, s)
+          syncBaseline(next)
+          return next
+        })
       })
       .catch((err) => {
         if (!cancelled)
@@ -136,7 +223,7 @@ export default function AgencyPocScriptPage() {
     return () => {
       cancelled = true
     }
-  }, [token, id])
+  }, [token, id, syncBaseline])
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -212,7 +299,7 @@ export default function AgencyPocScriptPage() {
 
   return (
     <div className="p-6 md:p-8">
-      <div className="mx-auto max-w-3xl space-y-6">
+      <div className="mx-auto max-w-5xl space-y-6">
         <div className="space-y-4">
           <Button variant="ghost" size="sm" className="-ml-2" asChild>
             <Link href="/agency-poc">
@@ -252,13 +339,13 @@ export default function AgencyPocScriptPage() {
         {canEdit ? (
           <>
             <form onSubmit={handleSave}>
-              <Card>
+              <Card className="overflow-visible">
                 <CardHeader>
                   <CardTitle>Edit script</CardTitle>
                   <CardDescription>
-                    Make your changes. Save to update, then submit revision to
-                    send to Medical Affairs for review. TAT 24 hours; they can
-                    approve or request changes.
+                    Review inline comments from Medical Affairs in the sidebar,
+                    update the script, then save. Submit revision to send back
+                    for Medical review. TAT 24 hours.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -291,12 +378,15 @@ export default function AgencyPocScriptPage() {
                       onChange={setEditContent}
                       placeholder="Enter the full script content..."
                       minHeight="280px"
+                      feedbackStickers={feedbackStickers}
+                      feedbackCommentsSidebar={true}
+                      commentsSidebarEmptyHint="No inline comments from Medical Affairs yet."
                     />
                   </div>
                   <Button
                     type="submit"
                     disabled={saving}
-                    className="border-0 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
+                    className="border-0 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
                   >
                     {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
                     Save changes
@@ -345,13 +435,17 @@ export default function AgencyPocScriptPage() {
                   </p>
                 </div>
               )}
-              <div>
+              <div className="space-y-2">
                 <p className="text-sm font-medium text-muted-foreground">
                   Script
                 </p>
-                <div
-                  className="mt-1 rounded-lg bg-muted/50 p-4 text-sm leading-relaxed [&_a]:text-primary [&_a]:underline [&_ol]:list-decimal [&_p]:mb-2 [&_ul]:list-disc"
-                  dangerouslySetInnerHTML={{ __html: script.content ?? "" }}
+                <ScriptRichTextEditor
+                  key={`${script.id}-view-${script.updatedAt}`}
+                  initialContent={script.content ?? ""}
+                  disabled
+                  minHeight="200px"
+                  className="mt-1"
+                  feedbackCommentsSidebar={false}
                 />
               </div>
             </CardContent>

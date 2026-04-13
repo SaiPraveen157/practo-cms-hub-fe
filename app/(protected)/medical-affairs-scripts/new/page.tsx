@@ -160,6 +160,7 @@ export default function NewMedicalAffairsScriptPage() {
                   onChange={setContent}
                   placeholder="Enter the full script content..."
                   minHeight="280px"
+                  feedbackCommentsSidebar={false}
                 />
               </div>
 

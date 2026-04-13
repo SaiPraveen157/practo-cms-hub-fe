@@ -1,8 +1,3 @@
-/**
- * Script types aligned with backend (Script model, API responses).
- * See docs/database-schema.prisma and Postman collection.
- */
-
 export type ScriptStatus =
   | "DRAFT"
   | "CONTENT_BRAND_REVIEW"
@@ -19,6 +14,41 @@ export type ScriptFluStatus =
   | "CONTENT_BRAND_REVIEW"
   | "APPROVED"
 
+export type ScriptCommentAnchorSpace = "plain_text_utf16" | "prosemirror_pos"
+
+export interface ScriptCommentAnchor {
+  space: ScriptCommentAnchorSpace
+  startOffset: number
+  endOffset: number
+  contentVersion?: number
+}
+
+/** Populated on GET /api/scripts/:id/comments (backend). */
+export interface ScriptCommentAuthor {
+  id: string
+  firstName: string
+  lastName: string
+  role: string
+}
+
+export interface ScriptComment {
+  id: string
+  body: string
+  anchor?: ScriptCommentAnchor
+  createdAt?: string
+  updatedAt?: string
+  authorId?: string
+  /** Present when loaded from the comments API. */
+  author?: ScriptCommentAuthor
+  scriptId?: string
+  /** Which script revision this comment belongs to (matches `Script.version`). */
+  scriptVersion?: number
+  contextSnippet?: string | null
+  resolved?: boolean
+}
+
+export type ScriptFeedbackSticker = ScriptComment
+
 export interface Script {
   id: string
   version: number
@@ -32,9 +62,7 @@ export interface Script {
   createdAt: string
   updatedAt: string
   lockedAt?: string | null
-  /** Present in queue response */
   createdBy?: { id: string; firstName: string; lastName: string } | null
-  /** TAT info from queue */
   tat?: {
     hoursElapsed: number
     isOverdue: boolean
@@ -43,7 +71,6 @@ export interface Script {
     hoursInCurrentCycle: number
     cycleNumber: number
   } | null
-  /** Latest rejection (from queue) when script came back due to rejection */
   latestRejection?: {
     comments: string
     rejectedBy: string
@@ -55,9 +82,10 @@ export interface Script {
    * `null` = not uploaded yet; enum = pipeline stage.
    */
   fluStatus?: ScriptFluStatus | null
+  comments?: ScriptComment[]
+  feedbackStickers?: ScriptComment[]
 }
 
-/** GET /api/scripts/queue — role-based queue: available + myReviews */
 export interface ScriptQueueResponse {
   success: boolean
   available: Script[]
@@ -69,6 +97,8 @@ export interface CreateScriptBody {
   title?: string
   insight?: string
   content: string
+  comments?: ScriptComment[]
+  feedbackStickers?: ScriptComment[]
 }
 
 export interface UpdateScriptBody {
@@ -77,6 +107,8 @@ export interface UpdateScriptBody {
   content?: string
   summary?: string
   tags?: string[]
+  comments?: ScriptComment[]
+  feedbackStickers?: ScriptComment[]
 }
 
 export interface ListScriptsParams {
@@ -101,11 +133,48 @@ export interface SingleScriptResponse {
   script: Script
 }
 
-/** GET /api/scripts/stats — dashboard counts for review queue. */
 export interface ScriptStatsResponse {
   success: boolean
   pendingReview: number
   overdueCount: number
   reviewedToday: number
   tatConfig?: { limitHours: number; repeatCycleHours: number }
+}
+
+export interface ScriptCommentsListResponse {
+  success: boolean
+  /** Current script revision; GET returns only comments for this version. */
+  scriptVersion?: number
+  comments: ScriptComment[]
+}
+
+export type ScriptCommentsListResponseWire = {
+  success: boolean
+  scriptVersion?: number
+  comments?: ScriptComment[]
+  feedbackStickers?: ScriptComment[]
+}
+
+export interface ScriptCommentCreateBody {
+  id: string
+  body: string
+  anchor: ScriptCommentAnchor
+  contextSnippet?: string
+  resolved?: boolean
+}
+
+export interface ScriptCommentPatchBody {
+  body?: string
+  contextSnippet?: string
+  resolved?: boolean
+  anchor?: ScriptCommentAnchor
+}
+
+export interface ScriptCommentMutationResponse {
+  success: boolean
+  comment?: ScriptComment
+}
+
+export interface ScriptCommentsPutBody {
+  comments: ScriptComment[]
 }

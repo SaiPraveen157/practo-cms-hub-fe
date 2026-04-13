@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { useRouter, useParams, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -34,8 +34,22 @@ import {
   approveScript,
   rejectScript,
 } from "@/lib/scripts-api"
-import type { Script, ScriptStatus } from "@/types/script"
-import { getScriptDisplayInfo } from "@/lib/script-status-styles"
+import type {
+  Script,
+  ScriptFeedbackSticker,
+  ScriptStatus,
+} from "@/types/script"
+import {
+  mergeStickersFromQueuePayload,
+  recordFromStickerArray,
+  scriptCommentsListFromScript,
+} from "@/lib/feedback-sticker-sync"
+import { useScriptCommentsRemoteSync } from "@/hooks/use-script-comments-remote-sync"
+import type { ScriptCommentsMergeMeta } from "@/hooks/use-script-comments-remote-sync"
+import {
+  getScriptDisplayInfo,
+  scriptIsInRejectedState,
+} from "@/lib/script-status-styles"
 import { ScriptDetailSkeleton } from "@/components/loading/script-detail-skeleton"
 import { ScriptRejectionFeedback } from "@/components/script-rejection-feedback"
 import { ScriptTatBar } from "@/components/script-tat-bar"
@@ -94,6 +108,83 @@ export default function MedicalAffairsScriptDetailPage() {
   const [editTitle, setEditTitle] = useState("")
   const [editInsight, setEditInsight] = useState("")
   const [editContent, setEditContent] = useState("")
+  const [feedbackStickers, setFeedbackStickers] = useState<
+    Record<string, ScriptFeedbackSticker>
+  >({})
+
+  const scriptRef = useRef<Script | null>(null)
+  useLayoutEffect(() => {
+    scriptRef.current = script
+  }, [script])
+
+  const commentsMergeHandlerRef = useRef<
+    (list: ScriptFeedbackSticker[], meta?: ScriptCommentsMergeMeta) => void
+  >(() => {})
+
+  const onCommentsMergeFromApiStable = useCallback(
+    (list: ScriptFeedbackSticker[], meta?: ScriptCommentsMergeMeta) => {
+      commentsMergeHandlerRef.current(list, meta)
+    },
+    []
+  )
+
+  const { syncBaseline, notifyStickersChanged } = useScriptCommentsRemoteSync({
+    token,
+    scriptId: id,
+    // Include rejected drafts: queue is DRAFT but Brand stickers live on GET /comments only.
+    fetchEnabled: Boolean(
+      isMedicalAffairs &&
+      token &&
+      id &&
+      (script == null ||
+        script.status !== "DRAFT" ||
+        scriptIsInRejectedState(script))
+    ),
+    // Persist inline comments when Agency sends the script back (Phase 3 — MEDICAL_REVIEW).
+    pushEnabled: Boolean(
+      isMedicalAffairs &&
+      token &&
+      id &&
+      script?.status === "MEDICAL_REVIEW"
+    ),
+    commentsRefetchKey: script?.version,
+    onMergeFromServer: onCommentsMergeFromApiStable,
+  })
+
+  const onCommentsMergedFromApi = useCallback(
+    (list: ScriptFeedbackSticker[], _meta?: ScriptCommentsMergeMeta) => {
+      const fromApi = recordFromStickerArray(list)
+      if (Object.keys(fromApi).length > 0) {
+        setFeedbackStickers(fromApi)
+        syncBaseline(fromApi)
+        return
+      }
+      const s = scriptRef.current
+      const fromScript = s
+        ? recordFromStickerArray(scriptCommentsListFromScript(s))
+        : {}
+      if (Object.keys(fromScript).length > 0) {
+        setFeedbackStickers(fromScript)
+        syncBaseline(fromScript)
+      } else {
+        setFeedbackStickers({})
+        syncBaseline({})
+      }
+    },
+    [syncBaseline]
+  )
+
+  useLayoutEffect(() => {
+    commentsMergeHandlerRef.current = onCommentsMergedFromApi
+  }, [onCommentsMergedFromApi])
+
+  const handleFeedbackStickersChange = useCallback(
+    (next: Record<string, ScriptFeedbackSticker>) => {
+      setFeedbackStickers(next)
+      notifyStickersChanged(next)
+    },
+    [notifyStickersChanged]
+  )
 
   const hasUnsavedChanges =
     !!script &&
@@ -114,6 +205,11 @@ export default function MedicalAffairsScriptDetailPage() {
           setEditTitle(s.title ?? "")
           setEditInsight(s.insight ?? "")
           setEditContent(s.content ?? "")
+          setFeedbackStickers((prev) => {
+            const next = mergeStickersFromQueuePayload(prev, s)
+            syncBaseline(next)
+            return next
+          })
         }
       })
       .catch(() => {})
@@ -140,6 +236,11 @@ export default function MedicalAffairsScriptDetailPage() {
         setEditTitle(s.title ?? "")
         setEditInsight(s.insight ?? "")
         setEditContent(s.content ?? "")
+        setFeedbackStickers((prev) => {
+          const next = mergeStickersFromQueuePayload(prev, s)
+          syncBaseline(next)
+          return next
+        })
       })
       .catch((err) => {
         if (!cancelled)
@@ -151,7 +252,7 @@ export default function MedicalAffairsScriptDetailPage() {
     return () => {
       cancelled = true
     }
-  }, [token, id])
+  }, [token, id, syncBaseline])
 
   useEffect(() => {
     if (showSubmitFromQuery && script?.status === "DRAFT")
@@ -284,7 +385,7 @@ export default function MedicalAffairsScriptDetailPage() {
 
   return (
     <div className="p-6 md:p-8">
-      <div className="mx-auto max-w-4xl space-y-6">
+      <div className="max-w-4xl mx-auto space-y-6">
         <div className="space-y-4">
           <Button variant="ghost" size="sm" className="-ml-2" asChild>
             <Link href="/medical-affairs-scripts">
@@ -361,6 +462,10 @@ export default function MedicalAffairsScriptDetailPage() {
                     onChange={setEditContent}
                     placeholder="Enter the full script content..."
                     minHeight="280px"
+                    feedbackStickers={feedbackStickers}
+                    {...(scriptIsInRejectedState(script)
+                      ? { feedbackCommentsSidebar: true }
+                      : { feedbackCommentsSidebar: false })}
                   />
                 </div>
                 <Button type="submit" disabled={saving} variant="outline">
@@ -394,12 +499,12 @@ export default function MedicalAffairsScriptDetailPage() {
         )}
         {!isDraft && (
           <>
-            <Card>
+            <Card className="overflow-visible">
               <CardHeader>
                 <CardTitle>Script content</CardTitle>
                 <CardDescription>
                   {isMedicalReview
-                    ? "Agency submitted a revision for your review. Approve to send to Content/Brand approval, or reject with feedback so Agency can revise and resubmit. TAT 24 hours."
+                    ? "Agency submitted a revision for your review. Add inline comments on the script as needed. Approve to send to Content/Brand approval, or reject with feedback so Agency can revise and resubmit. TAT 24 hours."
                     : "This script is with Content/Brand or later in the workflow. Editing is only allowed for drafts."}
                 </CardDescription>
               </CardHeader>
@@ -414,13 +519,29 @@ export default function MedicalAffairsScriptDetailPage() {
                     </p>
                   </div>
                 )}
-                <div>
+                <div className="space-y-2">
                   <p className="text-sm font-medium text-muted-foreground">
                     Script
                   </p>
-                  <div
-                    className="mt-1 rounded-lg bg-muted/50 p-4 text-sm leading-relaxed [&_a]:text-primary [&_a]:underline [&_ol]:list-decimal [&_p]:mb-2 [&_ul]:list-disc"
-                    dangerouslySetInnerHTML={{ __html: script.content ?? "" }}
+                  <ScriptRichTextEditor
+                    key={`${script.id}-view-${script.updatedAt}`}
+                    initialContent={script.content ?? ""}
+                    minHeight="200px"
+                    className="mt-1"
+                    feedbackStickers={feedbackStickers}
+                    {...(isMedicalReview
+                      ? {
+                          contentReadOnly: true,
+                          feedbackCommentsSidebar: true,
+                          onFeedbackStickersChange:
+                            handleFeedbackStickersChange,
+                          feedbackStickerToolbar: true,
+                          feedbackStickerAuthorId: user?.id ?? null,
+                        }
+                      : {
+                          disabled: true,
+                          feedbackCommentsSidebar: true,
+                        })}
                   />
                 </div>
               </CardContent>

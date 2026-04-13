@@ -90,6 +90,7 @@ model User {
   lockedScripts         Script[]              @relation("LockedScripts")
   assignedScripts       Script[]              @relation("AssignedScriptReviewer")
   scriptReviews         ScriptReview[]
+  scriptFeedbackStickers ScriptFeedbackSticker[]
   comments              Comment[]
   notifications         Notification[]
   auditLogs             AuditLog[]
@@ -170,6 +171,8 @@ model Script {
   // Relations
   reviews               ScriptReview[]
   comments              Comment[]
+  /// Inline comments: rows store body + start/end offsets; HTML may mirror markers via `data-feedback-id`.
+  feedbackStickers      ScriptFeedbackSticker[]
 
   @@index([assignedReviewerId])
   @@index([status])
@@ -196,6 +199,35 @@ model ScriptReview {
   createdAt     DateTime       @default(now()) @map("created_at")
 
   @@map("script_reviews")
+}
+
+/// Script inline comment thread: range in plain-text projection + optional marker in HTML (`data-feedback-id`).
+model ScriptFeedbackSticker {
+  id        String   @id
+  scriptId  String   @map("script_id")
+  script    Script   @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+
+  authorId  String?  @map("author_id")
+  author    User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  body      String   @db.Text
+  /// `plain_text_utf16` | `prosemirror_pos` — must match how start/end are interpreted.
+  anchorSpace   String   @default("plain_text_utf16") @map("anchor_space")
+  /// Inclusive; UTF-16 indices for plain_text_utf16, or PM pos for prosemirror_pos.
+  startOffset   Int      @map("start_offset")
+  /// Exclusive end (half-open interval).
+  endOffset     Int      @map("end_offset")
+  /// Optional: script version when anchor was recorded (staleness).
+  anchorContentVersion Int? @map("anchor_content_version")
+
+  contextSnippet String? @map("context_snippet") @db.Text
+  resolved  Boolean  @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([scriptId])
+  @@map("script_feedback_stickers")
 }
 
 model Comment {
