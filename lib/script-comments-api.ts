@@ -8,8 +8,8 @@
  * DELETE /api/scripts/:scriptId/comments/:commentId
  * PUT    /api/scripts/:scriptId/comments  (optional full replace)
  *
- * Until the backend exists, calls use an in-browser mock (sessionStorage).
- * Set `NEXT_PUBLIC_MOCK_SCRIPT_COMMENTS=false` to hit the real API.
+ * Optional in-browser mock (sessionStorage): set `NEXT_PUBLIC_MOCK_SCRIPT_COMMENTS=true`.
+ * Default is the real backend API.
  */
 
 import { apiRequest } from "@/lib/api"
@@ -50,6 +50,7 @@ export async function getScriptComments(
   )
   return {
     success: raw.success,
+    scriptVersion: raw.scriptVersion,
     comments: raw.comments ?? raw.feedbackStickers ?? [],
   }
 }

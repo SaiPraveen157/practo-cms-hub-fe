@@ -43,11 +43,16 @@ import {
   Pilcrow,
   List,
   ListOrdered,
+  MessageSquare,
 } from "lucide-react"
 import {
   FeedbackSticker,
   type FeedbackStickerExtensionOptions,
 } from "@/components/tiptap/feedback-sticker-extension"
+import {
+  CommentRangeHighlight,
+  commentRangeHighlightPluginKey,
+} from "@/components/tiptap/comment-range-highlight-extension"
 import {
   collectFeedbackStickerIdsFromEditor,
   FEEDBACK_STICKER_NODE,
@@ -57,7 +62,9 @@ import { ScriptEditorCommentsSidebar } from "@/components/script-editor-comments
 import {
   commentAnchorFromEditorSelection,
   commentAnchorOffsetsFromEditorState,
+  insertionPosForCommentAnchor,
 } from "@/lib/script-comment-offsets"
+import { canonicalStickersJsonFromArray } from "@/lib/feedback-sticker-sync"
 import { scriptDocContentFingerprint } from "@/lib/script-doc-content-fingerprint"
 
 export interface ScriptRichTextEditorProps {
@@ -78,6 +85,8 @@ export interface ScriptRichTextEditorProps {
   feedbackStickerToolbar?: boolean
   /** Thread list beside the document (Comments-style). Shown when toolbar comments mode is on, or set explicitly (e.g. read-only review). */
   feedbackCommentsSidebar?: boolean
+  /** Message when there are no threads (e.g. after GET /comments returned []). Passed to the sidebar. */
+  commentsSidebarEmptyHint?: string
   /** Set on new stickers as `authorId` when saving. */
   feedbackStickerAuthorId?: string | null
   /**
@@ -103,25 +112,6 @@ function getBaseExtensions(placeholderText: string) {
       types: ["heading", "paragraph"],
     }),
   ]
-}
-
-function pruneStickersNotInDoc(
-  editor: Editor,
-  current: Record<string, ScriptFeedbackSticker>
-): Record<string, ScriptFeedbackSticker> | null {
-  const inDoc = new Set(collectFeedbackStickerIdsFromEditor(editor))
-  let next = current
-  let changed = false
-  for (const id of Object.keys(current)) {
-    if (!inDoc.has(id)) {
-      if (!changed) {
-        next = { ...current }
-        changed = true
-      }
-      delete next[id]
-    }
-  }
-  return changed ? next : null
 }
 
 function deleteFeedbackStickerNode(editor: Editor, feedbackId: string): boolean {
@@ -151,6 +141,7 @@ export function ScriptRichTextEditor({
   onFeedbackStickersChange,
   feedbackStickerToolbar = false,
   feedbackCommentsSidebar,
+  commentsSidebarEmptyHint,
   feedbackStickerAuthorId,
   contentReadOnly = false,
 }: ScriptRichTextEditorProps) {
@@ -170,17 +161,24 @@ export function ScriptRichTextEditor({
   const showStickerTools =
     feedbackStickerToolbar && !disabled && !!onFeedbackStickersChange
 
+  const hasStickerThreads = Object.keys(feedbackStickers ?? {}).length > 0
   const showCommentsSidebar =
     feedbackCommentsSidebar === false
       ? false
-      : feedbackCommentsSidebar === true || showStickerTools
+      : feedbackCommentsSidebar === true ||
+        showStickerTools ||
+        hasStickerThreads
 
   const showStickerToolsRef = useRef(false)
   const onFeedbackStickersChangeRef = useRef(onFeedbackStickersChange)
   const addStickerOpenRef = useRef(false)
   const disabledRef = useRef(disabled)
-  const selectionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const editorRef = useRef<Editor | null>(null)
+  const openAddStickerDialogRef = useRef<() => void>(() => {})
+  /** Only prune sticker state when a node was in the doc and is now gone (user deleted the marker). */
+  const prevStickerIdsInDocRef = useRef<Set<string>>(new Set())
+  const selectedCommentIdRef = useRef<string | null>(null)
+  const onCommentRangeClickRef = useRef<(id: string) => void>(() => {})
 
   useLayoutEffect(() => {
     showStickerToolsRef.current = showStickerTools
@@ -202,10 +200,34 @@ export function ScriptRichTextEditor({
     }
   }, [feedbackStickers])
 
+  useLayoutEffect(() => {
+    selectedCommentIdRef.current = selectedCommentId
+  }, [selectedCommentId])
+
+  useLayoutEffect(() => {
+    onCommentRangeClickRef.current = (id: string) => {
+      setSelectedCommentId(id)
+    }
+  }, [])
+
   const stickerExtOptions = useMemo<FeedbackStickerExtensionOptions>(
     () => ({
       getStickers: () => stickersRef.current,
       onOpenDetail: (id) => onOpenDetailRef.current(id),
+    }),
+    []
+  )
+
+  const feedbackStickersSyncKey = useMemo(
+    () =>
+      canonicalStickersJsonFromArray(Object.values(feedbackStickers ?? {})),
+    [feedbackStickers]
+  )
+
+  const commentHighlightExtOptions = useMemo(
+    () => ({
+      getStickers: () => stickersRef.current,
+      getSelectedId: () => selectedCommentIdRef.current,
     }),
     []
   )
@@ -215,6 +237,7 @@ export function ScriptRichTextEditor({
       ...getBaseExtensions(placeholder),
       // eslint-disable-next-line react-hooks/refs -- options read refs only inside TipTap / ProseMirror callbacks
       FeedbackSticker.configure(stickerExtOptions),
+      CommentRangeHighlight.configure(commentHighlightExtOptions),
       Extension.create({
         name: "scriptContentReadOnlyLock",
         addProseMirrorPlugins() {
@@ -238,7 +261,7 @@ export function ScriptRichTextEditor({
         },
       }),
     ]
-  }, [placeholder, stickerExtOptions])
+  }, [placeholder, stickerExtOptions, commentHighlightExtOptions])
 
   const commentEditorProps = useMemo(
     () => ({
@@ -247,31 +270,17 @@ export function ScriptRichTextEditor({
           "min-h-[200px] focus:outline-none px-3 py-2 text-sm leading-relaxed [&_p]:mb-2 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-bold [&_h3]:mb-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_a]:text-primary [&_a]:underline",
       },
       handleDOMEvents: {
-        mouseup(view: EditorView) {
-          queueMicrotask(() => {
-            if (
-              !showStickerToolsRef.current ||
-              !onFeedbackStickersChangeRef.current ||
-              addStickerOpenRef.current ||
-              disabledRef.current
-            )
-              return
-            const { from, to } = view.state.selection
-            if (from >= to) return
-            const snippet = view.state.doc.textBetween(from, to, " ").slice(0, 160).trim()
-            if (!snippet) return
-            if (selectionDebounceRef.current) {
-              clearTimeout(selectionDebounceRef.current)
-              selectionDebounceRef.current = null
+        click(_view: EditorView, event: MouseEvent) {
+          const t = event.target as HTMLElement | null
+          if (!t) return false
+          const el = t.closest?.("[data-comment-range-id]")
+          if (el) {
+            const id = el.getAttribute("data-comment-range-id")
+            if (id) {
+              onCommentRangeClickRef.current(id)
+              return true
             }
-            setPendingContextSnippet(snippet)
-            setPendingCommentAnchor({
-              space: "plain_text_utf16",
-              ...commentAnchorOffsetsFromEditorState(view.state),
-            })
-            setNewStickerBody("")
-            setAddStickerOpen(true)
-          })
+          }
           return false
         },
         keydown(_view: EditorView, event: KeyboardEvent) {
@@ -288,22 +297,7 @@ export function ScriptRichTextEditor({
             )
               return false
             event.preventDefault()
-            const { from, to } = _view.state.selection
-            const snippet =
-              from !== to
-                ? _view.state.doc.textBetween(from, to, " ").slice(0, 160).trim()
-                : ""
-            if (selectionDebounceRef.current) {
-              clearTimeout(selectionDebounceRef.current)
-              selectionDebounceRef.current = null
-            }
-            setPendingContextSnippet(snippet)
-            setPendingCommentAnchor({
-              space: "plain_text_utf16",
-              ...commentAnchorOffsetsFromEditorState(_view.state),
-            })
-            setNewStickerBody("")
-            setAddStickerOpen(true)
+            openAddStickerDialogRef.current()
             return true
           }
           return false
@@ -325,51 +319,25 @@ export function ScriptRichTextEditor({
     onUpdate: ({ editor: ed }) => {
       onChange?.(ed.getHTML())
       if (onFeedbackStickersChange) {
-        const pruned = pruneStickersNotInDoc(ed, stickersRef.current)
-        if (pruned) onFeedbackStickersChange(pruned)
-      }
-    },
-    onSelectionUpdate: ({ editor: ed }) => {
-      if (
-        !ed ||
-        !showStickerToolsRef.current ||
-        !onFeedbackStickersChangeRef.current ||
-        addStickerOpenRef.current ||
-        disabledRef.current
-      )
-        return
-      const { from, to } = ed.state.selection
-      if (from >= to) {
-        if (selectionDebounceRef.current) {
-          clearTimeout(selectionDebounceRef.current)
-          selectionDebounceRef.current = null
+        const inDoc = new Set(collectFeedbackStickerIdsFromEditor(ed))
+        const prev = prevStickerIdsInDocRef.current
+        const removed = [...prev].filter((id) => !inDoc.has(id))
+        prevStickerIdsInDocRef.current = inDoc
+        if (removed.length > 0) {
+          let next = stickersRef.current
+          let changed = false
+          for (const id of removed) {
+            if (next[id]) {
+              if (!changed) {
+                next = { ...next }
+                changed = true
+              }
+              delete next[id]
+            }
+          }
+          if (changed) onFeedbackStickersChange(next)
         }
-        return
       }
-      if (selectionDebounceRef.current) clearTimeout(selectionDebounceRef.current)
-      selectionDebounceRef.current = setTimeout(() => {
-        selectionDebounceRef.current = null
-        const ed2 = editorRef.current ?? ed
-        if (
-          !ed2 ||
-          addStickerOpenRef.current ||
-          disabledRef.current ||
-          !showStickerToolsRef.current ||
-          !onFeedbackStickersChangeRef.current
-        )
-          return
-        const { from: f, to: t } = ed2.state.selection
-        if (f >= t) return
-        const snippet = ed2.state.doc.textBetween(f, t, " ").slice(0, 160).trim()
-        if (!snippet) return
-        setPendingContextSnippet(snippet)
-        setPendingCommentAnchor({
-          space: "plain_text_utf16",
-          ...commentAnchorOffsetsFromEditorState(ed2.state),
-        })
-        setNewStickerBody("")
-        setAddStickerOpen(true)
-      }, 220)
     },
   })
 
@@ -377,11 +345,33 @@ export function ScriptRichTextEditor({
     editorRef.current = editor
   }, [editor])
 
-  useEffect(() => {
-    return () => {
-      if (selectionDebounceRef.current) clearTimeout(selectionDebounceRef.current)
-    }
+  const openAddStickerDialog = useCallback(() => {
+    const ed = editorRef.current
+    if (
+      !ed ||
+      addStickerOpenRef.current ||
+      disabledRef.current ||
+      !showStickerToolsRef.current ||
+      !onFeedbackStickersChangeRef.current
+    )
+      return
+    const { from, to } = ed.state.selection
+    const snippet =
+      from !== to
+        ? ed.state.doc.textBetween(from, to, " ").slice(0, 160).trim()
+        : ""
+    setPendingContextSnippet(snippet)
+    setPendingCommentAnchor({
+      space: "plain_text_utf16",
+      ...commentAnchorOffsetsFromEditorState(ed.state),
+    })
+    setNewStickerBody("")
+    setAddStickerOpen(true)
   }, [])
+
+  useLayoutEffect(() => {
+    openAddStickerDialogRef.current = openAddStickerDialog
+  }, [openAddStickerDialog])
 
   const setContent = useCallback(
     (html: string) => {
@@ -391,8 +381,103 @@ export function ScriptRichTextEditor({
   )
 
   useEffect(() => {
+    prevStickerIdsInDocRef.current = new Set()
     setContent(initialContent || "<p></p>")
   }, [initialContent, setContent])
+
+  /**
+   * Drop inline marker nodes when there are no comment threads, or when the doc still
+   * contains markers from a previous script version / revision (id not in the current map).
+   * Runs before hydration so API-backed markers can be re-inserted by anchor.
+   */
+  useEffect(() => {
+    if (!editor) return
+    const stickers = feedbackStickers ?? {}
+    const stickerIds = new Set(Object.keys(stickers))
+    const mapEmpty = stickerIds.size === 0
+
+    const ed = editor
+    let cancelled = false
+    queueMicrotask(() => {
+      if (cancelled || ed.isDestroyed) return
+      const ranges: { from: number; to: number }[] = []
+      ed.state.doc.descendants((node, pos) => {
+        if (node.type.name !== FEEDBACK_STICKER_NODE) return true
+        const fid = String(node.attrs.feedbackId ?? "")
+        if (mapEmpty || !stickerIds.has(fid)) {
+          ranges.push({ from: pos, to: pos + node.nodeSize })
+        }
+        return true
+      })
+      if (ranges.length === 0) return
+      ranges.sort((a, b) => b.from - a.from)
+      let chain = ed.chain()
+      for (const r of ranges) {
+        chain = chain.deleteRange({ from: r.from, to: r.to })
+      }
+      chain.run()
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [editor, feedbackStickersSyncKey])
+
+  /** Insert feedbackSticker nodes for API-loaded comments (anchors are not stored in HTML). */
+  useEffect(() => {
+    if (!editor) return
+    const stickers = feedbackStickers ?? {}
+    const inDoc = new Set(collectFeedbackStickerIdsFromEditor(editor))
+    const toHydrate = Object.values(stickers).filter(
+      (s) => s.id && s.anchor && !inDoc.has(s.id)
+    )
+    if (toHydrate.length === 0) return
+
+    const withPos = toHydrate
+      .map((s) => {
+        const pos = insertionPosForCommentAnchor(editor.state, s.anchor!)
+        return pos != null ? { s, pos } : null
+      })
+      .filter(
+        (x): x is { s: ScriptFeedbackSticker; pos: number } => x != null
+      )
+      .sort((a, b) => b.pos - a.pos)
+
+    if (withPos.length === 0) return
+
+    const ed = editor
+    let cancelled = false
+    // Defer past React commit — TipTap's chain.run() can use flushSync internally.
+    queueMicrotask(() => {
+      if (cancelled || ed.isDestroyed) return
+      let chain = ed.chain()
+      for (const { s, pos } of withPos) {
+        chain = chain.insertContentAt(pos, {
+          type: FEEDBACK_STICKER_NODE,
+          attrs: { feedbackId: s.id },
+        })
+      }
+      chain.run()
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [editor, feedbackStickersSyncKey])
+
+  /** Refresh comment-range decorations when sticker map or selection changes (refs read inside plugin). */
+  useEffect(() => {
+    if (!editor) return
+    const ed = editor
+    let cancelled = false
+    queueMicrotask(() => {
+      if (cancelled || ed.isDestroyed) return
+      ed.view.dispatch(
+        ed.state.tr.setMeta(commentRangeHighlightPluginKey, true)
+      )
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [editor, feedbackStickersSyncKey, selectedCommentId])
 
   useEffect(() => {
     editor?.setEditable(
@@ -471,14 +556,51 @@ export function ScriptRichTextEditor({
   }
 
   if (!editor) {
+    if (!showCommentsSidebar) {
+      return (
+        <div
+          className={cn(
+            "rounded-lg border border-input bg-background animate-pulse",
+            className
+          )}
+          style={{ minHeight }}
+        />
+      )
+    }
     return (
       <div
         className={cn(
-          "rounded-lg border border-input bg-background animate-pulse",
+          "rounded-lg border border-input bg-background overflow-hidden",
+          disabled && "cursor-default",
+          "flex min-h-[min(420px,55vh)] flex-col lg:min-h-[320px] lg:flex-row lg:items-stretch",
           className
         )}
-        style={{ minHeight }}
-      />
+      >
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col border-b border-input lg:border-b-0 lg:border-r">
+          <div className="h-9 shrink-0 border-b border-input bg-muted/30 animate-pulse" />
+          <div
+            ref={editorShellRef}
+            className="min-h-0 flex-1 animate-pulse bg-muted/15"
+            style={{ minHeight }}
+          />
+        </div>
+        <ScriptEditorCommentsSidebar
+          editor={null}
+          feedbackStickers={feedbackStickers ?? {}}
+          onFeedbackStickersChange={onFeedbackStickersChange}
+          readOnly={disabled || !onFeedbackStickersChange}
+          selectedCommentId={selectedCommentId}
+          onSelectComment={setSelectedCommentId}
+          currentUserId={feedbackStickerAuthorId ?? null}
+          emptyListHint={commentsSidebarEmptyHint}
+          onRequestEditComment={(id) => {
+            setDetailStickerId(id)
+            setSelectedCommentId(id)
+            setEditDetailBody((feedbackStickers ?? {})[id]?.body ?? "")
+          }}
+          editorScrollRootRef={editorShellRef}
+        />
+      </div>
     )
   }
 
@@ -642,11 +764,26 @@ export function ScriptRichTextEditor({
             >
               <LinkIcon className="size-4" />
             </ToolbarButton>
+            {showStickerTools ? (
+              <>
+                <ToolbarDivider />
+                <ToolbarButton
+                  onClick={() => {
+                    editor.chain().focus().run()
+                    openAddStickerDialog()
+                  }}
+                  disabled={disabled}
+                  title="Add comment on selection or cursor"
+                >
+                  <MessageSquare className="size-4" />
+                </ToolbarButton>
+              </>
+            ) : null}
           </div>
           {contentReadOnly && showStickerTools ? (
             <div className="border-t border-border/60 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
-              <span className="font-medium text-foreground/80">Inline comments</span> — highlight
-              script text to attach feedback, or use{" "}
+              <span className="font-medium text-foreground/80">Inline comments</span> — select text
+              (optional), then click the message button in the toolbar, or use{" "}
               <kbd className="rounded border bg-background px-1 font-mono text-[10px]">⌘⇧M</kbd> /{" "}
               <kbd className="rounded border bg-background px-1 font-mono text-[10px]">Ctrl⇧M</kbd>{" "}
               at the cursor. The script body is read-only.
@@ -670,6 +807,8 @@ export function ScriptRichTextEditor({
             readOnly={disabled || !onFeedbackStickersChange}
             selectedCommentId={selectedCommentId}
             onSelectComment={setSelectedCommentId}
+            currentUserId={feedbackStickerAuthorId ?? null}
+            emptyListHint={commentsSidebarEmptyHint}
             onRequestEditComment={(id) => {
               setDetailStickerId(id)
               setSelectedCommentId(id)
@@ -694,9 +833,8 @@ export function ScriptRichTextEditor({
           <DialogHeader className="gap-2 space-y-1">
             <DialogTitle>New comment</DialogTitle>
             <DialogDescription>
-              This opens when you highlight script text (or use ⌘⇧M / Ctrl⇧M for a comment at the
-              cursor). The marker is placed at your cursor; highlighted text is saved as thread
-              context when applicable.
+              Use the toolbar message button or ⌘⇧M / Ctrl⇧M to open this dialog. The marker is
+              placed at your cursor; selected text is saved as thread context when applicable.
             </DialogDescription>
           </DialogHeader>
           {pendingContextSnippet ? (

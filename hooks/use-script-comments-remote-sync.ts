@@ -11,15 +11,24 @@ import {
 import type { ScriptComment, ScriptCommentAnchor } from "@/types/script"
 import { recordFromCommentArray } from "@/lib/feedback-sticker-sync"
 
+export type ScriptCommentsMergeMeta = {
+  scriptVersion?: number
+}
+
 export type UseScriptCommentsRemoteSyncOptions = {
   token: string | null
   scriptId: string | undefined
-  /** GET /api/scripts/:id/comments after mount / scriptId change. */
+  /** GET /api/scripts/:id/comments after mount / scriptId change / refetch key change. */
   fetchEnabled: boolean
   /** POST/PATCH/DELETE when local comment map changes. */
   pushEnabled: boolean
+  /** Bump when `Script.version` changes so GET re-runs (new round after Agency resubmit). */
+  commentsRefetchKey?: string | number
   /** When GET returns rows, parent should apply to UI (e.g. setFeedbackStickers). */
-  onMergeFromServer?: (comments: ScriptComment[]) => void
+  onMergeFromServer?: (
+    comments: ScriptComment[],
+    meta?: ScriptCommentsMergeMeta
+  ) => void
 }
 
 /**
@@ -32,6 +41,7 @@ export function useScriptCommentsRemoteSync({
   scriptId,
   fetchEnabled,
   pushEnabled,
+  commentsRefetchKey,
   onMergeFromServer,
 }: UseScriptCommentsRemoteSyncOptions) {
   const prevMapRef = useRef<Record<string, ScriptComment>>({})
@@ -48,10 +58,9 @@ export function useScriptCommentsRemoteSync({
       .then((res) => {
         if (cancelled) return
         const list = res.comments ?? []
-        if (list.length === 0) return
         const map = recordFromCommentArray(list)
         prevMapRef.current = { ...map }
-        onMergeFromServer?.(list)
+        onMergeFromServer?.(list, { scriptVersion: res.scriptVersion })
       })
       .catch((err) => {
         if (cancelled) return
@@ -63,7 +72,7 @@ export function useScriptCommentsRemoteSync({
     return () => {
       cancelled = true
     }
-  }, [fetchEnabled, token, scriptId, onMergeFromServer])
+  }, [fetchEnabled, token, scriptId, commentsRefetchKey, onMergeFromServer])
 
   const notifyStickersChanged = useCallback(
     (next: Record<string, ScriptComment>) => {
@@ -81,16 +90,17 @@ export function useScriptCommentsRemoteSync({
           for (const id of nextIds) {
             if (!prevIds.has(id)) {
               const c = next[id]
-              const anchor: ScriptCommentAnchor = c.anchor ?? {
-                space: "plain_text_utf16",
-                startOffset: 0,
-                endOffset: 0,
-              }
+              const anchor: ScriptCommentAnchor =
+                c.anchor ?? {
+                  space: "plain_text_utf16",
+                  startOffset: 0,
+                  endOffset: 0,
+                }
               await createScriptComment(token, scriptId, {
                 id: c.id,
                 body: c.body,
                 anchor,
-                contextSnippet: c.contextSnippet,
+                contextSnippet: c.contextSnippet ?? undefined,
                 resolved: c.resolved,
               })
               toast.success("Comment posted", { duration: 2000 })
@@ -108,7 +118,7 @@ export function useScriptCommentsRemoteSync({
               ) {
                 await patchScriptComment(token, scriptId, id, {
                   body: b.body,
-                  contextSnippet: b.contextSnippet,
+                  contextSnippet: b.contextSnippet ?? undefined,
                   resolved: b.resolved,
                   ...(anchorChanged && b.anchor ? { anchor: b.anchor } : {}),
                 })

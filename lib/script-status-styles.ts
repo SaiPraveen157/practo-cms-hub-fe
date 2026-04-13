@@ -60,6 +60,17 @@ export function getScriptStatusClassName(status: ScriptStatus): string {
 }
 
 /**
+ * True when the script still reflects an open rejection (same rules as the
+ * "Rejected" badge from {@link getScriptDisplayInfo}).
+ */
+export function scriptIsInRejectedState(script: Script): boolean {
+  const rejection = script.latestRejection
+  if (rejection == null) return false
+  const stageAtRejection = rejection.stageAtReview
+  return script.status === "DRAFT" || script.status === stageAtRejection
+}
+
+/**
  * Label and className for badge display. Show "Rejected" only when the script
  * is still in a rejected state (DRAFT after rejection, or still at the stage
  * where it was rejected). Once the script has moved forward (e.g. re-submitted
@@ -70,17 +81,11 @@ export function getScriptDisplayInfo(script: Script): {
   className: string
   pillClassName: string
 } {
-  const rejection = script.latestRejection
-  if (rejection != null) {
-    const stageAtRejection = rejection.stageAtReview
-    const stillAtRejectedStage =
-      script.status === "DRAFT" || script.status === stageAtRejection
-    if (stillAtRejectedStage) {
-      return {
-        label: "Rejected",
-        className: REJECTED_DISPLAY_STYLE,
-        pillClassName: REJECTED_PILL_STYLE,
-      }
+  if (scriptIsInRejectedState(script)) {
+    return {
+      label: "Rejected",
+      className: REJECTED_DISPLAY_STYLE,
+      pillClassName: REJECTED_PILL_STYLE,
     }
   }
   return {

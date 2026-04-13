@@ -23,6 +23,14 @@ export interface ScriptCommentAnchor {
   contentVersion?: number
 }
 
+/** Populated on GET /api/scripts/:id/comments (backend). */
+export interface ScriptCommentAuthor {
+  id: string
+  firstName: string
+  lastName: string
+  role: string
+}
+
 export interface ScriptComment {
   id: string
   body: string
@@ -30,7 +38,12 @@ export interface ScriptComment {
   createdAt?: string
   updatedAt?: string
   authorId?: string
-  contextSnippet?: string
+  /** Present when loaded from the comments API. */
+  author?: ScriptCommentAuthor
+  scriptId?: string
+  /** Which script revision this comment belongs to (matches `Script.version`). */
+  scriptVersion?: number
+  contextSnippet?: string | null
   resolved?: boolean
 }
 
@@ -130,11 +143,14 @@ export interface ScriptStatsResponse {
 
 export interface ScriptCommentsListResponse {
   success: boolean
+  /** Current script revision; GET returns only comments for this version. */
+  scriptVersion?: number
   comments: ScriptComment[]
 }
 
 export type ScriptCommentsListResponseWire = {
   success: boolean
+  scriptVersion?: number
   comments?: ScriptComment[]
   feedbackStickers?: ScriptComment[]
 }

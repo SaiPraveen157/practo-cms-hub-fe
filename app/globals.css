@@ -133,3 +133,29 @@
   right: 0 !important;
   top: 0 !important;
 }
+
+/* Script inline comments: anchored passage (ProseMirror decoration) */
+.comment-range-highlight {
+  border-radius: 0.125rem;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+  text-decoration-color: oklch(0.75 0.12 85);
+  background-color: oklch(0.95 0.04 95);
+  cursor: pointer;
+}
+
+.dark .comment-range-highlight {
+  text-decoration-color: oklch(0.75 0.12 85);
+  background-color: oklch(0.35 0.04 95);
+}
+
+.comment-range-highlight--selected {
+  text-decoration-color: oklch(0.55 0.15 250);
+  background-color: oklch(0.92 0.06 250);
+}
+
+.dark .comment-range-highlight--selected {
+  text-decoration-color: oklch(0.65 0.12 250);
+  background-color: oklch(0.32 0.08 250);
+}

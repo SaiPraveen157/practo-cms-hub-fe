@@ -1,9 +1,9 @@
 /**
- * In-browser mock for script inline comments until the real API exists.
+ * Opt-in in-browser mock for script inline comments (local testing only).
  * Persists per tab via sessionStorage.
  *
- * Disable when backend is ready:
- *   NEXT_PUBLIC_MOCK_SCRIPT_COMMENTS=false
+ * Enable with `NEXT_PUBLIC_MOCK_SCRIPT_COMMENTS=true`. Omit or set to anything
+ * else to use the real API (default).
  */
 import type {
   ScriptComment,
@@ -43,8 +43,9 @@ function delay(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
 }
 
+/** Mock is opt-in only (`NEXT_PUBLIC_MOCK_SCRIPT_COMMENTS=true`). Production uses the real API. */
 export function isScriptCommentsMockEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_MOCK_SCRIPT_COMMENTS !== "false"
+  return process.env.NEXT_PUBLIC_MOCK_SCRIPT_COMMENTS === "true"
 }
 
 export async function mockGetScriptComments(
@@ -53,7 +54,7 @@ export async function mockGetScriptComments(
   await delay(80)
   const store = readStore()
   const list = Object.values(store[scriptId] ?? {})
-  return { success: true, comments: list }
+  return { success: true, scriptVersion: 1, comments: list }
 }
 
 export async function mockCreateScriptComment(
@@ -123,5 +124,9 @@ export async function mockPutScriptComments(
   }
   store[scriptId] = next
   writeStore(store)
-  return { success: true, comments: Object.values(next) }
+  return {
+    success: true,
+    scriptVersion: 1,
+    comments: Object.values(next),
+  }
 }

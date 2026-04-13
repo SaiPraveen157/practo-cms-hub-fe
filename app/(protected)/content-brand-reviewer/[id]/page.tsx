@@ -109,6 +109,7 @@ export default function ContentBrandReviewerScriptPage() {
     scriptId: id,
     fetchEnabled: Boolean(token && id && canReview),
     pushEnabled: Boolean(token && id && canReview),
+    commentsRefetchKey: script?.version,
     onMergeFromServer: onCommentsMergedFromApi,
   })
 
@@ -327,6 +328,7 @@ export default function ContentBrandReviewerScriptPage() {
                   ? {
                       feedbackStickers,
                       feedbackCommentsSidebar: true,
+                      commentsSidebarEmptyHint: "No comments available.",
                       contentReadOnly: true,
                       onFeedbackStickersChange: handleFeedbackStickersChange,
                       feedbackStickerToolbar: true,
