@@ -227,11 +227,15 @@ export default function AgencyPocScriptPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!token || !id || !canEdit) return
+    if (!editTitle.trim()) {
+      setError(SCRIPT_TITLE_REQUIRED_MESSAGE)
+      return
+    }
     setError(null)
     setSaving(true)
     try {
       await updateScript(token, id, {
-        title: editTitle.trim() || undefined,
+        title: editTitle.trim(),
         insight: editInsight.trim() || undefined,
         content: editContent,
       })

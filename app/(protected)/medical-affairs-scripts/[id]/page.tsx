@@ -25,6 +25,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
+import { SCRIPT_TITLE_REQUIRED_MESSAGE } from "@/lib/script-title"
 import { useAuthStore } from "@/store"
 import {
   getScriptQueue,
@@ -261,11 +262,15 @@ export default function MedicalAffairsScriptDetailPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!token || !id || !isDraft) return
+    if (!editTitle.trim()) {
+      setError(SCRIPT_TITLE_REQUIRED_MESSAGE)
+      return
+    }
     setError(null)
     setSaving(true)
     try {
       await updateScript(token, id, {
-        title: editTitle.trim() || undefined,
+        title: editTitle.trim(),
         insight: editInsight.trim() || undefined,
         content: editContent,
       })

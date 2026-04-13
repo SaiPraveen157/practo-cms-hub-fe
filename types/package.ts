@@ -92,6 +92,10 @@ export interface PackageVideoAsset {
   title?: string | null
   description?: string | null
   tags?: string[] | null
+  /** Display name of the doctor (optional). */
+  doctorName?: string | null
+  /** Specialty enum value from GET /api/packages/specialties (optional). */
+  specialty?: string | null
   thumbnails?: PackageThumbnailRecord[]
 }
 
@@ -114,6 +118,8 @@ export interface PackageAsset {
   title?: string | null
   description?: string | null
   tags?: string[] | null
+  doctorName?: string | null
+  specialty?: string | null
   thumbnails?: PackageAsset[]
 }
 
@@ -260,6 +266,8 @@ export interface SubmitPackageVideoInput {
   title?: string
   description?: string
   tags?: string[]
+  doctorName?: string
+  specialty?: string
   thumbnails: SubmitPackageThumbnailInput[]
 }
 
@@ -282,7 +290,15 @@ export interface ResubmitPackageVideoMetadataBody {
   title: string
   description: string
   tags?: string[]
+  doctorName?: string
+  specialty?: string
   thumbnails: SubmitPackageThumbnailInput[]
+}
+
+/** GET /api/packages/specialties — value sent on video payloads; label for UI. */
+export interface PackageSpecialtyOption {
+  value: string
+  label: string
 }
 
 export type ApprovePackageVideoBody = {

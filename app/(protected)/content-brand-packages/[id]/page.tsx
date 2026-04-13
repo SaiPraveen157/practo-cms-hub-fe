@@ -35,12 +35,16 @@ import { useAuthStore } from "@/store"
 import {
   approvePackageVideo,
   getPackage,
+  getPackageSpecialties,
+  getPackageVideoComments,
   rejectPackageVideo,
   reviewPackageThumbnail,
 } from "@/lib/packages-api"
+import { labelForSpecialtyValue } from "@/lib/package-specialty-label"
 import {
   contentBrandPlaybackQualityActionsAvailable,
   deliverableLabelsByVideoId,
+  displayThumbnailStatus,
   getCurrentVideoAsset,
   mergeVideoIntoPackage,
   packageVideosSorted,
@@ -50,6 +54,7 @@ import {
 import type {
   FinalPackage,
   PackageItemFeedbackEntry,
+  PackageSpecialtyOption,
   PackageThumbnailRecord,
   PackageVideo,
 } from "@/types/package"
@@ -76,6 +81,11 @@ import {
   Smartphone,
   XCircle,
 } from "lucide-react"
+import {
+  VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+  videoThreadBlocksApprove,
+} from "@/lib/video-comment"
+import { usePackageVideoThreadBlockMap } from "@/hooks/use-package-video-thread-block-map"
 import { toast } from "sonner"
 
 type BrandReviewTab = "videos" | "metadata"
@@ -156,9 +166,8 @@ export default function ContentBrandPackageDetailPage() {
   const [metaRejectVideo, setMetaRejectVideo] = useState<PackageVideo | null>(
     null
   )
-  const [metaRejectDraft, setMetaRejectDraft] = useState<MetaRejectDraft>(
-    emptyMetaRejectDraft
-  )
+  const [metaRejectDraft, setMetaRejectDraft] =
+    useState<MetaRejectDraft>(emptyMetaRejectDraft)
 
   const [brandRejectVideo, setBrandRejectVideo] = useState<PackageVideo | null>(
     null
@@ -173,6 +182,9 @@ export default function ContentBrandPackageDetailPage() {
   const [brandApproveVideo, setBrandApproveVideo] =
     useState<PackageVideo | null>(null)
   const [brandApproveComment, setBrandApproveComment] = useState("")
+  const [specialtyOptions, setSpecialtyOptions] = useState<
+    PackageSpecialtyOption[]
+  >([])
 
   const load = useCallback(async () => {
     if (!token || !id) return
@@ -191,6 +203,22 @@ export default function ContentBrandPackageDetailPage() {
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const list = await getPackageSpecialties(token)
+        if (!cancelled) setSpecialtyOptions(list)
+      } catch {
+        if (!cancelled) setSpecialtyOptions([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [token])
 
   useEffect(() => {
     if (!metaRejectVideo) {
@@ -225,7 +253,8 @@ export default function ContentBrandPackageDetailPage() {
   )
 
   const videoQualityCount = useMemo(
-    () => sortedVideos.filter(contentBrandPlaybackQualityActionsAvailable).length,
+    () =>
+      sortedVideos.filter(contentBrandPlaybackQualityActionsAvailable).length,
     [sortedVideos]
   )
 
@@ -250,6 +279,19 @@ export default function ContentBrandPackageDetailPage() {
     if (videoQualityCount > 0) setReviewTab("videos")
     else setReviewTab("metadata")
   }, [searchParams, pkg?.id, videoQualityCount, metaQueueCount])
+
+  /** Timestamp threads block only **brand video quality** approval — metadata track is independent (Phase 6). */
+  const packageVideosForThreadGate = useMemo(
+    () => sortedVideos.filter(contentBrandPlaybackQualityActionsAvailable),
+    [sortedVideos]
+  )
+
+  const { threadBlockByVideoId, recheckThreadBlocks } =
+    usePackageVideoThreadBlockMap(token, packageVideosForThreadGate)
+
+  const brandApproveThreadBlocked = brandApproveVideo
+    ? Boolean(threadBlockByVideoId[brandApproveVideo.id])
+    : false
 
   async function handleApproveMetadata() {
     if (!token || !metaApproveVideo) return
@@ -360,6 +402,18 @@ export default function ContentBrandPackageDetailPage() {
   async function handleApproveBrandVideo() {
     if (!token || !brandApproveVideo) return
     await run(`brand-approve-${brandApproveVideo.id}`, async () => {
+      const threadList = await getPackageVideoComments(
+        token,
+        brandApproveVideo.id
+      )
+      if (
+        videoThreadBlocksApprove(threadList, brandApproveVideo.currentVersion)
+      ) {
+        toast.error("Cannot approve yet", {
+          description: VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+        })
+        return
+      }
       const res = await approvePackageVideo(token, brandApproveVideo.id, {
         comments: brandApproveComment.trim() || "Video quality approved.",
       })
@@ -509,9 +563,9 @@ export default function ContentBrandPackageDetailPage() {
                     </span>{" "}
                     — Title, description, tags, and thumbnails. Reject metadata
                     (including specific thumbnails) from the rejection flow;
-                    approving metadata auto-approves any still-pending thumbnails
-                    first. Parallel with Medical while the deliverable is in
-                    Medical review.
+                    approving metadata auto-approves any still-pending
+                    thumbnails first. Parallel with Medical while the
+                    deliverable is in Medical review.
                   </li>
                   <li>
                     <span className="font-medium text-foreground">
@@ -551,6 +605,7 @@ export default function ContentBrandPackageDetailPage() {
                   setMetaApproveVideo={setMetaApproveVideo}
                   setMetaRejectVideo={setMetaRejectVideo}
                   isPending={isPending}
+                  specialtyOptions={specialtyOptions}
                 />
               ) : (
                 <BrandVideoQualityPanel
@@ -560,6 +615,9 @@ export default function ContentBrandPackageDetailPage() {
                   setBrandApproveVideo={setBrandApproveVideo}
                   setBrandRejectVideo={setBrandRejectVideo}
                   isPending={isPending}
+                  threadBlockByVideoId={threadBlockByVideoId}
+                  onPackageVideoCommentsUpdated={recheckThreadBlocks}
+                  specialtyOptions={specialtyOptions}
                 />
               )}
             </div>
@@ -641,11 +699,17 @@ export default function ContentBrandPackageDetailPage() {
           <DialogHeader>
             <DialogTitle>Approve video</DialogTitle>
             <DialogDescription>
-              If approved, this deliverable will move to content approver for finalreview.
+              If approved, this deliverable will move to content approver for
+              finalreview.
               <br />
               Comments are optional.
             </DialogDescription>
           </DialogHeader>
+          {brandApproveThreadBlocked ? (
+            <p className="text-sm text-muted-foreground">
+              {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+            </p>
+          ) : null}
           <Textarea
             value={brandApproveComment}
             onChange={(e) => setBrandApproveComment(e.target.value)}
@@ -662,6 +726,7 @@ export default function ContentBrandPackageDetailPage() {
               onClick={() => void handleApproveBrandVideo()}
               disabled={
                 !brandApproveVideo ||
+                brandApproveThreadBlocked ||
                 isPending(`brand-approve-${brandApproveVideo.id}`)
               }
             >
@@ -753,7 +818,9 @@ function RejectMetadataDialogBody({
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         <div className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="meta-reject-overall">Overall summary (optional)</Label>
+            <Label htmlFor="meta-reject-overall">
+              Overall summary (optional)
+            </Label>
             <Textarea
               id="meta-reject-overall"
               value={draft.overallComments}
@@ -785,7 +852,7 @@ function RejectMetadataDialogBody({
               />
               <div className="min-w-0 flex-1 space-y-2">
                 <span className="text-sm font-medium">Title</span>
-                <p className="text-xs text-muted-foreground line-clamp-3">
+                <p className="line-clamp-3 text-xs text-muted-foreground">
                   {titlePreview}
                 </p>
                 {draft.title.flag ? (
@@ -822,7 +889,7 @@ function RejectMetadataDialogBody({
               />
               <div className="min-w-0 flex-1 space-y-2">
                 <span className="text-sm font-medium">Description</span>
-                <p className="text-xs text-muted-foreground line-clamp-4 whitespace-pre-wrap">
+                <p className="line-clamp-4 text-xs whitespace-pre-wrap text-muted-foreground">
                   {descPreview}
                 </p>
                 {draft.description.flag ? (
@@ -888,8 +955,8 @@ function RejectMetadataDialogBody({
               Thumbnails
             </p>
             <p className="text-xs text-muted-foreground">
-              Check thumbnails to include in this rejection and add a comment for
-              each selected image.
+              Check thumbnails to include in this rejection and add a comment
+              for each selected image.
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               {thumbs.map((t) => {
@@ -931,7 +998,7 @@ function RejectMetadataDialogBody({
                                 [t.id]: {
                                   reject: e.target.checked,
                                   comment: e.target.checked
-                                    ? d.thumbs[t.id]?.comment ?? ""
+                                    ? (d.thumbs[t.id]?.comment ?? "")
                                     : "",
                                 },
                               },
@@ -994,6 +1061,7 @@ function BrandMetadataPanel({
   setMetaApproveVideo,
   setMetaRejectVideo,
   isPending,
+  specialtyOptions,
 }: {
   sortedVideos: PackageVideo[]
   deliverableLabels: Map<string, string>
@@ -1001,6 +1069,7 @@ function BrandMetadataPanel({
   setMetaApproveVideo: (v: PackageVideo | null) => void
   setMetaRejectVideo: (v: PackageVideo | null) => void
   isPending: (key: string) => boolean
+  specialtyOptions: PackageSpecialtyOption[]
 }) {
   return (
     <div className="space-y-8">
@@ -1060,6 +1129,11 @@ function BrandMetadataPanel({
                 title={asset.title}
                 description={asset.description}
                 tags={asset.tags ?? undefined}
+                doctorName={asset.doctorName}
+                specialtyLabel={labelForSpecialtyValue(
+                  asset.specialty,
+                  specialtyOptions
+                )}
               />
 
               {!inMetaStage && (
@@ -1102,45 +1176,48 @@ function BrandMetadataPanel({
                   )}
                 </h3>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {thumbs.map((t) => (
-                    <Card key={t.id} className="overflow-hidden">
-                      <a
-                        href={t.fileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block aspect-video bg-muted"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={t.fileUrl}
-                          alt={t.fileName}
-                          className="size-full object-cover"
-                        />
-                      </a>
-                      <CardContent className="space-y-2 p-3">
-                        <Badge
-                          className={thumbBadgeClass(t.status)}
-                          variant="secondary"
+                  {thumbs.map((t) => {
+                    const thumbUiStatus = displayThumbnailStatus(video, t.status)
+                    return (
+                      <Card key={t.id} className="overflow-hidden">
+                        <a
+                          href={t.fileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block aspect-video bg-muted"
                         >
-                          {t.status}
-                        </Badge>
-                        {t.status === "REJECTED" && t.comment && (
-                          <p className="text-xs text-destructive">
-                            {t.comment}
-                          </p>
-                        )}
-                        {t.status === "PENDING" && canMeta ? (
-                          <p className="text-xs text-muted-foreground">
-                            Will be approved when you confirm{" "}
-                            <span className="font-medium text-foreground">
-                              Approve metadata
-                            </span>
-                            .
-                          </p>
-                        ) : null}
-                      </CardContent>
-                    </Card>
-                  ))}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={t.fileUrl}
+                            alt={t.fileName}
+                            className="size-full object-cover"
+                          />
+                        </a>
+                        <CardContent className="space-y-2 p-3">
+                          <Badge
+                            className={thumbBadgeClass(thumbUiStatus)}
+                            variant="secondary"
+                          >
+                            {thumbUiStatus}
+                          </Badge>
+                          {t.status === "REJECTED" && t.comment && (
+                            <p className="text-xs text-destructive">
+                              {t.comment}
+                            </p>
+                          )}
+                          {t.status === "PENDING" && canMeta ? (
+                            <p className="text-xs text-muted-foreground">
+                              Will be approved when you confirm{" "}
+                              <span className="font-medium text-foreground">
+                                Approve metadata
+                              </span>
+                              .
+                            </p>
+                          ) : null}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
                 </div>
               </div>
 
@@ -1211,6 +1288,9 @@ function BrandVideoQualityPanel({
   setBrandApproveVideo,
   setBrandRejectVideo,
   isPending,
+  threadBlockByVideoId,
+  onPackageVideoCommentsUpdated,
+  specialtyOptions,
 }: {
   sortedVideos: PackageVideo[]
   deliverableLabels: Map<string, string>
@@ -1218,6 +1298,9 @@ function BrandVideoQualityPanel({
   setBrandApproveVideo: (v: PackageVideo | null) => void
   setBrandRejectVideo: (v: PackageVideo | null) => void
   isPending: (key: string) => boolean
+  threadBlockByVideoId: Record<string, boolean>
+  onPackageVideoCommentsUpdated: () => void
+  specialtyOptions: PackageSpecialtyOption[]
 }) {
   return (
     <div className="space-y-8">
@@ -1272,21 +1355,18 @@ function BrandVideoQualityPanel({
               {!showQualityUi && (
                 <p className="rounded-lg border border-dashed border-border bg-muted/25 px-4 py-3 text-sm text-muted-foreground">
                   Preview the file below for context. Playback-quality
-                  approve/reject uses the same API as Brand quality review and is
-                  only available per deliverable once it reaches that stage.
+                  approve/reject uses the same API as Brand quality review and
+                  is only available per deliverable once it reaches that stage.
                   {!waitingMetaForBrandQuality ? (
-                    <>
-                      {" "}
-                      Stage: {VIDEO_STATUS_LABELS[video.status]}.
-                    </>
+                    <> Stage: {VIDEO_STATUS_LABELS[video.status]}.</>
                   ) : (
                     <>
                       {" "}
                       Medical has approved the video file for this deliverable;
-                      approve the metadata track on the <strong>Metadata</strong>{" "}
-                      tab (thumbnails and copy) so this deliverable can move to
-                      Brand quality review. Other deliverables in the package do
-                      not block this one.
+                      approve the metadata track on the{" "}
+                      <strong>Metadata</strong> tab (thumbnails and copy) so
+                      this deliverable can move to Brand quality review. Other
+                      deliverables in the package do not block this one.
                     </>
                   )}
                 </p>
@@ -1321,15 +1401,26 @@ function BrandVideoQualityPanel({
                 label={label}
                 icon={icon}
                 videoOnly
+                packageVideo={video}
+                onPackageVideoCommentsUpdated={onPackageVideoCommentsUpdated}
+                specialtyOptions={specialtyOptions}
               />
 
               {showQualityUi ? (
-                <div className="flex flex-wrap gap-2">
+                <div className="space-y-2">
+                  {threadBlockByVideoId[video.id] ? (
+                    <p className="text-sm text-amber-700 dark:text-amber-400">
+                      {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap gap-2">
                   <Button
                     size="sm"
                     className="bg-green-600 text-white hover:bg-green-700"
                     disabled={
-                      !canBrandQuality || isPending(`brand-approve-${video.id}`)
+                      !canBrandQuality ||
+                      isPending(`brand-approve-${video.id}`) ||
+                      Boolean(threadBlockByVideoId[video.id])
                     }
                     onClick={() => setBrandApproveVideo(video)}
                   >
@@ -1356,6 +1447,7 @@ function BrandVideoQualityPanel({
                     )}
                     Reject video
                   </Button>
+                  </div>
                 </div>
               ) : null}
             </CardContent>

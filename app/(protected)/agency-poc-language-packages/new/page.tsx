@@ -30,7 +30,8 @@ import {
 import { useAuthStore } from "@/store"
 import type { UserRole } from "@/types/auth"
 import { getScript } from "@/lib/scripts-api"
-import { getPackageByScriptId } from "@/lib/packages-api"
+import { getPackageByScriptId, getPackageSpecialties } from "@/lib/packages-api"
+import { optionalDoctorSpecialtyPayload } from "@/lib/package-specialty-label"
 import {
   addLanguagePackageVideo,
   createLanguagePackage,
@@ -43,6 +44,7 @@ import {
   isScriptLockedForLanguagePackages,
 } from "@/lib/language-phase-gates"
 import type { PackageLanguage } from "@/types/language-package"
+import type { PackageSpecialtyOption } from "@/types/package"
 import type { Script } from "@/types/script"
 import {
   formatLanguageLabel,
@@ -122,6 +124,7 @@ export default function AgencyNewLanguagePackagePage() {
     createNewLanguageVideoSlot(),
   ])
   const [submitting, setSubmitting] = useState(false)
+  const [specialties, setSpecialties] = useState<PackageSpecialtyOption[]>([])
 
   const languageOptions = useMemo(() => {
     const taken = new Set(existingLangs.map((l) => l.toUpperCase()))
@@ -228,6 +231,22 @@ export default function AgencyNewLanguagePackagePage() {
   }, [runGate])
 
   useEffect(() => {
+    if (!token || !isAgency) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const list = await getPackageSpecialties(token)
+        if (!cancelled) setSpecialties(list)
+      } catch {
+        if (!cancelled) setSpecialties([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [token, isAgency])
+
+  useEffect(() => {
     if (languageOptions.length === 1 && !language) {
       setLanguage(languageOptions[0])
     }
@@ -327,6 +346,7 @@ export default function AgencyNewLanguagePackagePage() {
           title: first.meta.title.trim(),
           description: first.meta.description.trim(),
           tags: effectiveTagsFromMeta(first.meta),
+          ...optionalDoctorSpecialtyPayload(first.meta),
           thumbnails: firstThumbs.map((t) => ({
             fileUrl: t.fileUrl,
             fileName: t.fileName,
@@ -348,6 +368,7 @@ export default function AgencyNewLanguagePackagePage() {
           title: slot.meta.title.trim(),
           description: slot.meta.description.trim(),
           tags: effectiveTagsFromMeta(slot.meta),
+          ...optionalDoctorSpecialtyPayload(slot.meta),
           thumbnails: thumbs.map((t) => ({
             fileUrl: t.fileUrl,
             fileName: t.fileName,
@@ -368,7 +389,8 @@ export default function AgencyNewLanguagePackagePage() {
       )
       router.push(`/agency-poc-language-packages/${packageId}`)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Submit failed")
+      const message = err instanceof Error ? err.message : "Submit failed"
+      toast.error("Could not create language package", { description: message })
     } finally {
       setSubmitting(false)
     }
@@ -519,9 +541,9 @@ export default function AgencyNewLanguagePackagePage() {
                 {language ? (
                   <p className="mt-0.5 text-lg font-semibold tracking-tight text-foreground">
                     {formatLanguageLabel(language)}
-                    <span className="ml-2 font-mono text-sm font-medium text-muted-foreground">
+                    {/* <span className="ml-2 font-mono text-sm font-medium text-muted-foreground">
                       {language}
-                    </span>
+                    </span> */}
                   </p>
                 ) : (
                   <p className="mt-0.5 text-sm leading-snug">
@@ -644,6 +666,7 @@ export default function AgencyNewLanguagePackagePage() {
                         icon={<Languages className="size-5" />}
                         idPrefix={`lang-v-${slot.id}`}
                         spacious
+                        specialties={specialties}
                       />
                     </div>
                   ))}
@@ -730,6 +753,7 @@ export default function AgencyNewLanguagePackagePage() {
                   videoSlots={videoSlots}
                   mergedTags={mergedTags}
                   metaAndFileOk={metaAndFileReady}
+                  specialties={specialties}
                 />
               </div>
             )}
@@ -768,6 +792,7 @@ function LanguagePackageReviewSummary({
   videoSlots,
   mergedTags,
   metaAndFileOk,
+  specialties = [],
 }: {
   packageName: string
   language: string
@@ -775,6 +800,7 @@ function LanguagePackageReviewSummary({
   videoSlots: LanguageVideoSlot[]
   mergedTags: string[]
   metaAndFileOk: boolean
+  specialties?: PackageSpecialtyOption[]
 }) {
   const thumbsOk = true
   const totalThumbs = videoSlots.reduce(
@@ -830,6 +856,7 @@ function LanguagePackageReviewSummary({
                   isVideoMetaComplete(slot.meta) &&
                   Boolean(slot.file)
                 }
+                specialties={specialties}
               />
             ))}
           </ul>

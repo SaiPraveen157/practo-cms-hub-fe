@@ -46,6 +46,8 @@ export interface LanguageVideoAsset {
   title?: string | null
   description?: string | null
   tags?: string[] | null
+  doctorName?: string | null
+  specialty?: string | null
   thumbnails?: LanguageThumbnailRecord[]
   createdAt?: string
 }
@@ -124,6 +126,8 @@ export interface SubmitLanguageVideoInput {
   title?: string
   description?: string
   tags?: string[]
+  doctorName?: string
+  specialty?: string
   thumbnails?: SubmitLanguageThumbnailInput[]
 }
 
@@ -145,6 +149,8 @@ export interface ResubmitLanguageMetadataBody {
   title?: string
   description?: string
   tags?: string[]
+  doctorName?: string
+  specialty?: string
   thumbnails?: SubmitLanguageThumbnailInput[]
 }
 

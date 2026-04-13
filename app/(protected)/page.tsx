@@ -2,6 +2,7 @@
 
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { GsapFadeIn } from "@/components/motion"
 import { useAuthStore } from "@/store"
 import { getHomePathForRole } from "@/lib/role-routes"
 import type { UserRole } from "@/types/auth"
@@ -16,9 +17,9 @@ export default function ProtectedHomeRedirect() {
   }, [user?.role, router])
 
   return (
-    <div className="flex min-h-svh flex-col items-center justify-center gap-4 bg-background">
+    <GsapFadeIn className="flex min-h-svh flex-col items-center justify-center gap-4 bg-background">
       <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       <p className="text-sm text-muted-foreground">Redirecting…</p>
-    </div>
+    </GsapFadeIn>
   )
 }

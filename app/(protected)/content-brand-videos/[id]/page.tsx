@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -25,10 +25,10 @@ import {
 import { useAuthStore } from "@/store"
 import {
   getVideo,
+  getVideoComments,
   getVideoStats,
   approveVideo,
   rejectVideo,
-  getVideoComments,
   addVideoComment,
 } from "@/lib/videos-api"
 import type {
@@ -39,13 +39,13 @@ import type {
   VideoStatsResponse,
 } from "@/types/video"
 import { VideoTatBar, resolveVideoTat } from "@/components/video-tat-bar"
+import { ArrowLeft, CheckCircle, Loader2, XCircle } from "lucide-react"
+import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
 import {
-  ArrowLeft,
-  CheckCircle,
-  Loader2,
-  MessageSquare,
-  XCircle,
-} from "lucide-react"
+  VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+  filterVideoCommentsForAssetVersion,
+  videoThreadBlocksApprove,
+} from "@/lib/video-comment"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -84,6 +84,7 @@ export default function ContentBrandVideoDetailPage() {
   const token = useAuthStore((s) => s.token)
   const user = useAuthStore((s) => s.user)
   const [video, setVideo] = useState<Video | null>(null)
+  /** Timestamp thread — Phase 5 (First Cut) only; not used for Phase 4. */
   const [comments, setComments] = useState<VideoComment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -93,8 +94,6 @@ export default function ContentBrandVideoDetailPage() {
   const [rejectComments, setRejectComments] = useState("")
   const [approving, setApproving] = useState(false)
   const [rejecting, setRejecting] = useState(false)
-  const [newComment, setNewComment] = useState("")
-  const [addingComment, setAddingComment] = useState(false)
   const [videoStats, setVideoStats] = useState<VideoStatsResponse | null>(null)
 
   const isContentBrand = user?.role === "CONTENT_BRAND"
@@ -113,16 +112,6 @@ export default function ContentBrandVideoDetailPage() {
     }
   }, [token, id])
 
-  const fetchComments = useCallback(async () => {
-    if (!token || !id) return
-    try {
-      const list = await getVideoComments(token, id)
-      setComments(list)
-    } catch {
-      setComments([])
-    }
-  }, [token, id])
-
   useEffect(() => {
     fetchVideo()
   }, [fetchVideo])
@@ -134,12 +123,49 @@ export default function ContentBrandVideoDetailPage() {
       .catch(() => setVideoStats(null))
   }, [token])
 
+  const fetchComments = useCallback(async () => {
+    if (!token || !id) return
+    try {
+      const list = await getVideoComments(token, id)
+      setComments(list)
+    } catch {
+      setComments([])
+    }
+  }, [token, id])
+
   useEffect(() => {
-    if (video) fetchComments()
-  }, [video?.id, fetchComments])
+    if (!video || video.phase !== "FIRST_CUT") {
+      setComments([])
+      return
+    }
+    void fetchComments()
+  }, [video?.id, video?.version, video?.phase, fetchComments])
+
+  const versionScopedComments = useMemo(
+    () =>
+      video && video.phase === "FIRST_CUT"
+        ? filterVideoCommentsForAssetVersion(comments, video.version)
+        : [],
+    [comments, video?.version, video?.phase]
+  )
+
+  const threadBlocksApprove =
+    video != null &&
+    video.phase === "FIRST_CUT" &&
+    videoThreadBlocksApprove(comments, video.version)
 
   async function handleApprove() {
     if (!token || !id) return
+    if (
+      video &&
+      video.phase === "FIRST_CUT" &&
+      videoThreadBlocksApprove(comments, video.version)
+    ) {
+      toast.error("Cannot approve yet", {
+        description: VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+      })
+      return
+    }
     setError(null)
     setApproving(true)
     try {
@@ -198,21 +224,6 @@ export default function ContentBrandVideoDetailPage() {
       toast.error("Could not request changes", { description: msg })
     } finally {
       setRejecting(false)
-    }
-  }
-
-  async function handleAddComment() {
-    if (!token || !id || !newComment.trim()) return
-    setAddingComment(true)
-    try {
-      await addVideoComment(token, id, newComment.trim())
-      setNewComment("")
-      fetchComments()
-      toast.success("Comment added")
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to add comment")
-    } finally {
-      setAddingComment(false)
     }
   }
 
@@ -306,13 +317,30 @@ export default function ContentBrandVideoDetailPage() {
                 No file uploaded yet
               </p>
             ) : fileCategory === "video" ? (
-              <video
-                src={video.fileUrl!}
-                controls
-                className="w-full rounded-lg border bg-black"
-              >
-                Your browser does not support the video tag.
-              </video>
+              isFirstLineUp ? (
+                <VideoPlayerTimeline
+                  src={video.fileUrl!}
+                  mediaKey={video.id}
+                  comments={[]}
+                  showCommentsUi={false}
+                />
+              ) : (
+                <VideoPlayerTimeline
+                  src={video.fileUrl!}
+                  mediaKey={video.id}
+                  comments={versionScopedComments}
+                  onAddComment={async ({ content, timestampSeconds }) => {
+                    if (!token || !id) return
+                    await addVideoComment(token, id, {
+                      content,
+                      timestampSeconds,
+                      assetVersion: video.version,
+                    })
+                    await fetchComments()
+                    toast.success("Comment added")
+                  }}
+                />
+              )
             ) : fileCategory === "image" ? (
               <img
                 src={video.fileUrl!}
@@ -382,61 +410,16 @@ export default function ContentBrandVideoDetailPage() {
           </Card>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MessageSquare className="size-5" />
-              Comments
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Textarea
-                placeholder="Add a comment..."
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                rows={2}
-                className="min-h-[80px] resize-y"
-                disabled={addingComment}
-              />
-              <Button
-                onClick={handleAddComment}
-                disabled={!newComment.trim() || addingComment}
-                className="shrink-0 border-0 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
-              >
-                {addingComment ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  "Post"
-                )}
-              </Button>
-            </div>
-            <ul className="space-y-2">
-              {comments.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No comments yet.
-                </p>
-              ) : (
-                comments.map((c) => (
-                  <li
-                    key={c.id}
-                    className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-sm"
-                  >
-                    <p className="font-medium">
-                      {c.author
-                        ? `${c.author.firstName} ${c.author.lastName}`
-                        : "Unknown"}
-                    </p>
-                    <p className="mt-1 text-muted-foreground">{c.content}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {formatDate(c.createdAt)}
-                    </p>
-                  </li>
-                ))
-              )}
-            </ul>
-          </CardContent>
-        </Card>
+        {canApprove &&
+        video.phase === "FIRST_CUT" &&
+        threadBlocksApprove ? (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
+            <p className="font-medium">Approve disabled</p>
+            <p className="mt-1 text-muted-foreground dark:text-amber-100/90">
+              {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+            </p>
+          </div>
+        ) : null}
 
         {canApprove && (
           <div className="flex flex-wrap gap-2 border-t pt-6">
@@ -453,6 +436,7 @@ export default function ContentBrandVideoDetailPage() {
             <Button
               className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
               onClick={() => setApproveDialogOpen(true)}
+              disabled={video.phase === "FIRST_CUT" ? threadBlocksApprove : false}
             >
               <CheckCircle className="size-4" />
               {isFirstLineUp ? "Approve First Line Up" : "Approve First Cut"}
@@ -475,6 +459,11 @@ export default function ContentBrandVideoDetailPage() {
                 : "Final brand approval — completes the video for this script. Comments optional."}
             </DialogDescription>
           </DialogHeader>
+          {video.phase === "FIRST_CUT" && threadBlocksApprove ? (
+            <p className="text-sm text-muted-foreground">
+              {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+            </p>
+          ) : null}
           <div className="space-y-2">
             <Label htmlFor="approve-comments">Comments (optional)</Label>
             <Textarea
@@ -500,7 +489,10 @@ export default function ContentBrandVideoDetailPage() {
             </Button>
             <Button
               onClick={handleApprove}
-              disabled={approving}
+              disabled={
+                approving ||
+                (video.phase === "FIRST_CUT" && threadBlocksApprove)
+              }
               className="bg-green-600 text-white hover:bg-green-700"
             >
               {approving && <Loader2 className="mr-2 size-4 animate-spin" />}

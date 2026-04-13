@@ -13,6 +13,7 @@ import { login as loginApi, loginWithGoogle, getMe } from "@/lib/auth-api"
 import { getHomePathForRole } from "@/lib/role-routes"
 import type { UserRole } from "@/types/auth"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
+import { GsapFadeIn } from "@/components/motion"
 
 
 const LOGIN_BG_IMAGE = "/HomeBackground.jpg"
@@ -111,7 +112,8 @@ export default function LoginPage() {
         }}
       >
         <div className="relative z-10 w-full max-w-[460px]">
-        <div className="rounded-2xl bg-transparent p-8 sm:p-10">
+          <GsapFadeIn>
+            <div className="rounded-2xl bg-transparent p-8 sm:p-10">
           <div className="mb-8 text-center">
             <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
               Welcome Back
@@ -245,11 +247,12 @@ export default function LoginPage() {
               shape="rectangular"
             />
           </div>
-        </div>
+            </div>
 
-        {/* <p className="mt-6 text-center text-sm text-white/90 drop-shadow-sm">
+            {/* <p className="mt-6 text-center text-sm text-white/90 drop-shadow-sm">
           Use your assigned credentials. Contact your admin if you need access.
         </p> */}
+          </GsapFadeIn>
         </div>
       </div>
     </GoogleOAuthProvider>

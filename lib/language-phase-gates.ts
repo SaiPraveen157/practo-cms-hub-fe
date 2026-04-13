@@ -30,18 +30,17 @@ export function isScriptEligibleForPhase7LanguageSubmit(
   )
 }
 
+/**
+ * True while Brand’s rejection still targets the **current** asset snapshot
+ * (`videoAssetId` / `thumbnailId` on `itemFeedback` match the present file row).
+ *
+ * Do **not** use “latest reject time vs latest approve time” across all reviews:
+ * there is often no APPROVED row until Content Approver acts, so `lastApproved`
+ * stays 0 and Agency would incorrectly keep seeing “resubmit” forever after
+ * they already uploaded a new version (new asset id).
+ */
 export function agencyLanguageVideoNeedsRevision(v: LanguageVideo): boolean {
-  if (v.status !== "BRAND_REVIEW") return false
-  const reviews = [...(v.reviews ?? [])]
-  let lastApproved = 0
-  let lastRejected = 0
-  for (const r of reviews) {
-    const t = new Date(r.reviewedAt).getTime()
-    if (Number.isNaN(t)) continue
-    if (r.decision === "APPROVED") lastApproved = Math.max(lastApproved, t)
-    if (r.decision === "REJECTED") lastRejected = Math.max(lastRejected, t)
-  }
-  return lastRejected > lastApproved
+  return languageVideoAwaitingAgencyAfterBrandRejectOnCurrentAsset(v)
 }
 
 /**

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -14,19 +14,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useAuthStore } from "@/store"
-import { getVideoQueue, getVideoStats, uploadVideoFlow } from "@/lib/videos-api"
+import {
+  getVideoQueue,
+  getVideoStats,
+  uploadVideoFlow,
+} from "@/lib/videos-api"
+import { FIRST_LINE_UP_MIXED_INPUT_ACCEPT } from "@/lib/video-file-validation"
+import { isAgencyRejectedReturn } from "@/lib/agency-video-resubmit"
 import { getScriptQueue } from "@/lib/scripts-api"
 import { getAgencyVideoCardPhaseTags } from "@/lib/agency-video-phase-tags"
 import type { Script } from "@/types/script"
 import type { Video, VideoPhase, VideoStatus } from "@/types/video"
 import { VideoTatBar, resolveVideoTat } from "@/components/video-tat-bar"
-import {
-  ArrowRight,
-  Loader2,
-  Search,
-  Upload,
-  Video as VideoIcon,
-} from "lucide-react"
+import { Loader2, Search, Upload, Video as VideoIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -85,9 +85,15 @@ function VideoCard({
     allVideos,
     video.scriptId
   )
+  const rejectedReturn = isAgencyRejectedReturn(video)
   return (
     <Card
-      className="flex cursor-pointer flex-col overflow-hidden rounded-xl shadow-sm ring-1 ring-border/50 transition-shadow hover:shadow-md"
+      className={cn(
+        "flex flex-col overflow-hidden rounded-xl shadow-sm ring-1 ring-border/50 transition-shadow",
+        "cursor-pointer hover:shadow-md",
+        rejectedReturn &&
+          "border-2 border-destructive/55 ring-0 dark:border-destructive/50"
+      )}
       onClick={onView}
       role="button"
       tabIndex={0}
@@ -99,38 +105,39 @@ function VideoCard({
       }}
     >
       <CardContent className="flex flex-1 flex-col gap-4 p-5">
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap gap-1.5">
-            <span
-              className={cn(
-                "inline-flex max-w-full rounded-full px-2 py-0.5 text-[10px] leading-snug font-medium break-words sm:text-xs",
-                phaseTags.phase4.className
-              )}
-            >
-              {phaseTags.phase4.label}
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
+          <span
+            className={cn(
+              "inline-flex min-w-0 max-w-full rounded-full px-2 py-0.5 text-[10px] leading-snug font-medium wrap-break-word sm:text-xs",
+              phaseTags.phase4.className
+            )}
+          >
+            {phaseTags.phase4.label}
+          </span>
+          <span
+            className={cn(
+              "inline-flex min-w-0 max-w-full rounded-full px-2 py-0.5 text-[10px] leading-snug font-medium wrap-break-word sm:text-xs",
+              phaseTags.phase5.className
+            )}
+          >
+            {phaseTags.phase5.label}
+          </span>
+          {rejectedReturn ? (
+            <span className="inline-flex shrink-0 rounded-full border border-destructive/40 bg-destructive/15 px-2.5 py-0.5 text-xs font-semibold tracking-wide text-destructive uppercase dark:bg-destructive/20">
+              Rejected
             </span>
-            <span
-              className={cn(
-                "inline-flex max-w-full rounded-full px-2 py-0.5 text-[10px] leading-snug font-medium break-words sm:text-xs",
-                phaseTags.phase5.className
-              )}
-            >
-              {phaseTags.phase5.label}
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={cn(
-                "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium uppercase",
-                getStatusPillClass(video.status)
-              )}
-            >
-              {STATUS_LABELS[video.status]}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {PHASE_LABELS[video.phase]} · v{video.version}
-            </span>
-          </div>
+          ) : null}
+          <span
+            className={cn(
+              "inline-flex shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium uppercase",
+              getStatusPillClass(video.status)
+            )}
+          >
+            {STATUS_LABELS[video.status]}
+          </span>
+          <span className="shrink-0 text-xs whitespace-nowrap text-muted-foreground">
+            {PHASE_LABELS[video.phase]} · v{video.version}
+          </span>
         </div>
         <h3 className="min-w-0 text-lg leading-tight font-semibold text-foreground">
           {video.script?.title ?? "Untitled script"}
@@ -140,7 +147,7 @@ function VideoCard({
             <span>{video.fileName ?? "File attached"}</span>
           ) : (
             <span className="text-amber-600 dark:text-amber-400">
-              Awaiting upload
+              {rejectedReturn ? "Awaiting re-upload" : "Awaiting upload"}
             </span>
           )}
           {video.uploadedBy && (
@@ -155,18 +162,6 @@ function VideoCard({
           repeatCycleHours={repeatCycleHours}
         />
         <div className="mt-auto flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5"
-            onClick={(e) => {
-              e.stopPropagation()
-              onView()
-            }}
-          >
-            <ArrowRight className="size-4" />
-            View
-          </Button>
           {onUpload && (
             <Button
               size="sm"
@@ -177,7 +172,7 @@ function VideoCard({
               }}
             >
               <Upload className="size-4" />
-              Upload{" "}
+              {rejectedReturn ? "Re-upload" : "Upload"}{" "}
               {video.phase === "FIRST_LINE_UP" ? "First Line Up" : "First Cut"}
             </Button>
           )}
@@ -286,8 +281,18 @@ export default function AgencyPocVideosPage() {
         ? approvedVideos
         : rejectedVideos
 
-  const needsUpload = (v: Video) =>
-    v.status === "AGENCY_UPLOAD_PENDING" && !v.fileUrl
+  /** Rejected-return cards (re-upload required) first; stable order within each group. */
+  const subTabVideosSorted = useMemo(
+    () =>
+      [...subTabVideos].sort((a, b) => {
+        const aResubmit = isAgencyRejectedReturn(a) ? 1 : 0
+        const bResubmit = isAgencyRejectedReturn(b) ? 1 : 0
+        return bResubmit - aResubmit
+      }),
+    [subTabVideos]
+  )
+
+  const needsUpload = (v: Video) => v.status === "AGENCY_UPLOAD_PENDING"
 
   const handleOpenUpload = (v: Video) => {
     setUploadVideo(v)
@@ -303,12 +308,25 @@ export default function AgencyPocVideosPage() {
     setUploadStep("url")
     try {
       setUploadStep("put")
-      await uploadVideoFlow(token, uploadFile, uploadVideo.scriptId, phase)
+      await uploadVideoFlow(
+        token,
+        uploadFile,
+        uploadVideo.scriptId,
+        phase,
+        isAgencyRejectedReturn(uploadVideo)
+          ? { videoId: uploadVideo.id }
+          : undefined
+      )
       setUploadStep("submit")
+      const wasRejectedReturn = isAgencyRejectedReturn(uploadVideo)
       toast.success(
-        phase === "FIRST_CUT"
-          ? "First Cut submitted"
-          : "First Line Up submitted",
+        wasRejectedReturn
+          ? phase === "FIRST_CUT"
+            ? "First Cut re-uploaded"
+            : "First Line Up re-uploaded"
+          : phase === "FIRST_CUT"
+            ? "First Cut submitted"
+            : "First Line Up submitted",
         {
           description:
             phase === "FIRST_CUT"
@@ -328,6 +346,9 @@ export default function AgencyPocVideosPage() {
       setUploadStep("idle")
     }
   }
+
+  const uploadIsRejectedReturn =
+    uploadVideo != null && isAgencyRejectedReturn(uploadVideo)
 
   if (!isAgency) {
     return (
@@ -538,7 +559,7 @@ export default function AgencyPocVideosPage() {
               </p>
             </CardContent>
           </Card>
-        ) : subTabVideos.length === 0 ? (
+        ) : subTabVideosSorted.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
               <VideoIcon className="size-12 text-muted-foreground" />
@@ -558,7 +579,7 @@ export default function AgencyPocVideosPage() {
           </Card>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
-            {subTabVideos.map((video) => {
+            {subTabVideosSorted.map((video) => {
               const limitH = stats?.tatConfig?.limitHours ?? 24
               const repeatH = stats?.tatConfig?.repeatCycleHours ?? 6
               return (
@@ -570,7 +591,9 @@ export default function AgencyPocVideosPage() {
                   onView={() => router.push(`${LIST_PATH}/${video.id}`)}
                   onUpload={
                     needsUpload(video)
-                      ? () => handleOpenUpload(video)
+                      ? isAgencyRejectedReturn(video)
+                        ? () => router.push(`${LIST_PATH}/${video.id}`)
+                        : () => handleOpenUpload(video)
                       : undefined
                   }
                   getStatusPillClass={getStatusPillClass}
@@ -587,7 +610,7 @@ export default function AgencyPocVideosPage() {
         <DialogContent className="gap-6 p-6 sm:max-w-lg sm:p-8" showCloseButton>
           <DialogHeader className="gap-3 space-y-1">
             <DialogTitle className="text-lg font-semibold tracking-tight">
-              Upload{" "}
+              {uploadIsRejectedReturn ? "Re-upload" : "Upload"}{" "}
               {uploadVideo?.phase === "FIRST_LINE_UP"
                 ? "First Line Up"
                 : "First Cut"}
@@ -596,14 +619,16 @@ export default function AgencyPocVideosPage() {
               {uploadVideo?.script?.title && (
                 <span className="font-medium">{uploadVideo.script.title}</span>
               )}{" "}
-              — Select a file. We’ll get a secure upload URL, upload the file,
-              then submit it for review.
+              —{" "}
+              {uploadIsRejectedReturn
+                ? "Select a new file to re-upload for this rejected version. We’ll get a secure upload URL, upload the file, then submit it for review."
+                : "Select a file. We’ll get a secure upload URL, upload the file, then submit it for review."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <input
               type="file"
-              accept="video/mp4,video/quicktime,video/x-msvideo,application/pdf,image/jpeg,image/png"
+              accept={FIRST_LINE_UP_MIXED_INPUT_ACCEPT}
               className="w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-foreground file:hover:bg-primary/90"
               onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
               disabled={uploading}
@@ -631,7 +656,9 @@ export default function AgencyPocVideosPage() {
               className="border-0 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
             >
               {uploading && <Loader2 className="mr-2 size-4 animate-spin" />}
-              Upload & submit
+              {uploadIsRejectedReturn
+                ? "Re-upload & submit"
+                : "Upload & submit"}
             </Button>
           </DialogFooter>
         </DialogContent>

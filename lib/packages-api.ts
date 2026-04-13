@@ -3,17 +3,25 @@
  */
 
 import { apiRequest } from "@/lib/api"
+import { assertDeliverableVideoFile } from "@/lib/video-file-validation"
 import {
   normalizeFinalPackage,
   normalizePackageVideo,
 } from "@/lib/package-response-normalize"
+import {
+  ensureVideoCommentAssetVersion,
+  filterVideoCommentsWithTimestamp,
+  normalizeVideoComment,
+} from "@/lib/video-comment"
 import { uploadFileToPresignedUrl } from "@/lib/videos-api"
+import type { VideoComment } from "@/types/video"
 import type {
   AddPackageVideoBody,
   ApprovePackageVideoBody,
   FinalPackage,
   PackageMyReviewsResponse,
   PackageQueueResponse,
+  PackageSpecialtyOption,
   PackageStatsResponse,
   PackageUploadUrlAssetType,
   PackageUploadUrlResponse,
@@ -57,6 +65,7 @@ export async function uploadPackageVideoFile(
   token: string | null,
   file: File
 ): Promise<UploadedPackageFileMeta> {
+  assertDeliverableVideoFile(file)
   const fileName = file.name
   const fileType = file.type || "application/octet-stream"
   const { uploadUrl, fileUrl } = await getPackageUploadUrl(token, {
@@ -286,6 +295,46 @@ export async function reviewPackageThumbnail(
   })
 }
 
+/** GET /api/packages/specialties — populate specialty dropdown (Phase 6 + 7). */
+export async function getPackageSpecialties(
+  token: string | null
+): Promise<PackageSpecialtyOption[]> {
+  checkToken(token)
+  const data = await apiRequest<{
+    success?: boolean
+    specialties?: unknown
+  }>("/api/packages/specialties", { token })
+  const raw = data.specialties
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((row) => {
+      if (!row || typeof row !== "object") return null
+      const o = row as Record<string, unknown>
+      const value = String(o.value ?? "").trim()
+      const label = String(o.label ?? o.value ?? "").trim()
+      if (!value) return null
+      return { value, label: label || value }
+    })
+    .filter(Boolean) as PackageSpecialtyOption[]
+}
+
+/** DELETE /api/packages/thumbnails/:id — Agency: remove one rejected thumbnail. */
+export async function deletePackageThumbnail(
+  token: string | null,
+  thumbnailId: string
+): Promise<{
+  success?: boolean
+  message?: string
+  id?: string
+  deleted?: boolean
+}> {
+  checkToken(token)
+  return apiRequest(`/api/packages/thumbnails/${thumbnailId}`, {
+    method: "DELETE",
+    token,
+  })
+}
+
 export async function getPackage(
   token: string | null,
   packageId: string
@@ -331,6 +380,76 @@ export async function getPackageVideoVersions(
     `/api/packages/videos/${videoId}/versions`,
     { token }
   )
+}
+
+function extractPackageCommentsArray(data: Record<string, unknown>): unknown[] {
+  const direct = data.comments
+  if (Array.isArray(direct)) return direct
+  const nested = data.data
+  if (nested && typeof nested === "object" && "comments" in nested) {
+    const c = (nested as { comments?: unknown }).comments
+    if (Array.isArray(c)) return c
+  }
+  return []
+}
+
+/** GET /api/packages/videos/:videoId/comments */
+export async function getPackageVideoComments(
+  token: string | null,
+  videoId: string
+): Promise<VideoComment[]> {
+  checkToken(token)
+  const data = await apiRequest<Record<string, unknown>>(
+    `/api/packages/videos/${videoId}/comments`,
+    { token }
+  )
+  return filterVideoCommentsWithTimestamp(
+    extractPackageCommentsArray(data).map((c) =>
+      normalizeVideoComment(c as Record<string, unknown>)
+    )
+  )
+}
+
+/** POST /api/packages/videos/:videoId/comments — timestamp + `currentVersion`. */
+export async function addPackageVideoComment(
+  token: string | null,
+  videoId: string,
+  body: { content: string; timestampSeconds: number; assetVersion: number }
+): Promise<{ success: boolean; comment: VideoComment }> {
+  checkToken(token)
+  const content = body.content.trim()
+  if (!content) throw new Error("Comment cannot be empty")
+  const ts = body.timestampSeconds
+  if (!Number.isFinite(ts) || ts < 0) {
+    throw new Error(
+      "Video comments must include a valid timestamp (scrub the timeline first)."
+    )
+  }
+  const av = body.assetVersion
+  if (!Number.isFinite(av) || av < 1) {
+    throw new Error("Video comments must include a valid asset version (≥ 1).")
+  }
+  const payload = {
+    content,
+    timestampSeconds: ts,
+    assetVersion: Math.trunc(av),
+  }
+  const res = await apiRequest<Record<string, unknown>>(
+    `/api/packages/videos/${videoId}/comments`,
+    { method: "POST", body: payload, token }
+  )
+  const inner =
+    res.data && typeof res.data === "object"
+      ? (res.data as Record<string, unknown>)
+      : res
+  const raw = (inner.comment ?? res.comment) as Record<string, unknown> | undefined
+  return {
+    success: Boolean(res.success ?? true),
+    comment: ensureVideoCommentAssetVersion(
+      normalizeVideoComment(raw ?? {}),
+      payload.assetVersion
+    ),
+  }
 }
 
 /** Prefer first non-empty array so `videos: []` does not hide `packages[].videos`. */

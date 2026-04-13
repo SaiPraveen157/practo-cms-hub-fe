@@ -26,6 +26,7 @@ import type { UserRole } from "@/types/auth"
 import type {
   PackageItemFeedbackEntry,
   PackageItemFeedbackField,
+  PackageSpecialtyOption,
 } from "@/types/package"
 import {
   addLanguagePackageVideo,
@@ -37,6 +38,12 @@ import {
   uploadLanguagePackageVideoFile,
   withdrawLanguageVideo,
 } from "@/lib/language-packages-api"
+import { getPackageSpecialties } from "@/lib/packages-api"
+import {
+  labelForSpecialtyValue,
+  optionalDoctorSpecialtyPayload,
+} from "@/lib/package-specialty-label"
+import { DELIVERABLE_VIDEO_INPUT_ACCEPT } from "@/lib/video-file-validation"
 import {
   agencyLanguagePackageNeedsRevision,
   agencyLanguageVideoNeedsRevision,
@@ -67,6 +74,7 @@ import {
   formatPackageFileSize,
   humanizeItemFeedbackField,
 } from "@/lib/package-ui"
+import { LanguageVideoPlayerWithThread } from "@/components/language-packages/language-video-player-with-thread"
 import { TrackStatusCallout } from "@/components/packages/track-status-callout"
 import {
   TagPillList,
@@ -154,6 +162,24 @@ function getLatestLanguageRejection(
         new Date(b.reviewedAt).getTime() - new Date(a.reviewedAt).getTime()
     )
   return rejects[0] ?? null
+}
+
+/** When Agency is not in resubmit mode — plain-language pipeline position. */
+function agencyLanguageVideoPipelineStatusText(
+  status: LanguageVideo["status"]
+): string {
+  switch (status) {
+    case "BRAND_REVIEW":
+      return "This video is currently with the Content / Brand team for review."
+    case "AWAITING_APPROVER":
+      return "This video is waiting for final approval from the Content Approver (Practo)."
+    case "APPROVED":
+      return "This video has been approved."
+    case "WITHDRAWN":
+      return "This video has been withdrawn."
+    default:
+      return ""
+  }
 }
 
 /** Line items Brand flagged with hasIssue — gates resubmits and drives the feedback list. */
@@ -390,9 +416,13 @@ function LanguageRejectionContextBlock({
 
 function LangSubmittedVideoPlayerPaneInner({
   fileUrl,
+  mediaKey,
+  languageVideo,
   compact,
 }: {
   fileUrl: string
+  mediaKey: string
+  languageVideo: LanguageVideo
   compact?: boolean
 }) {
   const [videoError, setVideoError] = useState(false)
@@ -400,17 +430,13 @@ function LangSubmittedVideoPlayerPaneInner({
   if (fileUrl && !videoError) {
     return (
       <div className={submittedVideoShellClass()}>
-        <video
-          key={fileUrl}
-          src={fileUrl}
-          controls
-          playsInline
-          preload="metadata"
-          className={VIDEO_INLINE_CLASS}
-          onError={() => setVideoError(true)}
-        >
-          Your browser cannot play this video inline.
-        </video>
+        <LanguageVideoPlayerWithThread
+          languageVideo={languageVideo}
+          fileUrl={fileUrl}
+          mediaKey={mediaKey}
+          videoClassName={VIDEO_INLINE_CLASS}
+          onVideoError={() => setVideoError(true)}
+        />
       </div>
     )
   }
@@ -559,7 +585,7 @@ function VideoReplacementUploadCell({
         ref={inputRef}
         id={id}
         type="file"
-        accept="video/*"
+        accept={DELIVERABLE_VIDEO_INPUT_ACCEPT}
         className="hidden"
         aria-label="Choose replacement video file"
         onChange={(e) => {
@@ -649,7 +675,12 @@ export default function AgencyLanguagePackageDetailPage() {
   const [addTitle, setAddTitle] = useState("")
   const [addDesc, setAddDesc] = useState("")
   const [addTags, setAddTags] = useState("")
+  const [addDoctor, setAddDoctor] = useState("")
+  const [addSpecialty, setAddSpecialty] = useState("")
   const [addingVideo, setAddingVideo] = useState(false)
+  const [specialtyOptions, setSpecialtyOptions] = useState<
+    PackageSpecialtyOption[]
+  >([])
 
   const load = useCallback(async () => {
     if (!token || !id) return
@@ -670,10 +701,28 @@ export default function AgencyLanguagePackageDetailPage() {
     load()
   }, [load])
 
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const list = await getPackageSpecialties(token)
+        if (!cancelled) setSpecialtyOptions(list)
+      } catch {
+        if (!cancelled) setSpecialtyOptions([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
   const sortedVideos = useMemo(
     () => (pkg ? languageVideosSorted(pkg) : []),
     [pkg]
   )
+
+  const packageHasVideos = (pkg?.videos?.length ?? 0) > 0
 
   async function savePackageName() {
     if (!token || !pkg || !rename.trim()) return
@@ -718,6 +767,10 @@ export default function AgencyLanguagePackageDetailPage() {
         title: addTitle.trim() || undefined,
         description: addDesc.trim() || undefined,
         tags: tags.length ? tags : undefined,
+        ...optionalDoctorSpecialtyPayload({
+          doctorName: addDoctor,
+          specialty: addSpecialty,
+        }),
         thumbnails: thumbs.length ? thumbs : [],
       })
       setPkg((p) =>
@@ -730,6 +783,8 @@ export default function AgencyLanguagePackageDetailPage() {
       setAddTitle("")
       setAddDesc("")
       setAddTags("")
+      setAddDoctor("")
+      setAddSpecialty("")
       toast.success("Video added")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Add failed")
@@ -850,7 +905,11 @@ export default function AgencyLanguagePackageDetailPage() {
               </Card>
             ) : null}
 
-            {!agencyLanguagePackageNeedsRevision(pkg) ? (
+            {agencyLanguagePackageNeedsRevision(pkg) ? (
+              <p className="text-sm text-muted-foreground">
+                Finish resubmitting rejected videos below.
+              </p>
+            ) : !packageHasVideos ? (
               <>
                 <Card>
                   <CardHeader>
@@ -895,7 +954,7 @@ export default function AgencyLanguagePackageDetailPage() {
                       <Label>Video file</Label>
                       <Input
                         type="file"
-                        accept="video/*"
+                        accept={DELIVERABLE_VIDEO_INPUT_ACCEPT}
                         onChange={(e) =>
                           setAddVideoFile(e.target.files?.[0] ?? null)
                         }
@@ -936,6 +995,31 @@ export default function AgencyLanguagePackageDetailPage() {
                         rows={2}
                       />
                     </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>Doctor (optional)</Label>
+                        <Input
+                          value={addDoctor}
+                          onChange={(e) => setAddDoctor(e.target.value)}
+                          placeholder="e.g. Dr. Ramesh Kumar"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Specialty (optional)</Label>
+                        <select
+                          value={addSpecialty}
+                          onChange={(e) => setAddSpecialty(e.target.value)}
+                          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] dark:bg-input/30"
+                        >
+                          <option value="">Select specialty…</option>
+                          {specialtyOptions.map((s) => (
+                            <option key={s.value} value={s.value}>
+                              {s.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                     <Button
                       type="button"
                       onClick={() => void submitAddVideo()}
@@ -952,12 +1036,7 @@ export default function AgencyLanguagePackageDetailPage() {
                   </CardContent>
                 </Card>
               </>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Finish resubmitting rejected videos below. Rename and “add
-                another video” return once nothing here needs revision.
-              </p>
-            )}
+            ) : null}
 
             <div className="space-y-4">
               <h2 className="text-lg font-semibold">Videos</h2>
@@ -967,6 +1046,7 @@ export default function AgencyLanguagePackageDetailPage() {
                   video={v}
                   token={token}
                   isSuper={isSuper}
+                  specialtyOptions={specialtyOptions}
                   onUpdated={(nv) =>
                     setPkg((p) => (p ? mergeLanguageVideoIntoPackage(p, nv) : p))
                   }
@@ -984,11 +1064,13 @@ function AgencyLanguageVideoCard({
   video,
   token,
   isSuper,
+  specialtyOptions,
   onUpdated,
 }: {
   video: LanguageVideo
   token: string
   isSuper: boolean
+  specialtyOptions: PackageSpecialtyOption[]
   onUpdated: (v: LanguageVideo) => void
 }) {
   const asset = getCurrentLanguageVideoAsset(video)
@@ -1016,6 +1098,10 @@ function AgencyLanguageVideoCard({
   const [metaTitle, setMetaTitle] = useState(asset?.title ?? "")
   const [metaDesc, setMetaDesc] = useState(asset?.description ?? "")
   const [metaTags, setMetaTags] = useState((asset?.tags ?? []).join(", "))
+  const [metaDoctor, setMetaDoctor] = useState(asset?.doctorName?.trim() ?? "")
+  const [metaSpecialty, setMetaSpecialty] = useState(
+    asset?.specialty?.trim() ?? ""
+  )
   const [replacementThumbFiles, setReplacementThumbFiles] = useState<
     Record<string, File | null>
   >({})
@@ -1085,6 +1171,8 @@ function AgencyLanguageVideoCard({
     setMetaTitle(asset?.title ?? "")
     setMetaDesc(asset?.description ?? "")
     setMetaTags((asset?.tags ?? []).join(", "))
+    setMetaDoctor(asset?.doctorName?.trim() ?? "")
+    setMetaSpecialty(asset?.specialty?.trim() ?? "")
     setReplacementThumbFiles({})
     setReplaceFile(null)
   }, [
@@ -1094,6 +1182,8 @@ function AgencyLanguageVideoCard({
     asset?.title,
     asset?.description,
     asset?.tags,
+    asset?.doctorName,
+    asset?.specialty,
   ])
 
   async function resubmitVideo() {
@@ -1195,6 +1285,10 @@ function AgencyLanguageVideoCard({
         title: metaTitle.trim(),
         description: metaDesc.trim(),
         tags: tags.length ? tags : undefined,
+        ...optionalDoctorSpecialtyPayload({
+          doctorName: metaDoctor,
+          specialty: metaSpecialty,
+        }),
         thumbnails: thumbnailsPayload,
       })
       onUpdated(res.data)
@@ -1220,13 +1314,6 @@ function AgencyLanguageVideoCard({
       setWithdrawing(false)
     }
   }
-
-  const rejects = [...(video.reviews ?? [])]
-    .filter((r) => r.decision === "REJECTED")
-    .sort(
-      (a, b) =>
-        new Date(b.reviewedAt).getTime() - new Date(a.reviewedAt).getTime()
-    )
 
   return (
     <Card className={cn(canResubmit && "overflow-hidden shadow-sm")}>
@@ -1281,13 +1368,11 @@ function AgencyLanguageVideoCard({
           <>
             {asset?.fileUrl ? (
               <div className={languageDetailShellClass()}>
-                <video
-                  key={asset.fileUrl}
-                  src={asset.fileUrl}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  className={VIDEO_CLASS}
+                <LanguageVideoPlayerWithThread
+                  languageVideo={video}
+                  fileUrl={asset.fileUrl}
+                  mediaKey={asset.id}
+                  videoClassName={VIDEO_CLASS}
                 />
               </div>
             ) : null}
@@ -1303,6 +1388,23 @@ function AgencyLanguageVideoCard({
 
             {asset?.description ? (
               <p className="text-sm">{asset.description}</p>
+            ) : null}
+
+            {asset?.doctorName?.trim() || asset?.specialty ? (
+              <div className="grid gap-2 text-sm sm:grid-cols-2">
+                {asset?.doctorName?.trim() ? (
+                  <p>
+                    <span className="text-muted-foreground">Doctor: </span>
+                    {asset.doctorName}
+                  </p>
+                ) : null}
+                {asset?.specialty ? (
+                  <p>
+                    <span className="text-muted-foreground">Specialty: </span>
+                    {labelForSpecialtyValue(asset.specialty, specialtyOptions)}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
 
             {(asset?.tags?.length ?? 0) > 0 ? (
@@ -1354,14 +1456,12 @@ function AgencyLanguageVideoCard({
               </div>
             ) : null}
 
-            {rejects[0]?.overallComments ? (
-              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
-                <p className="font-medium text-destructive">Latest feedback</p>
-                <p className="mt-1 whitespace-pre-wrap">
-                  {rejects[0].overallComments}
-                </p>
-              </div>
-            ) : null}
+            <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+              <p className="font-medium text-foreground">Where this video is</p>
+              <p className="mt-1 text-muted-foreground">
+                {agencyLanguageVideoPipelineStatusText(video.status)}
+              </p>
+            </div>
           </>
         ) : (
           <>
@@ -1445,6 +1545,8 @@ function AgencyLanguageVideoCard({
                       </p>
                       <LangSubmittedVideoPlayerPaneInner
                         fileUrl={asset.fileUrl}
+                        mediaKey={asset.id}
+                        languageVideo={video}
                         compact
                       />
                       <p className="font-mono text-xs wrap-break-word text-muted-foreground">
@@ -1615,6 +1717,41 @@ function AgencyLanguageVideoCard({
                           </span>
                         }
                       />
+                    </div>
+                  </div>
+                </section>
+
+                <section className="space-y-4 rounded-lg border border-border bg-background/80 p-4 shadow-sm dark:bg-background/40">
+                  <h4 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                    Doctor & specialty (optional)
+                  </h4>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor={`lang-mt-doctor-${video.id}`}>Doctor</Label>
+                      <Input
+                        id={`lang-mt-doctor-${video.id}`}
+                        value={metaDoctor}
+                        onChange={(e) => setMetaDoctor(e.target.value)}
+                        placeholder="e.g. Dr. Ramesh Kumar"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`lang-mt-spec-${video.id}`}>
+                        Specialty
+                      </Label>
+                      <select
+                        id={`lang-mt-spec-${video.id}`}
+                        value={metaSpecialty}
+                        onChange={(e) => setMetaSpecialty(e.target.value)}
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] dark:bg-input/30"
+                      >
+                        <option value="">Select specialty…</option>
+                        {specialtyOptions.map((s) => (
+                          <option key={s.value} value={s.value}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 </section>

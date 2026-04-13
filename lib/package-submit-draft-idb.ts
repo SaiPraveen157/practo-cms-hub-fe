@@ -9,6 +9,8 @@ export type DraftVideoMeta = {
   tags: string[]
   /** Uncommitted text in the tag field (comma-separated counts toward tags). */
   tagDraft?: string
+  doctorName: string
+  specialty: string
 }
 
 export type DraftShortSlot = {
@@ -307,6 +309,19 @@ export function packageSubmitDraftHasUsefulState(
   return packageSubmitDraftHasUsefulStateV1(d)
 }
 
+function normalizeDraftVideoMeta(
+  raw: Partial<DraftVideoMeta> | undefined
+): DraftVideoMeta {
+  return {
+    title: typeof raw?.title === "string" ? raw.title : "",
+    description: typeof raw?.description === "string" ? raw.description : "",
+    tags: Array.isArray(raw?.tags) ? raw.tags : [],
+    tagDraft: typeof raw?.tagDraft === "string" ? raw.tagDraft : undefined,
+    doctorName: typeof raw?.doctorName === "string" ? raw.doctorName : "",
+    specialty: typeof raw?.specialty === "string" ? raw.specialty : "",
+  }
+}
+
 /** Migrate legacy wizard draft (separate long/short steps) to unified video slots. */
 export function migratePackageSubmitDraftV1ToV2Slots(
   d: PackageSubmitDraftV1
@@ -315,11 +330,7 @@ export function migratePackageSubmitDraftV1ToV2Slots(
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
       : `slot-long-${Date.now()}`
-  const longMeta = d.longVideoMeta ?? {
-    title: "",
-    description: "",
-    tags: [] as string[],
-  }
+  const longMeta = normalizeDraftVideoMeta(d.longVideoMeta)
   const shortList = Array.isArray(d.shortSlots) ? d.shortSlots : []
   const thumbMap =
     d.shortThumbnailBySlotId && typeof d.shortThumbnailBySlotId === "object"
@@ -340,7 +351,7 @@ export function migratePackageSubmitDraftV1ToV2Slots(
     slots.push({
       id: s.id,
       videoType: "SHORT_FORM",
-      meta: s.meta ?? { title: "", description: "", tags: [] },
+      meta: normalizeDraftVideoMeta(s.meta),
       file: s.file ?? null,
       thumbnailFiles: thumbMap[s.id] ? [thumbMap[s.id]!] : [],
       thumbnailFile: thumbMap[s.id] ?? null,

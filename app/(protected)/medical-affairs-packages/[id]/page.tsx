@@ -5,7 +5,6 @@ import {
   useEffect,
   useMemo,
   useState,
-  type ReactNode,
 } from "react"
 import Link from "next/link"
 import { useParams, useSearchParams } from "next/navigation"
@@ -32,6 +31,7 @@ import { useAuthStore } from "@/store"
 import {
   approvePackageVideo,
   getPackage,
+  getPackageVideoComments,
   rejectPackageVideo,
 } from "@/lib/packages-api"
 import {
@@ -42,16 +42,15 @@ import {
 } from "@/lib/package-video-helpers"
 import type {
   FinalPackage,
-  PackageAsset,
   PackageItemFeedbackEntry,
   PackageVideo,
 } from "@/types/package"
 import type { UserRole } from "@/types/auth"
+import { PackageInlineVideoCard } from "@/components/packages/package-inline-video-card"
 import {
   TRACK_STATUS_LABELS,
   VIDEO_STATUS_LABELS,
   formatPackageDate,
-  formatPackageFileSize,
   videoStatusBadgeClass,
 } from "@/lib/package-ui"
 import { PackageVideoTatInline } from "@/components/packages/package-video-tat-inline"
@@ -62,87 +61,17 @@ import {
   CheckCircle,
   Clapperboard,
   Clock,
-  ExternalLink,
   Loader2,
   Smartphone,
   XCircle,
 } from "lucide-react"
+import {
+  VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+  videoThreadBlocksApprove,
+} from "@/lib/video-comment"
+import { usePackageVideoThreadBlockMap } from "@/hooks/use-package-video-thread-block-map"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-
-function PackageVideoPlayerCard({
-  asset,
-  label,
-  icon,
-}: {
-  asset: PackageAsset
-  label: string
-  icon: ReactNode
-}) {
-  const [videoError, setVideoError] = useState(false)
-  const size = formatPackageFileSize(asset.fileSize ?? undefined)
-
-  return (
-    <Card className="overflow-hidden border border-border bg-card shadow-sm">
-      <CardHeader className="border-b border-border bg-muted/20 pb-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              {icon}
-            </div>
-            <div className="min-w-0 space-y-1">
-              <CardTitle className="text-base leading-snug">{label}</CardTitle>
-              <CardDescription className="break-all font-mono text-xs">
-                {asset.fileName}
-                {size ? ` · ${size}` : ""}
-              </CardDescription>
-            </div>
-          </div>
-          <Badge variant="secondary" className="shrink-0 uppercase">
-            {asset.type.replace("_", " ")}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4 p-4 sm:p-6">
-        {asset.fileUrl && !videoError ? (
-          <div className="overflow-hidden rounded-xl border border-border bg-black shadow-inner">
-            <video
-              key={asset.fileUrl}
-              src={asset.fileUrl}
-              controls
-              playsInline
-              preload="metadata"
-              className="max-h-[min(72vh,32rem)] w-full object-contain"
-              onError={() => setVideoError(true)}
-            >
-              Your browser cannot play this video inline.
-            </video>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
-            <p className="text-sm text-muted-foreground">
-              {videoError
-                ? "Inline preview failed (often a network or CORS issue)."
-                : "No video URL on this asset."}
-            </p>
-            {asset.fileUrl ? (
-              <Button variant="outline" size="sm" asChild>
-                <a
-                  href={asset.fileUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ExternalLink className="mr-2 size-4" />
-                  Open video in new tab
-                </a>
-              </Button>
-            ) : null}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
 
 export default function MedicalPackageDetailPage() {
   const params = useParams()
@@ -202,7 +131,9 @@ export default function MedicalPackageDetailPage() {
     if (!pkg) return
     const vids = pkg.videos ?? []
     const pick =
-      (focusVideoId && vids.find((v) => v.id === focusVideoId)) || vids[0] || null
+      (focusVideoId && vids.find((v) => v.id === focusVideoId)) ||
+      vids[0] ||
+      null
     setActiveVideo(pick)
     if (pick) setRejectVideoTab(pick.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: avoid resetting dialog selection on in-place merges
@@ -212,6 +143,24 @@ export default function MedicalPackageDetailPage() {
     () => (pkg ? packageVideosSorted(pkg) : []),
     [pkg]
   )
+
+  const packageVideosForThreadGate = useMemo(
+    () =>
+      sortedVideos.filter(
+        (v) =>
+          v.status === "MEDICAL_REVIEW" &&
+          v.videoTrackStatus === "PENDING" &&
+          canAccess
+      ),
+    [sortedVideos, canAccess]
+  )
+
+  const { threadBlockByVideoId, recheckThreadBlocks } =
+    usePackageVideoThreadBlockMap(token, packageVideosForThreadGate)
+
+  const approveThreadBlocked = activeVideo
+    ? Boolean(threadBlockByVideoId[activeVideo.id])
+    : false
 
   const deliverableLabels = useMemo(
     () => deliverableLabelsByVideoId(sortedVideos),
@@ -230,6 +179,13 @@ export default function MedicalPackageDetailPage() {
 
   async function handleApprove() {
     if (!token || !activeVideo) return
+    const list = await getPackageVideoComments(token, activeVideo.id)
+    if (videoThreadBlocksApprove(list, activeVideo.currentVersion)) {
+      toast.error("Cannot approve yet", {
+        description: VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+      })
+      return
+    }
     setBusy(true)
     try {
       const res = await approvePackageVideo(token, activeVideo.id, {
@@ -358,7 +314,9 @@ export default function MedicalPackageDetailPage() {
             This page shows only the <strong>video file</strong> for each
             deliverable. Title, description, tags, and thumbnails are{" "}
             <strong>not</strong> shown here — Content/Brand reviews metadata in
-            their own workflow.
+            their own workflow. Feedback on the video uses{" "}
+            <strong>timestamp comments</strong> on the player only (no separate
+            generic comment stream).
           </p>
         </header>
 
@@ -406,11 +364,14 @@ export default function MedicalPackageDetailPage() {
                         >
                           {VIDEO_STATUS_LABELS[video.status]}
                         </Badge>
-                        <Badge variant="secondary" className="text-xs font-normal">
+                        <Badge
+                          variant="secondary"
+                          className="text-xs font-normal"
+                        >
                           Video track:{" "}
                           {TRACK_STATUS_LABELS[video.videoTrackStatus]}
                         </Badge>
-                        <span className="text-xs tabular-nums text-muted-foreground">
+                        <span className="text-xs text-muted-foreground tabular-nums">
                           v{video.currentVersion}
                         </span>
                       </div>
@@ -425,25 +386,36 @@ export default function MedicalPackageDetailPage() {
                       <p className="mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
                         Video file
                       </p>
-                      <PackageVideoPlayerCard
+                      <PackageInlineVideoCard
                         asset={pa}
                         label={label}
                         icon={icon}
+                        videoOnly
+                        packageVideo={video}
+                        onPackageVideoCommentsUpdated={recheckThreadBlocks}
                       />
                     </div>
 
                     {canReview ? (
                       <div className="flex flex-col gap-4 rounded-lg border border-primary/25 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between dark:bg-primary/10">
-                        <p className="text-sm text-foreground">
-                          <span className="font-medium">Action required</span>
-                          <span className="text-muted-foreground">
-                            {" "}
-                            — approve or reject this video file (not metadata)
-                          </span>
-                        </p>
+                        <div className="min-w-0 space-y-2">
+                          <p className="text-sm text-foreground">
+                            <span className="font-medium">Action required</span>
+                            <span className="text-muted-foreground">
+                              {" "}
+                              — approve or reject this video file (not metadata)
+                            </span>
+                          </p>
+                          {threadBlockByVideoId[video.id] ? (
+                            <p className="text-xs text-amber-700 dark:text-amber-400">
+                              {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+                            </p>
+                          ) : null}
+                        </div>
                         <div className="flex flex-wrap gap-2 sm:shrink-0">
                           <Button
                             size="sm"
+                            disabled={Boolean(threadBlockByVideoId[video.id])}
                             onClick={() => {
                               setActiveVideo(video)
                               setApproveOpen(true)
@@ -471,15 +443,15 @@ export default function MedicalPackageDetailPage() {
                     ) : (
                       video.status === "MEDICAL_REVIEW" &&
                       (video.videoTrackStatus === "APPROVED" ? (
-                        <p className="flex items-center rounded-lg border border-success bg-green-950/20 px-4 py-3 text-sm text-green-400 border-green-600">
+                        <p className="border-success flex items-center rounded-lg border border-green-600 bg-green-950/20 px-4 py-3 text-sm text-green-400">
                           <CheckCircle className="mr-2 size-4" />
                           Video track approved for this version.
                         </p>
                       ) : (
                         <p className="rounded-lg border border-dashed border-border bg-muted/25 px-4 py-3 text-sm text-muted-foreground">
                           <Clock className="mr-2 size-4" />
-                          No video track action for you on this deliverable right
-                          now.
+                          No video track action for you on this deliverable
+                          right now.
                         </p>
                       ))
                     )}
@@ -489,7 +461,7 @@ export default function MedicalPackageDetailPage() {
             })}
           </section>
 
-          <div className="space-y-3">
+          {/* <div className="space-y-3">
             <h2 className="text-base font-semibold tracking-tight">
               Video-track feedback &amp; revisions
             </h2>
@@ -501,7 +473,7 @@ export default function MedicalPackageDetailPage() {
               pkg={pkg}
               trackFilter="VIDEO_TRACK"
             />
-          </div>
+          </div> */}
         </div>
       </div>
 
@@ -514,6 +486,11 @@ export default function MedicalPackageDetailPage() {
               package are unaffected.
             </DialogDescription>
           </DialogHeader>
+          {approveThreadBlocked ? (
+            <p className="text-sm text-muted-foreground">
+              {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+            </p>
+          ) : null}
           <div className="space-y-2">
             <Label htmlFor="ap">Comments(optional)</Label>
             <Textarea
@@ -528,7 +505,10 @@ export default function MedicalPackageDetailPage() {
             <Button variant="outline" onClick={() => setApproveOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleApprove} disabled={busy}>
+            <Button
+              onClick={handleApprove}
+              disabled={busy || approveThreadBlocked}
+            >
               {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
               Submit
             </Button>
@@ -554,9 +534,7 @@ export default function MedicalPackageDetailPage() {
                   label: deliverableLabels.get(v.id) ?? "Deliverable",
                 }))}
                 active={
-                  rejectVideoTab ||
-                  activeVideo?.id ||
-                  sortedVideos[0]!.id
+                  rejectVideoTab || activeVideo?.id || sortedVideos[0]!.id
                 }
                 onChange={(k) => {
                   setRejectVideoTab(k)
@@ -594,7 +572,11 @@ export default function MedicalPackageDetailPage() {
             <Button variant="outline" onClick={() => setRejectOpen(false)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleReject} disabled={busy}>
+            <Button
+              variant="destructive"
+              onClick={handleReject}
+              disabled={busy}
+            >
               {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
               Reject
             </Button>

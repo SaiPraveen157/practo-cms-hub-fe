@@ -74,6 +74,23 @@ export function thumbnailsOnAsset(
   return asset?.thumbnails ?? []
 }
 
+/**
+ * Per-thumbnail `status` can stay `PENDING` while `metadataTrackStatus` is
+ * `APPROVED` (e.g. after a video-only resubmit if new thumbnail rows are created
+ * without copying prior APPROVED states). For badges and read-only UI, align
+ * with the track: when metadata is approved, treat orphan `PENDING` as approved.
+ * Do not use this for Brand review actions that must use raw API statuses.
+ */
+export function displayThumbnailStatus(
+  video: PackageVideo,
+  status: PackageThumbnailRecord["status"]
+): PackageThumbnailRecord["status"] {
+  if (video.metadataTrackStatus === "APPROVED" && status === "PENDING") {
+    return "APPROVED"
+  }
+  return status
+}
+
 /** For components that expect nested `PackageAsset` thumbnails. */
 export function videoAssetToPackageAsset(va: PackageVideoAsset): PackageAsset {
   const thumbAssets: PackageAsset[] = (va.thumbnails ?? []).map((t) => ({
@@ -97,6 +114,8 @@ export function videoAssetToPackageAsset(va: PackageVideoAsset): PackageAsset {
     title: va.title,
     description: va.description,
     tags: va.tags ?? undefined,
+    doctorName: va.doctorName ?? undefined,
+    specialty: va.specialty ?? undefined,
     thumbnails: thumbAssets,
   }
 }
