@@ -36,6 +36,7 @@ import { getScriptQueue, updateScript, submitRevision } from "@/lib/scripts-api"
 import { SCRIPT_TITLE_REQUIRED_MESSAGE } from "@/lib/script-title"
 import type {
   Script,
+  ScriptComment,
   ScriptFeedbackSticker,
   ScriptStatus,
 } from "@/types/script"
@@ -50,6 +51,9 @@ import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import { ScriptDetailSkeleton } from "@/components/loading/script-detail-skeleton"
 import { ScriptRejectionFeedback } from "@/components/script-rejection-feedback"
 import { ScriptTatBar } from "@/components/script-tat-bar"
+import { ScriptStickerVersionToolbar } from "@/components/script-sticker-version-toolbar"
+import { useScriptStickerVersionView } from "@/hooks/use-script-sticker-version-view"
+import { getVersionedScriptEditorDisplay } from "@/lib/script-sticker-version-editor-display"
 import { ArrowLeft, Loader2, Send } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -116,7 +120,33 @@ export default function AgencyPocScriptPage() {
   const isAgencyPoc = user?.role === "AGENCY_POC"
   const canEdit = script?.status === "AGENCY_PRODUCTION"
 
-  const { syncBaseline } = useScriptCommentsRemoteSync({
+  const onAfterCommentMutation = useCallback((c: ScriptComment) => {
+    setFeedbackStickers((prev) => ({
+      ...prev,
+      [c.id]: { ...prev[c.id], ...c },
+    }))
+  }, [])
+
+  const stickerPermissionContext = script
+    ? {
+        scriptStatus: script.status,
+        currentUserId: user?.id ?? null,
+        currentUserRole: user?.role ?? null,
+      }
+    : null
+
+  const commentsVersionEnabled = Boolean(
+    isAgencyPoc && token && id && script?.status === "AGENCY_PRODUCTION"
+  )
+
+  const versionView = useScriptStickerVersionView({
+    token,
+    scriptId: id,
+    enabled: commentsVersionEnabled,
+    refreshKey: script?.version,
+  })
+
+  const { syncBaseline, notifyStickersChanged } = useScriptCommentsRemoteSync({
     token,
     scriptId: id,
     fetchEnabled: Boolean(
@@ -125,10 +155,21 @@ export default function AgencyPocScriptPage() {
       id &&
       (script == null || script.status === "AGENCY_PRODUCTION")
     ),
-    pushEnabled: false,
+    pushEnabled: Boolean(
+      isAgencyPoc && token && id && script?.status === "AGENCY_PRODUCTION"
+    ),
     commentsRefetchKey: script?.version,
     onMergeFromServer: onCommentsMergeFromApiStable,
+    onAfterCommentMutation,
   })
+
+  const handleFeedbackStickersChange = useCallback(
+    (next: Record<string, ScriptFeedbackSticker>) => {
+      setFeedbackStickers(next)
+      notifyStickersChanged(next)
+    },
+    [notifyStickersChanged]
+  )
 
   const onCommentsMergedFromApi = useCallback(
     (list: ScriptFeedbackSticker[], _meta?: ScriptCommentsMergeMeta) => {
@@ -228,6 +269,13 @@ export default function AgencyPocScriptPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!token || !id || !canEdit) return
+    if (versionView.isViewingSnapshot) {
+      toast.message("Switch to current version", {
+        description:
+          "Select the current version in the dropdown to save changes.",
+      })
+      return
+    }
     if (!editTitle.trim()) {
       setError(SCRIPT_TITLE_REQUIRED_MESSAGE)
       return
@@ -255,6 +303,13 @@ export default function AgencyPocScriptPage() {
 
   async function handleSubmitRevision() {
     if (!token || !id) return
+    if (versionView.isViewingSnapshot) {
+      toast.message("Switch to current version", {
+        description:
+          "Select the current version in the dropdown to submit a revision.",
+      })
+      return
+    }
     if (hasUnsavedChanges) {
       toast.error("Please save your changes before submitting.", {
         description: "Click Save changes, then submit revision.",
@@ -296,6 +351,12 @@ export default function AgencyPocScriptPage() {
   if (loading || !script) {
     return <ScriptDetailSkeleton />
   }
+
+  const agencyEditVersionDisp = getVersionedScriptEditorDisplay(
+    versionView,
+    editContent,
+    feedbackStickers
+  )
 
   return (
     <div className="p-6 md:p-8">
@@ -372,20 +433,76 @@ export default function AgencyPocScriptPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>Script (English)</Label>
-                    <ScriptRichTextEditor
-                      key={script.id}
-                      initialContent={script.content ?? ""}
-                      onChange={setEditContent}
-                      placeholder="Enter the full script content..."
-                      minHeight="280px"
-                      feedbackStickers={feedbackStickers}
-                      feedbackCommentsSidebar={true}
-                      commentsSidebarEmptyHint="No inline comments from Medical Affairs yet."
+                    {versionView.listError ? (
+                      <p className="text-xs text-destructive">
+                        {versionView.listError}
+                      </p>
+                    ) : null}
+                    <ScriptStickerVersionToolbar
+                      showToolbar={versionView.showToolbar}
+                      listLoading={versionView.listLoading}
+                      selectValue={versionView.selectValue}
+                      onSelectValueChange={versionView.onSelectValueChange}
+                      versionOptions={versionView.versionOptions}
+                      isViewingSnapshot={versionView.isViewingSnapshot}
+                      snapshotLoading={versionView.snapshotLoading}
+                      id="agency-version-select"
                     />
+                    {agencyEditVersionDisp.mode === "loading" ? (
+                      <div className="flex min-h-[280px] items-center justify-center rounded-lg border border-dashed border-border bg-muted/20">
+                        <Loader2 className="size-8 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : agencyEditVersionDisp.mode === "error" ? (
+                      <p className="text-sm text-destructive">
+                        {agencyEditVersionDisp.message}
+                      </p>
+                    ) : (
+                      <>
+                        {agencyEditVersionDisp.mode === "snapshot" &&
+                        agencyEditVersionDisp.contentMissing ? (
+                          <p className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                            Script content for this version was not archived
+                            (legacy data). Comments still appear in the sidebar.
+                          </p>
+                        ) : null}
+                        <ScriptRichTextEditor
+                          key={`${script.id}-agency-${versionView.selectValue || "live"}`}
+                          initialContent={
+                            agencyEditVersionDisp.mode === "live"
+                              ? editContent
+                              : agencyEditVersionDisp.html
+                          }
+                          onChange={
+                            agencyEditVersionDisp.mode === "live"
+                              ? setEditContent
+                              : undefined
+                          }
+                          placeholder="Enter the full script content..."
+                          minHeight="280px"
+                          disabled={agencyEditVersionDisp.mode !== "live"}
+                          feedbackStickers={agencyEditVersionDisp.stickers}
+                          commentsSidebarEmptyHint="No inline comments from Medical Affairs yet."
+                          {...(agencyEditVersionDisp.mode === "snapshot" ||
+                          agencyEditVersionDisp.mode === "live"
+                            ? {
+                                feedbackCommentsSidebar: true,
+                                onFeedbackStickersChange:
+                                  agencyEditVersionDisp.mode === "live"
+                                    ? handleFeedbackStickersChange
+                                    : undefined,
+                                stickerPermissionContext:
+                                  agencyEditVersionDisp.mode === "live"
+                                    ? stickerPermissionContext
+                                    : undefined,
+                              }
+                            : { feedbackCommentsSidebar: false })}
+                        />
+                      </>
+                    )}
                   </div>
                   <Button
                     type="submit"
-                    disabled={saving}
+                    disabled={saving || versionView.isViewingSnapshot}
                     className="border-0 bg-linear-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
                   >
                     {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
@@ -398,6 +515,13 @@ export default function AgencyPocScriptPage() {
               <Button
                 className="bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
                 onClick={() => {
+                  if (versionView.isViewingSnapshot) {
+                    toast.message("Switch to current version", {
+                      description:
+                        "Select the current version in the dropdown to submit.",
+                    })
+                    return
+                  }
                   if (hasUnsavedChanges) {
                     toast.error("Please save your changes before submitting.", {
                       description: "Click Save changes, then submit revision.",
@@ -407,8 +531,13 @@ export default function AgencyPocScriptPage() {
                   setSubmitDialogOpen(true)
                 }}
                 title={
-                  hasUnsavedChanges ? "Save your changes first" : undefined
+                  versionView.isViewingSnapshot
+                    ? "Select the current version in the dropdown"
+                    : hasUnsavedChanges
+                      ? "Save your changes first"
+                      : undefined
                 }
+                disabled={versionView.isViewingSnapshot}
               >
                 Submit revision to Medical Affairs
                 <Send className="mr-2 size-4" />
@@ -477,8 +606,18 @@ export default function AgencyPocScriptPage() {
             </Button>
             <Button
               onClick={handleSubmitRevision}
-              disabled={submitting || hasUnsavedChanges}
-              title={hasUnsavedChanges ? "Save your changes first" : undefined}
+              disabled={
+                submitting ||
+                hasUnsavedChanges ||
+                versionView.isViewingSnapshot
+              }
+              title={
+                versionView.isViewingSnapshot
+                  ? "Select the current version in the dropdown"
+                  : hasUnsavedChanges
+                    ? "Save your changes first"
+                    : undefined
+              }
               className="border-0 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
             >
               {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
