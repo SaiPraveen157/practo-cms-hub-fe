@@ -58,6 +58,12 @@ import {
   FEEDBACK_STICKER_NODE,
 } from "@/lib/feedback-sticker-doc"
 import type { ScriptCommentAnchor, ScriptFeedbackSticker } from "@/types/script"
+import { formatStickerResolvedHint } from "@/lib/script-comment-resolve-label"
+import {
+  canEditScriptStickerBody,
+  canResolveScriptSticker,
+  type ScriptStickerPermissionContext,
+} from "@/lib/script-comment-resolve-permissions"
 import { ScriptEditorCommentsSidebar } from "@/components/script-editor-comments-sidebar"
 import {
   commentAnchorFromEditorSelection,
@@ -80,7 +86,9 @@ export interface ScriptRichTextEditorProps {
   /** Map of sticker id → stored feedback (persisted separately from HTML). */
   feedbackStickers?: Record<string, ScriptFeedbackSticker>
   /** When the document or sticker map should change (prune removed stickers, add via dialog). */
-  onFeedbackStickersChange?: (next: Record<string, ScriptFeedbackSticker>) => void
+  onFeedbackStickersChange?: (
+    next: Record<string, ScriptFeedbackSticker>
+  ) => void
   /** Enables inline comments: highlight text to post, or ⌘⇧M / Ctrl⇧M at cursor. No toolbar button. */
   feedbackStickerToolbar?: boolean
   /** Thread list beside the document (Comments-style). Shown when toolbar comments mode is on, or set explicitly (e.g. read-only review). */
@@ -95,6 +103,11 @@ export interface ScriptRichTextEditorProps {
    * and `onFeedbackStickersChange` for reviewer flows (e.g. Content/Brand).
    */
   contentReadOnly?: boolean
+  /**
+   * Per-sticker resolve vs edit (recipient vs author). When omitted, any sidebar action
+   * is allowed whenever `onFeedbackStickersChange` is set and the editor is not disabled.
+   */
+  stickerPermissionContext?: ScriptStickerPermissionContext | null
 }
 
 const scriptContentLockPluginKey = new PluginKey("scriptContentReadOnlyLock")
@@ -114,11 +127,17 @@ function getBaseExtensions(placeholderText: string) {
   ]
 }
 
-function deleteFeedbackStickerNode(editor: Editor, feedbackId: string): boolean {
+function deleteFeedbackStickerNode(
+  editor: Editor,
+  feedbackId: string
+): boolean {
   let from = -1
   let to = -1
   editor.state.doc.descendants((node, pos) => {
-    if (node.type.name === FEEDBACK_STICKER_NODE && String(node.attrs.feedbackId) === feedbackId) {
+    if (
+      node.type.name === FEEDBACK_STICKER_NODE &&
+      String(node.attrs.feedbackId) === feedbackId
+    ) {
       from = pos
       to = pos + node.nodeSize
       return false
@@ -144,6 +163,7 @@ export function ScriptRichTextEditor({
   commentsSidebarEmptyHint,
   feedbackStickerAuthorId,
   contentReadOnly = false,
+  stickerPermissionContext = null,
 }: ScriptRichTextEditorProps) {
   const stickersRef = useRef<Record<string, ScriptFeedbackSticker>>({})
   const contentReadOnlyRef = useRef(false)
@@ -156,7 +176,9 @@ export function ScriptRichTextEditor({
   const [pendingContextSnippet, setPendingContextSnippet] = useState("")
   const [pendingCommentAnchor, setPendingCommentAnchor] =
     useState<ScriptCommentAnchor | null>(null)
-  const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null)
+  const [selectedCommentId, setSelectedCommentId] = useState<string | null>(
+    null
+  )
 
   const showStickerTools =
     feedbackStickerToolbar && !disabled && !!onFeedbackStickersChange
@@ -186,7 +208,13 @@ export function ScriptRichTextEditor({
     addStickerOpenRef.current = addStickerOpen
     disabledRef.current = disabled
     contentReadOnlyRef.current = Boolean(contentReadOnly)
-  }, [showStickerTools, onFeedbackStickersChange, addStickerOpen, disabled, contentReadOnly])
+  }, [
+    showStickerTools,
+    onFeedbackStickersChange,
+    addStickerOpen,
+    disabled,
+    contentReadOnly,
+  ])
 
   useLayoutEffect(() => {
     stickersRef.current = feedbackStickers ?? {}
@@ -219,8 +247,7 @@ export function ScriptRichTextEditor({
   )
 
   const feedbackStickersSyncKey = useMemo(
-    () =>
-      canonicalStickersJsonFromArray(Object.values(feedbackStickers ?? {})),
+    () => canonicalStickersJsonFromArray(Object.values(feedbackStickers ?? {})),
     [feedbackStickers]
   )
 
@@ -437,9 +464,7 @@ export function ScriptRichTextEditor({
         const pos = insertionPosForCommentAnchor(editor.state, s.anchor!)
         return pos != null ? { s, pos } : null
       })
-      .filter(
-        (x): x is { s: ScriptFeedbackSticker; pos: number } => x != null
-      )
+      .filter((x): x is { s: ScriptFeedbackSticker; pos: number } => x != null)
       .sort((a, b) => b.pos - a.pos)
 
     if (withPos.length === 0) return
@@ -491,11 +516,10 @@ export function ScriptRichTextEditor({
     if (!body) return
     const id = crypto.randomUUID()
     const contextSnippet = pendingContextSnippet.trim() || undefined
-    const anchor: ScriptCommentAnchor =
-      pendingCommentAnchor ?? {
-        space: "plain_text_utf16",
-        ...commentAnchorFromEditorSelection(editor),
-      }
+    const anchor: ScriptCommentAnchor = pendingCommentAnchor ?? {
+      space: "plain_text_utf16",
+      ...commentAnchorFromEditorSelection(editor),
+    }
     onFeedbackStickersChange({
       ...stickersRef.current,
       [id]: {
@@ -508,10 +532,13 @@ export function ScriptRichTextEditor({
         authorId: feedbackStickerAuthorId ?? undefined,
       },
     })
-    editor.chain().focus().insertContent({
-      type: FEEDBACK_STICKER_NODE,
-      attrs: { feedbackId: id },
-    })
+    editor
+      .chain()
+      .focus()
+      .insertContent({
+        type: FEEDBACK_STICKER_NODE,
+        attrs: { feedbackId: id },
+      })
     setAddStickerOpen(false)
     setNewStickerBody("")
     setPendingContextSnippet("")
@@ -519,8 +546,20 @@ export function ScriptRichTextEditor({
   }
 
   const handleSaveDetail = () => {
-    if (!detailStickerId || !onFeedbackStickersChange) return
+    if (!detailStickerId || !onFeedbackStickersChange || disabled) return
     const prev = stickersRef.current[detailStickerId]
+    if (!prev) return
+    if (stickerPermissionContext) {
+      if (
+        !canEditScriptStickerBody(
+          stickerPermissionContext.currentUserRole,
+          prev,
+          stickerPermissionContext.currentUserId
+        )
+      ) {
+        return
+      }
+    }
     onFeedbackStickersChange({
       ...stickersRef.current,
       [detailStickerId]: {
@@ -533,7 +572,20 @@ export function ScriptRichTextEditor({
   }
 
   const handleRemoveSticker = () => {
-    if (!editor || !detailStickerId || !onFeedbackStickersChange) return
+    if (!editor || !detailStickerId || !onFeedbackStickersChange || disabled)
+      return
+    const prev = stickersRef.current[detailStickerId]
+    if (stickerPermissionContext && prev) {
+      if (
+        !canEditScriptStickerBody(
+          stickerPermissionContext.currentUserRole,
+          prev,
+          stickerPermissionContext.currentUserId
+        )
+      ) {
+        return
+      }
+    }
     deleteFeedbackStickerNode(editor, detailStickerId)
     const next = { ...stickersRef.current }
     delete next[detailStickerId]
@@ -545,6 +597,16 @@ export function ScriptRichTextEditor({
   function toggleDetailResolved() {
     if (!detailStickerId || !onFeedbackStickersChange) return
     const prev = stickersRef.current[detailStickerId]
+    if (!prev) return
+    const allow = stickerPermissionContext
+      ? canResolveScriptSticker(
+          stickerPermissionContext.scriptStatus,
+          stickerPermissionContext.currentUserRole,
+          prev,
+          stickerPermissionContext.currentUserId
+        )
+      : !disabled && !!onFeedbackStickersChange
+    if (!allow) return
     onFeedbackStickersChange({
       ...stickersRef.current,
       [detailStickerId]: {
@@ -560,7 +622,7 @@ export function ScriptRichTextEditor({
       return (
         <div
           className={cn(
-            "rounded-lg border border-input bg-background animate-pulse",
+            "animate-pulse rounded-lg border border-input bg-background",
             className
           )}
           style={{ minHeight }}
@@ -570,14 +632,14 @@ export function ScriptRichTextEditor({
     return (
       <div
         className={cn(
-          "rounded-lg border border-input bg-background overflow-hidden",
+          "overflow-hidden rounded-lg border border-input bg-background",
           disabled && "cursor-default",
           "flex min-h-[min(420px,55vh)] flex-col lg:min-h-[320px] lg:flex-row lg:items-stretch",
           className
         )}
       >
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col border-b border-input lg:border-b-0 lg:border-r">
-          <div className="h-9 shrink-0 border-b border-input bg-muted/30 animate-pulse" />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col border-b border-input lg:border-r lg:border-b-0">
+          <div className="h-9 shrink-0 animate-pulse border-b border-input bg-muted/30" />
           <div
             ref={editorShellRef}
             className="min-h-0 flex-1 animate-pulse bg-muted/15"
@@ -592,6 +654,7 @@ export function ScriptRichTextEditor({
           selectedCommentId={selectedCommentId}
           onSelectComment={setSelectedCommentId}
           currentUserId={feedbackStickerAuthorId ?? null}
+          stickerPermissionContext={stickerPermissionContext}
           emptyListHint={commentsSidebarEmptyHint}
           onRequestEditComment={(id) => {
             setDetailStickerId(id)
@@ -604,9 +667,54 @@ export function ScriptRichTextEditor({
     )
   }
 
-  const detailReadOnly = disabled || !onFeedbackStickersChange
   const detailSticker =
-    detailStickerId != null ? (feedbackStickers ?? {})[detailStickerId] : undefined
+    detailStickerId != null
+      ? (feedbackStickers ?? {})[detailStickerId]
+      : undefined
+
+  const legacyDetailBodyLocked = disabled || !onFeedbackStickersChange
+  const canEditDetailBody = (() => {
+    if (legacyDetailBodyLocked || !detailSticker) return false
+    if (!stickerPermissionContext) return true
+    return canEditScriptStickerBody(
+      stickerPermissionContext.currentUserRole,
+      detailSticker,
+      stickerPermissionContext.currentUserId
+    )
+  })()
+  const detailBodyReadOnly = legacyDetailBodyLocked || !canEditDetailBody
+
+  const canToggleDetailResolved = (() => {
+    if (!detailStickerId || !onFeedbackStickersChange || !detailSticker)
+      return false
+    if (!stickerPermissionContext) {
+      return !disabled && !!onFeedbackStickersChange
+    }
+    return canResolveScriptSticker(
+      stickerPermissionContext.scriptStatus,
+      stickerPermissionContext.currentUserRole,
+      detailSticker,
+      stickerPermissionContext.currentUserId
+    )
+  })()
+
+  const canDeleteDetailSticker = (() => {
+    if (!detailStickerId || !onFeedbackStickersChange || !detailSticker)
+      return false
+    if (!stickerPermissionContext) {
+      return !disabled && !!onFeedbackStickersChange
+    }
+    return canEditScriptStickerBody(
+      stickerPermissionContext.currentUserRole,
+      detailSticker,
+      stickerPermissionContext.currentUserId
+    )
+  })()
+
+  const detailDialogDismissLabel =
+    !canEditDetailBody && !canToggleDetailResolved && !canDeleteDetailSticker
+      ? "Close"
+      : "Cancel"
 
   /** Same toolbar everywhere; formatting actions are disabled when the doc body must not be edited. */
   const formattingLocked = disabled || contentReadOnly
@@ -615,7 +723,7 @@ export function ScriptRichTextEditor({
     <>
       <div
         className={cn(
-          "rounded-lg border border-input bg-background overflow-hidden",
+          "overflow-hidden rounded-lg border border-input bg-background",
           disabled && "cursor-default",
           showCommentsSidebar &&
             "flex min-h-[min(420px,55vh)] flex-col lg:min-h-[320px] lg:flex-row lg:items-stretch",
@@ -625,178 +733,203 @@ export function ScriptRichTextEditor({
         <div
           className={cn(
             "flex min-h-0 flex-1 flex-col",
-            showCommentsSidebar && "min-w-0 border-b border-input lg:border-b-0 lg:border-r"
+            showCommentsSidebar &&
+              "min-w-0 border-b border-input lg:border-r lg:border-b-0"
           )}
         >
-        <div className="border-b border-input bg-muted/30">
-          <div className="flex flex-wrap items-center gap-0.5 p-1">
-            <ToolbarButton
-              onClick={() => editor.chain().focus().undo().run()}
-              disabled={formattingLocked || !editor.can().undo()}
-              title="Undo"
-            >
-              <Undo2 className="size-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().redo().run()}
-              disabled={formattingLocked || !editor.can().redo()}
-              title="Redo"
-            >
-              <Redo2 className="size-4" />
-            </ToolbarButton>
-            <ToolbarDivider />
-            <ToolbarButton
-              onClick={() => editor.chain().focus().setParagraph().run()}
-              isActive={editor.isActive("paragraph")}
-              disabled={formattingLocked}
-              title="Paragraph"
-            >
-              <Pilcrow className="size-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-              isActive={editor.isActive("heading", { level: 1 })}
-              disabled={formattingLocked}
-              title="Heading 1"
-            >
-              <span className="text-xs font-bold">H1</span>
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-              isActive={editor.isActive("heading", { level: 2 })}
-              disabled={formattingLocked}
-              title="Heading 2"
-            >
-              <span className="text-xs font-bold">H2</span>
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-              isActive={editor.isActive("heading", { level: 3 })}
-              disabled={formattingLocked}
-              title="Heading 3"
-            >
-              <span className="text-xs font-bold">H3</span>
-            </ToolbarButton>
-            <ToolbarDivider />
-            <ToolbarButton
-              onClick={() => editor.chain().focus().toggleBold().run()}
-              isActive={editor.isActive("bold")}
-              disabled={formattingLocked}
-              title="Bold"
-            >
-              <Bold className="size-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().toggleItalic().run()}
-              isActive={editor.isActive("italic")}
-              disabled={formattingLocked}
-              title="Italic"
-            >
-              <Italic className="size-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().toggleUnderline().run()}
-              isActive={editor.isActive("underline")}
-              disabled={formattingLocked}
-              title="Underline"
-            >
-              <UnderlineIcon className="size-4" />
-            </ToolbarButton>
-            <ToolbarDivider />
-            <ToolbarButton
-              onClick={() => editor.chain().focus().setTextAlign("left").run()}
-              isActive={editor.isActive({ textAlign: "left" })}
-              disabled={formattingLocked}
-              title="Align left"
-            >
-              <AlignLeft className="size-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().setTextAlign("center").run()}
-              isActive={editor.isActive({ textAlign: "center" })}
-              disabled={formattingLocked}
-              title="Align center"
-            >
-              <AlignCenter className="size-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().setTextAlign("right").run()}
-              isActive={editor.isActive({ textAlign: "right" })}
-              disabled={formattingLocked}
-              title="Align right"
-            >
-              <AlignRight className="size-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().setTextAlign("justify").run()}
-              isActive={editor.isActive({ textAlign: "justify" })}
-              disabled={formattingLocked}
-              title="Justify"
-            >
-              <AlignJustify className="size-4" />
-            </ToolbarButton>
-            <ToolbarDivider />
-            <ToolbarButton
-              onClick={() => editor.chain().focus().toggleBulletList().run()}
-              isActive={editor.isActive("bulletList")}
-              disabled={formattingLocked}
-              title="Bullet list"
-            >
-              <List className="size-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().toggleOrderedList().run()}
-              isActive={editor.isActive("orderedList")}
-              disabled={formattingLocked}
-              title="Ordered list"
-            >
-              <ListOrdered className="size-4" />
-            </ToolbarButton>
-            <ToolbarDivider />
-            <ToolbarButton
-              onClick={() => {
-                const url = window.prompt("URL")
-                if (url) editor.chain().focus().setLink({ href: url }).run()
-              }}
-              isActive={editor.isActive("link")}
-              disabled={formattingLocked}
-              title="Insert link"
-            >
-              <LinkIcon className="size-4" />
-            </ToolbarButton>
-            {showStickerTools ? (
-              <>
-                <ToolbarDivider />
-                <ToolbarButton
-                  onClick={() => {
-                    editor.chain().focus().run()
-                    openAddStickerDialog()
-                  }}
-                  disabled={disabled}
-                  title="Add comment on selection or cursor"
-                >
-                  <MessageSquare className="size-4" />
-                </ToolbarButton>
-              </>
+          <div className="border-b border-input bg-muted/30">
+            <div className="flex flex-wrap items-center gap-0.5 p-1">
+              <ToolbarButton
+                onClick={() => editor.chain().focus().undo().run()}
+                disabled={formattingLocked || !editor.can().undo()}
+                title="Undo"
+              >
+                <Undo2 className="size-4" />
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() => editor.chain().focus().redo().run()}
+                disabled={formattingLocked || !editor.can().redo()}
+                title="Redo"
+              >
+                <Redo2 className="size-4" />
+              </ToolbarButton>
+              <ToolbarDivider />
+              <ToolbarButton
+                onClick={() => editor.chain().focus().setParagraph().run()}
+                isActive={editor.isActive("paragraph")}
+                disabled={formattingLocked}
+                title="Paragraph"
+              >
+                <Pilcrow className="size-4" />
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() =>
+                  editor.chain().focus().toggleHeading({ level: 1 }).run()
+                }
+                isActive={editor.isActive("heading", { level: 1 })}
+                disabled={formattingLocked}
+                title="Heading 1"
+              >
+                <span className="text-xs font-bold">H1</span>
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() =>
+                  editor.chain().focus().toggleHeading({ level: 2 }).run()
+                }
+                isActive={editor.isActive("heading", { level: 2 })}
+                disabled={formattingLocked}
+                title="Heading 2"
+              >
+                <span className="text-xs font-bold">H2</span>
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() =>
+                  editor.chain().focus().toggleHeading({ level: 3 }).run()
+                }
+                isActive={editor.isActive("heading", { level: 3 })}
+                disabled={formattingLocked}
+                title="Heading 3"
+              >
+                <span className="text-xs font-bold">H3</span>
+              </ToolbarButton>
+              <ToolbarDivider />
+              <ToolbarButton
+                onClick={() => editor.chain().focus().toggleBold().run()}
+                isActive={editor.isActive("bold")}
+                disabled={formattingLocked}
+                title="Bold"
+              >
+                <Bold className="size-4" />
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() => editor.chain().focus().toggleItalic().run()}
+                isActive={editor.isActive("italic")}
+                disabled={formattingLocked}
+                title="Italic"
+              >
+                <Italic className="size-4" />
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() => editor.chain().focus().toggleUnderline().run()}
+                isActive={editor.isActive("underline")}
+                disabled={formattingLocked}
+                title="Underline"
+              >
+                <UnderlineIcon className="size-4" />
+              </ToolbarButton>
+              <ToolbarDivider />
+              <ToolbarButton
+                onClick={() =>
+                  editor.chain().focus().setTextAlign("left").run()
+                }
+                isActive={editor.isActive({ textAlign: "left" })}
+                disabled={formattingLocked}
+                title="Align left"
+              >
+                <AlignLeft className="size-4" />
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() =>
+                  editor.chain().focus().setTextAlign("center").run()
+                }
+                isActive={editor.isActive({ textAlign: "center" })}
+                disabled={formattingLocked}
+                title="Align center"
+              >
+                <AlignCenter className="size-4" />
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() =>
+                  editor.chain().focus().setTextAlign("right").run()
+                }
+                isActive={editor.isActive({ textAlign: "right" })}
+                disabled={formattingLocked}
+                title="Align right"
+              >
+                <AlignRight className="size-4" />
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() =>
+                  editor.chain().focus().setTextAlign("justify").run()
+                }
+                isActive={editor.isActive({ textAlign: "justify" })}
+                disabled={formattingLocked}
+                title="Justify"
+              >
+                <AlignJustify className="size-4" />
+              </ToolbarButton>
+              <ToolbarDivider />
+              <ToolbarButton
+                onClick={() => editor.chain().focus().toggleBulletList().run()}
+                isActive={editor.isActive("bulletList")}
+                disabled={formattingLocked}
+                title="Bullet list"
+              >
+                <List className="size-4" />
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                isActive={editor.isActive("orderedList")}
+                disabled={formattingLocked}
+                title="Ordered list"
+              >
+                <ListOrdered className="size-4" />
+              </ToolbarButton>
+              <ToolbarDivider />
+              <ToolbarButton
+                onClick={() => {
+                  const url = window.prompt("URL")
+                  if (url) editor.chain().focus().setLink({ href: url }).run()
+                }}
+                isActive={editor.isActive("link")}
+                disabled={formattingLocked}
+                title="Insert link"
+              >
+                <LinkIcon className="size-4" />
+              </ToolbarButton>
+              {showStickerTools ? (
+                <>
+                  <ToolbarDivider />
+                  <ToolbarButton
+                    onClick={() => {
+                      editor.chain().focus().run()
+                      openAddStickerDialog()
+                    }}
+                    disabled={disabled}
+                    title="Add comment on selection or cursor"
+                  >
+                    <MessageSquare className="size-4" />
+                  </ToolbarButton>
+                </>
+              ) : null}
+            </div>
+            {contentReadOnly && showStickerTools ? (
+              <div className="border-t border-border/60 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
+                <span className="font-medium text-foreground/80">
+                  Inline comments
+                </span>{" "}
+                — select text (optional), then click the message button in the
+                toolbar, or use{" "}
+                <kbd className="rounded border bg-background px-1 font-mono text-[10px]">
+                  ⌘⇧M
+                </kbd>{" "}
+                /{" "}
+                <kbd className="rounded border bg-background px-1 font-mono text-[10px]">
+                  Ctrl⇧M
+                </kbd>{" "}
+                at the cursor. The script body is read-only.
+              </div>
             ) : null}
           </div>
-          {contentReadOnly && showStickerTools ? (
-            <div className="border-t border-border/60 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
-              <span className="font-medium text-foreground/80">Inline comments</span> — select text
-              (optional), then click the message button in the toolbar, or use{" "}
-              <kbd className="rounded border bg-background px-1 font-mono text-[10px]">⌘⇧M</kbd> /{" "}
-              <kbd className="rounded border bg-background px-1 font-mono text-[10px]">Ctrl⇧M</kbd>{" "}
-              at the cursor. The script body is read-only.
-            </div>
-          ) : null}
-        </div>
-        <div
-          ref={editorShellRef}
-          className={cn(showCommentsSidebar && "min-h-0 flex-1 overflow-y-auto")}
-          style={showCommentsSidebar ? undefined : { minHeight }}
-        >
-          <EditorContent editor={editor} />
-        </div>
+          <div
+            ref={editorShellRef}
+            className={cn(
+              showCommentsSidebar && "min-h-0 flex-1 overflow-y-auto"
+            )}
+            style={showCommentsSidebar ? undefined : { minHeight }}
+          >
+            <EditorContent editor={editor} />
+          </div>
         </div>
 
         {showCommentsSidebar ? (
@@ -808,6 +941,7 @@ export function ScriptRichTextEditor({
             selectedCommentId={selectedCommentId}
             onSelectComment={setSelectedCommentId}
             currentUserId={feedbackStickerAuthorId ?? null}
+            stickerPermissionContext={stickerPermissionContext}
             emptyListHint={commentsSidebarEmptyHint}
             onRequestEditComment={(id) => {
               setDetailStickerId(id)
@@ -833,28 +967,30 @@ export function ScriptRichTextEditor({
           <DialogHeader className="gap-2 space-y-1">
             <DialogTitle>New comment</DialogTitle>
             <DialogDescription>
-              Use the toolbar message button or ⌘⇧M / Ctrl⇧M to open this dialog. The marker is
-              placed at your cursor; selected text is saved as thread context when applicable.
+              Use the toolbar message button or ⌘⇧M / Ctrl⇧M to open this
+              dialog. The marker is placed at your cursor; selected text is
+              saved as thread context when applicable.
             </DialogDescription>
           </DialogHeader>
           {pendingContextSnippet ? (
             <div className="rounded-md border border-border/80 bg-muted/40 px-3 py-2">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                 Selection context
               </p>
-              <p className="mt-1 line-clamp-3 text-xs italic text-foreground">
+              <p className="mt-1 line-clamp-3 text-xs text-foreground italic">
                 “{pendingContextSnippet}”
               </p>
             </div>
           ) : null}
           {pendingCommentAnchor ? (
             <p className="rounded-md bg-muted/30 px-3 py-2 text-[11px] leading-snug text-muted-foreground">
-              <span className="font-medium text-foreground/80">Anchor</span> — characters{" "}
-              <span className="tabular-nums text-foreground">
+              <span className="font-medium text-foreground/80">Anchor</span> —
+              characters{" "}
+              <span className="text-foreground tabular-nums">
                 {pendingCommentAnchor.startOffset}
               </span>
               {" → "}
-              <span className="tabular-nums text-foreground">
+              <span className="text-foreground tabular-nums">
                 {pendingCommentAnchor.endOffset}
               </span>{" "}
               ({pendingCommentAnchor.space}, half-open range)
@@ -872,7 +1008,11 @@ export function ScriptRichTextEditor({
             />
           </div>
           <DialogFooter className="gap-2 sm:justify-end">
-            <Button type="button" variant="outline" onClick={() => setAddStickerOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setAddStickerOpen(false)}
+            >
               Cancel
             </Button>
             <Button
@@ -898,15 +1038,16 @@ export function ScriptRichTextEditor({
           <DialogHeader className="gap-2 space-y-1">
             <DialogTitle>Comment thread</DialogTitle>
             <DialogDescription>
-              Inline marker in the script; numbers match the Comments sidebar order.
+              Inline marker in the script; numbers match the Comments sidebar
+              order.
             </DialogDescription>
           </DialogHeader>
           {detailSticker?.contextSnippet ? (
             <div className="rounded-md border border-border/80 bg-muted/40 px-3 py-2">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                 Context
               </p>
-              <p className="mt-1 text-xs italic text-foreground">
+              <p className="mt-1 text-xs text-foreground italic">
                 “{detailSticker.contextSnippet}”
               </p>
             </div>
@@ -914,19 +1055,24 @@ export function ScriptRichTextEditor({
           {detailSticker?.anchor ? (
             <p className="text-[11px] text-muted-foreground">
               Range:{" "}
-              <span className="tabular-nums text-foreground">
-                {detailSticker.anchor.startOffset}–{detailSticker.anchor.endOffset}
+              <span className="text-foreground tabular-nums">
+                {detailSticker.anchor.startOffset}–
+                {detailSticker.anchor.endOffset}
               </span>{" "}
               ({detailSticker.anchor.space})
             </p>
           ) : null}
           {detailSticker?.resolved ? (
-            <p className="text-xs font-medium text-green-700 dark:text-green-400">Resolved</p>
+            <p className="text-xs font-medium text-green-700 dark:text-green-400">
+              {formatStickerResolvedHint(detailSticker) ?? "Resolved"}
+            </p>
           ) : (
-            <p className="text-xs font-medium text-amber-800 dark:text-amber-300">Open</p>
+            <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
+              Open
+            </p>
           )}
-          {detailReadOnly ? (
-            <p className="whitespace-pre-wrap text-sm text-foreground">
+          {detailBodyReadOnly ? (
+            <p className="text-sm whitespace-pre-wrap text-foreground">
               {detailSticker?.body ||
                 "No text for this comment yet. It may load after the API returns data."}
             </p>
@@ -943,18 +1089,26 @@ export function ScriptRichTextEditor({
             </div>
           )}
           <DialogFooter className="flex flex-wrap gap-2 sm:justify-between">
-            {!detailReadOnly ? (
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" onClick={toggleDetailResolved}>
+            <div className="flex flex-wrap gap-2">
+              {canToggleDetailResolved ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={toggleDetailResolved}
+                >
                   {detailSticker?.resolved ? "Reopen thread" : "Mark resolved"}
                 </Button>
-                <Button type="button" variant="destructive" onClick={handleRemoveSticker}>
+              ) : null}
+              {canDeleteDetailSticker ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={handleRemoveSticker}
+                >
                   Delete comment
                 </Button>
-              </div>
-            ) : (
-              <span />
-            )}
+              ) : null}
+            </div>
             <div className="flex gap-2">
               <Button
                 type="button"
@@ -963,9 +1117,9 @@ export function ScriptRichTextEditor({
                   setDetailStickerId(null)
                 }}
               >
-                {detailReadOnly ? "Close" : "Cancel"}
+                {detailDialogDismissLabel}
               </Button>
-              {!detailReadOnly ? (
+              {canEditDetailBody ? (
                 <Button type="button" onClick={handleSaveDetail}>
                   Save
                 </Button>

@@ -45,6 +45,11 @@ export interface ScriptComment {
   scriptVersion?: number
   contextSnippet?: string | null
   resolved?: boolean
+  /** Set when manually resolved; null if open or system auto-closed on version bump. */
+  resolvedById?: string | null
+  resolvedAt?: string | null
+  /** Present when a user resolved the thread; null when open or system auto-closed. */
+  resolvedBy?: ScriptCommentAuthor | null
 }
 
 export type ScriptFeedbackSticker = ScriptComment
@@ -176,5 +181,29 @@ export interface ScriptCommentMutationResponse {
 }
 
 export interface ScriptCommentsPutBody {
+  comments: ScriptComment[]
+}
+
+/** GET /api/scripts/:scriptId/comments/versions */
+export interface ScriptCommentVersionSummary {
+  version: number
+  commentCount: number
+  resolvedCount: number
+  openCount: number
+}
+
+export interface ScriptCommentVersionsListResponse {
+  success: boolean
+  currentVersion: number
+  versions: ScriptCommentVersionSummary[]
+}
+
+/** GET /api/scripts/:scriptId/comments/versions/:version */
+export interface ScriptCommentVersionDetailResponse {
+  success: boolean
+  scriptVersion: number
+  isCurrentVersion: boolean
+  /** Archived HTML; null if no snapshot (legacy). */
+  content: string | null
   comments: ScriptComment[]
 }

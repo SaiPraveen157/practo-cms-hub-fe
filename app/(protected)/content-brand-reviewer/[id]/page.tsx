@@ -27,6 +27,7 @@ import { useAuthStore } from "@/store"
 import { getScriptQueue, approveScript, rejectScript } from "@/lib/scripts-api"
 import type {
   Script,
+  ScriptComment,
   ScriptFeedbackSticker,
   ScriptStatus,
 } from "@/types/script"
@@ -40,6 +41,9 @@ import { getScriptDisplayInfo } from "@/lib/script-status-styles"
 import { ScriptDetailSkeleton } from "@/components/loading/script-detail-skeleton"
 import { ScriptRejectionFeedback } from "@/components/script-rejection-feedback"
 import { ScriptTatBar } from "@/components/script-tat-bar"
+import { ScriptStickerVersionToolbar } from "@/components/script-sticker-version-toolbar"
+import { useScriptStickerVersionView } from "@/hooks/use-script-sticker-version-view"
+import { getVersionedScriptEditorDisplay } from "@/lib/script-sticker-version-editor-display"
 import { ArrowLeft, CheckCircle, Loader2, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -91,11 +95,11 @@ export default function ContentBrandReviewerScriptPage() {
   const canFinalApprove = script?.status === "CONTENT_BRAND_APPROVAL"
   const canTakeAction = canReview || canFinalApprove
 
-  /** Open stickers only gate approval during first Brand review (reject path exists). */
+  /** Open stickers gate approval whenever Brand must clear threads before approve. */
   const hasPendingStickerComments = useMemo(() => {
-    if (!canReview) return false
+    if (!canReview && !canFinalApprove) return false
     return Object.values(feedbackStickers).some((s) => s.resolved !== true)
-  }, [feedbackStickers, canReview])
+  }, [feedbackStickers, canReview, canFinalApprove])
 
   const onCommentsMergedFromApi = useCallback(
     (list: ScriptFeedbackSticker[]) => {
@@ -104,13 +108,40 @@ export default function ContentBrandReviewerScriptPage() {
     []
   )
 
+  const onAfterCommentMutation = useCallback((c: ScriptComment) => {
+    setFeedbackStickers((prev) => ({
+      ...prev,
+      [c.id]: { ...prev[c.id], ...c },
+    }))
+  }, [])
+
+  const stickerPermissionContext = script
+    ? {
+        scriptStatus: script.status,
+        currentUserId: user?.id ?? null,
+        currentUserRole: user?.role ?? null,
+      }
+    : null
+
+  const commentsApiActive = Boolean(
+    token && id && (canReview || canFinalApprove)
+  )
+
+  const versionView = useScriptStickerVersionView({
+    token,
+    scriptId: id,
+    enabled: Boolean(isContentBrand && token && id && commentsApiActive),
+    refreshKey: script?.version,
+  })
+
   const { notifyStickersChanged, syncBaseline } = useScriptCommentsRemoteSync({
     token,
     scriptId: id,
-    fetchEnabled: Boolean(token && id && canReview),
-    pushEnabled: Boolean(token && id && canReview),
+    fetchEnabled: commentsApiActive,
+    pushEnabled: commentsApiActive,
     commentsRefetchKey: script?.version,
     onMergeFromServer: onCommentsMergedFromApi,
+    onAfterCommentMutation,
   })
 
   const handleFeedbackStickersChange = useCallback(
@@ -139,16 +170,11 @@ export default function ContentBrandReviewerScriptPage() {
           return
         }
         setScript(s)
-        if (s.status === "CONTENT_BRAND_APPROVAL") {
-          setFeedbackStickers({})
-          syncBaseline({})
-        } else {
-          const stickerMap = recordFromStickerArray(
-            scriptCommentsListFromScript(s)
-          )
-          setFeedbackStickers(stickerMap)
-          syncBaseline(stickerMap)
-        }
+        const stickerMap = recordFromStickerArray(
+          scriptCommentsListFromScript(s)
+        )
+        setFeedbackStickers(stickerMap)
+        syncBaseline(stickerMap)
       })
       .catch((err) => {
         if (!cancelled)
@@ -240,6 +266,12 @@ export default function ContentBrandReviewerScriptPage() {
     return <ScriptDetailSkeleton />
   }
 
+  const brandViewDisp = getVersionedScriptEditorDisplay(
+    versionView,
+    script.content ?? "",
+    feedbackStickers
+  )
+
   return (
     <div className="p-6 md:p-8">
       <div className="mx-auto max-w-5xl space-y-6">
@@ -319,26 +351,87 @@ export default function ContentBrandReviewerScriptPage() {
               <p className="text-sm font-medium text-muted-foreground">
                 Script
               </p>
-              <ScriptRichTextEditor
-                key={`${script.id}-${script.updatedAt}`}
-                initialContent={script.content ?? ""}
-                minHeight="min(480px, 55vh)"
-                className="mt-1"
-                {...(canReview
-                  ? {
-                      feedbackStickers,
-                      feedbackCommentsSidebar: true,
-                      commentsSidebarEmptyHint: "No comments available.",
-                      contentReadOnly: true,
-                      onFeedbackStickersChange: handleFeedbackStickersChange,
-                      feedbackStickerToolbar: true,
-                      feedbackStickerAuthorId: user?.id ?? null,
-                    }
-                  : {
-                      disabled: true,
-                      feedbackCommentsSidebar: false,
-                    })}
+              {versionView.listError ? (
+                <p className="text-xs text-destructive">{versionView.listError}</p>
+              ) : null}
+              <ScriptStickerVersionToolbar
+                showToolbar={versionView.showToolbar}
+                listLoading={versionView.listLoading}
+                selectValue={versionView.selectValue}
+                onSelectValueChange={versionView.onSelectValueChange}
+                versionOptions={versionView.versionOptions}
+                isViewingSnapshot={versionView.isViewingSnapshot}
+                snapshotLoading={versionView.snapshotLoading}
+                id="cb-version-select"
               />
+              {brandViewDisp.mode === "loading" ? (
+                <div className="flex min-h-[min(480px,55vh)] items-center justify-center rounded-lg border border-dashed border-border bg-muted/20">
+                  <Loader2 className="size-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : brandViewDisp.mode === "error" ? (
+                <p className="text-sm text-destructive">{brandViewDisp.message}</p>
+              ) : (
+                <>
+                  {brandViewDisp.mode === "snapshot" &&
+                  brandViewDisp.contentMissing ? (
+                    <p className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                      Script content for this version was not archived (legacy
+                      data). Comments still appear in the sidebar.
+                    </p>
+                  ) : null}
+                  <ScriptRichTextEditor
+                    key={`${script.id}-cb-${versionView.selectValue || "live"}-${script.updatedAt}`}
+                    initialContent={
+                      brandViewDisp.mode === "live"
+                        ? script.content ?? ""
+                        : brandViewDisp.html
+                    }
+                    minHeight="min(480px, 55vh)"
+                    className="mt-1"
+                    stickerPermissionContext={
+                      brandViewDisp.mode === "live"
+                        ? stickerPermissionContext
+                        : undefined
+                    }
+                    {...(brandViewDisp.mode !== "live"
+                      ? {
+                          disabled: true,
+                          feedbackStickers: brandViewDisp.stickers,
+                          feedbackCommentsSidebar: true,
+                          commentsSidebarEmptyHint:
+                            "No comments on this version snapshot.",
+                        }
+                      : canReview
+                        ? {
+                            feedbackStickers: brandViewDisp.stickers,
+                            feedbackCommentsSidebar: true,
+                            commentsSidebarEmptyHint: "No comments available.",
+                            contentReadOnly: true,
+                            onFeedbackStickersChange:
+                              handleFeedbackStickersChange,
+                            feedbackStickerToolbar: true,
+                            feedbackStickerAuthorId: user?.id ?? null,
+                          }
+                        : canFinalApprove
+                          ? {
+                              feedbackStickers: brandViewDisp.stickers,
+                              feedbackCommentsSidebar: true,
+                              commentsSidebarEmptyHint:
+                                "No inline comments loaded.",
+                              contentReadOnly: true,
+                              onFeedbackStickersChange:
+                                handleFeedbackStickersChange,
+                              feedbackStickerToolbar: false,
+                              feedbackStickerAuthorId: user?.id ?? null,
+                            }
+                          : {
+                              disabled: true,
+                              feedbackStickers: brandViewDisp.stickers,
+                              feedbackCommentsSidebar: false,
+                            })}
+                  />
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -348,7 +441,7 @@ export default function ContentBrandReviewerScriptPage() {
             {hasPendingStickerComments ? (
               <p className="text-sm text-amber-800 dark:text-amber-200/90">
                 You have open inline comments. Resolve or delete each one in the
-                script editor before you can approve.
+                editor before you can approve.
               </p>
             ) : null}
             <div className="flex flex-wrap gap-2">
@@ -357,6 +450,7 @@ export default function ContentBrandReviewerScriptPage() {
                   variant="outline"
                   className="text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-500/30 dark:text-red-500 dark:hover:bg-red-950/50 dark:hover:text-red-400"
                   onClick={() => setRejectDialogOpen(true)}
+                  disabled={versionView.isViewingSnapshot}
                 >
                   <XCircle className="mr-2 size-4" />
                   Needs changes
@@ -366,11 +460,15 @@ export default function ContentBrandReviewerScriptPage() {
                 variant="outline"
                 className="text-green-600 hover:bg-green-50 hover:text-green-700 focus-visible:ring-green-500/30 dark:text-green-500 dark:hover:bg-green-950/50 dark:hover:text-green-400"
                 onClick={() => setApproveDialogOpen(true)}
-                disabled={hasPendingStickerComments}
+                disabled={
+                  hasPendingStickerComments || versionView.isViewingSnapshot
+                }
                 title={
-                  hasPendingStickerComments
-                    ? "Resolve or remove all open inline comments before approving"
-                    : undefined
+                  versionView.isViewingSnapshot
+                    ? "Select the current version in the dropdown to approve"
+                    : hasPendingStickerComments
+                      ? "Resolve or remove all open inline comments before approving"
+                      : undefined
                 }
               >
                 <CheckCircle className="mr-2 size-4" />

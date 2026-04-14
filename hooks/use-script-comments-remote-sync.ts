@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react"
 import { toast } from "sonner"
 import {
   getScriptComments,
@@ -29,6 +29,8 @@ export type UseScriptCommentsRemoteSyncOptions = {
     comments: ScriptComment[],
     meta?: ScriptCommentsMergeMeta
   ) => void
+  /** After POST/PATCH returns `comment`, merge `resolvedBy` / server fields into local state. */
+  onAfterCommentMutation?: (comment: ScriptComment) => void
 }
 
 /**
@@ -43,8 +45,13 @@ export function useScriptCommentsRemoteSync({
   pushEnabled,
   commentsRefetchKey,
   onMergeFromServer,
+  onAfterCommentMutation,
 }: UseScriptCommentsRemoteSyncOptions) {
   const prevMapRef = useRef<Record<string, ScriptComment>>({})
+  const onAfterCommentMutationRef = useRef(onAfterCommentMutation)
+  useLayoutEffect(() => {
+    onAfterCommentMutationRef.current = onAfterCommentMutation
+  }, [onAfterCommentMutation])
 
   /** Reset diff baseline after loading comments from the script payload or queue. */
   const syncBaseline = useCallback((map: Record<string, ScriptComment>) => {
@@ -86,23 +93,27 @@ export function useScriptCommentsRemoteSync({
       const nextIds = new Set(Object.keys(next))
 
       const run = async () => {
+        const mergedNext: Record<string, ScriptComment> = { ...next }
         try {
           for (const id of nextIds) {
             if (!prevIds.has(id)) {
               const c = next[id]
-              const anchor: ScriptCommentAnchor =
-                c.anchor ?? {
-                  space: "plain_text_utf16",
-                  startOffset: 0,
-                  endOffset: 0,
-                }
-              await createScriptComment(token, scriptId, {
+              const anchor: ScriptCommentAnchor = c.anchor ?? {
+                space: "plain_text_utf16",
+                startOffset: 0,
+                endOffset: 0,
+              }
+              const created = await createScriptComment(token, scriptId, {
                 id: c.id,
                 body: c.body,
                 anchor,
                 contextSnippet: c.contextSnippet ?? undefined,
                 resolved: c.resolved,
               })
+              if (created.comment) {
+                mergedNext[id] = { ...c, ...created.comment }
+                onAfterCommentMutationRef.current?.(created.comment)
+              }
               toast.success("Comment posted", { duration: 2000 })
             } else {
               const a = prev[id]
@@ -110,18 +121,32 @@ export function useScriptCommentsRemoteSync({
               const anchorChanged =
                 JSON.stringify(a.anchor ?? null) !==
                 JSON.stringify(b.anchor ?? null)
-              if (
+              const bodyOrMetaChanged =
                 a.body !== b.body ||
-                Boolean(a.resolved) !== Boolean(b.resolved) ||
                 (a.contextSnippet ?? "") !== (b.contextSnippet ?? "") ||
                 anchorChanged
-              ) {
-                await patchScriptComment(token, scriptId, id, {
-                  body: b.body,
-                  contextSnippet: b.contextSnippet ?? undefined,
-                  resolved: b.resolved,
-                  ...(anchorChanged && b.anchor ? { anchor: b.anchor } : {}),
-                })
+              const resolvedChanged =
+                Boolean(a.resolved) !== Boolean(b.resolved)
+              if (bodyOrMetaChanged || resolvedChanged) {
+                const patchBody =
+                  resolvedChanged && !bodyOrMetaChanged
+                    ? { resolved: Boolean(b.resolved) }
+                    : {
+                        body: b.body,
+                        contextSnippet: b.contextSnippet ?? undefined,
+                        resolved: b.resolved,
+                        ...(anchorChanged && b.anchor ? { anchor: b.anchor } : {}),
+                      }
+                const patched = await patchScriptComment(
+                  token,
+                  scriptId,
+                  id,
+                  patchBody
+                )
+                if (patched.comment) {
+                  mergedNext[id] = { ...b, ...patched.comment }
+                  onAfterCommentMutationRef.current?.(patched.comment)
+                }
                 toast.success("Comment updated", { duration: 1800 })
               }
             }
@@ -130,13 +155,14 @@ export function useScriptCommentsRemoteSync({
             if (!nextIds.has(id)) {
               await deleteScriptComment(token, scriptId, id)
               toast.success("Comment removed", { duration: 1800 })
+              delete mergedNext[id]
             }
           }
         } catch (err) {
           const message = err instanceof Error ? err.message : "Request failed"
           toast.error("Comment API error", { description: message })
         } finally {
-          prevMapRef.current = { ...next }
+          prevMapRef.current = mergedNext
         }
       }
 

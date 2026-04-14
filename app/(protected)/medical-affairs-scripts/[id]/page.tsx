@@ -1,6 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { useRouter, useParams, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -36,6 +43,7 @@ import {
 } from "@/lib/scripts-api"
 import type {
   Script,
+  ScriptComment,
   ScriptFeedbackSticker,
   ScriptStatus,
 } from "@/types/script"
@@ -53,6 +61,9 @@ import {
 import { ScriptDetailSkeleton } from "@/components/loading/script-detail-skeleton"
 import { ScriptRejectionFeedback } from "@/components/script-rejection-feedback"
 import { ScriptTatBar } from "@/components/script-tat-bar"
+import { ScriptStickerVersionToolbar } from "@/components/script-sticker-version-toolbar"
+import { useScriptStickerVersionView } from "@/hooks/use-script-sticker-version-view"
+import { getVersionedScriptEditorDisplay } from "@/lib/script-sticker-version-editor-display"
 import { ArrowLeft, CheckCircle, Loader2, Send, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -112,6 +123,12 @@ export default function MedicalAffairsScriptDetailPage() {
     Record<string, ScriptFeedbackSticker>
   >({})
 
+  /** Medical Review: cannot approve while any inline sticker thread is still open. */
+  const hasPendingStickerComments = useMemo(() => {
+    if (!isMedicalReview) return false
+    return Object.values(feedbackStickers).some((s) => s.resolved !== true)
+  }, [feedbackStickers, isMedicalReview])
+
   const scriptRef = useRef<Script | null>(null)
   useLayoutEffect(() => {
     scriptRef.current = script
@@ -128,6 +145,37 @@ export default function MedicalAffairsScriptDetailPage() {
     []
   )
 
+  const onAfterCommentMutation = useCallback((c: ScriptComment) => {
+    setFeedbackStickers((prev) => ({
+      ...prev,
+      [c.id]: { ...prev[c.id], ...c },
+    }))
+  }, [])
+
+  const commentsHistoryEnabled = Boolean(
+    isMedicalAffairs &&
+      token &&
+      id &&
+      (script == null ||
+        script.status !== "DRAFT" ||
+        scriptIsInRejectedState(script))
+  )
+
+  const stickerPermissionContext = script
+    ? {
+        scriptStatus: script.status,
+        currentUserId: user?.id ?? null,
+        currentUserRole: user?.role ?? null,
+      }
+    : null
+
+  const versionView = useScriptStickerVersionView({
+    token,
+    scriptId: id,
+    enabled: commentsHistoryEnabled,
+    refreshKey: script?.version,
+  })
+
   const { syncBaseline, notifyStickersChanged } = useScriptCommentsRemoteSync({
     token,
     scriptId: id,
@@ -140,15 +188,19 @@ export default function MedicalAffairsScriptDetailPage() {
         script.status !== "DRAFT" ||
         scriptIsInRejectedState(script))
     ),
-    // Persist inline comments when Agency sends the script back (Phase 3 — MEDICAL_REVIEW).
+    // Persist stickers at Medical review; resolve-only at rejected DRAFT (recipient).
     pushEnabled: Boolean(
       isMedicalAffairs &&
-      token &&
-      id &&
-      script?.status === "MEDICAL_REVIEW"
+        token &&
+        id &&
+        (script?.status === "MEDICAL_REVIEW" ||
+          (script?.status === "DRAFT" &&
+            script &&
+            scriptIsInRejectedState(script)))
     ),
     commentsRefetchKey: script?.version,
     onMergeFromServer: onCommentsMergeFromApiStable,
+    onAfterCommentMutation,
   })
 
   const onCommentsMergedFromApi = useCallback(
@@ -319,6 +371,13 @@ export default function MedicalAffairsScriptDetailPage() {
 
   async function handleApproveRevision() {
     if (!token || !id) return
+    if (hasPendingStickerComments) {
+      toast.error("Resolve or remove all inline comments first", {
+        description:
+          "Mark each comment thread as resolved in the editor, or delete it, before approving.",
+      })
+      return
+    }
     setError(null)
     setApproving(true)
     try {
@@ -383,9 +442,20 @@ export default function MedicalAffairsScriptDetailPage() {
     return <ScriptDetailSkeleton />
   }
 
+  const draftVersionDisp = getVersionedScriptEditorDisplay(
+    versionView,
+    editContent,
+    feedbackStickers
+  )
+  const scriptViewDisp = getVersionedScriptEditorDisplay(
+    versionView,
+    script.content ?? "",
+    feedbackStickers
+  )
+
   return (
     <div className="p-6 md:p-8">
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="mx-auto max-w-4xl space-y-6">
         <div className="space-y-4">
           <Button variant="ghost" size="sm" className="-ml-2" asChild>
             <Link href="/medical-affairs-scripts">
@@ -456,19 +526,76 @@ export default function MedicalAffairsScriptDetailPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Script (English)</Label>
-                  <ScriptRichTextEditor
-                    key={script.id}
-                    initialContent={script.content ?? ""}
-                    onChange={setEditContent}
-                    placeholder="Enter the full script content..."
-                    minHeight="280px"
-                    feedbackStickers={feedbackStickers}
-                    {...(scriptIsInRejectedState(script)
-                      ? { feedbackCommentsSidebar: true }
-                      : { feedbackCommentsSidebar: false })}
+                  {versionView.listError ? (
+                    <p className="text-xs text-destructive">{versionView.listError}</p>
+                  ) : null}
+                  <ScriptStickerVersionToolbar
+                    showToolbar={versionView.showToolbar}
+                    listLoading={versionView.listLoading}
+                    selectValue={versionView.selectValue}
+                    onSelectValueChange={versionView.onSelectValueChange}
+                    versionOptions={versionView.versionOptions}
+                    isViewingSnapshot={versionView.isViewingSnapshot}
+                    snapshotLoading={versionView.snapshotLoading}
+                    id="ma-draft-version-select"
                   />
+                  {draftVersionDisp.mode === "loading" ? (
+                    <div className="flex min-h-[280px] items-center justify-center rounded-lg border border-dashed border-border bg-muted/20">
+                      <Loader2 className="size-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : draftVersionDisp.mode === "error" ? (
+                    <p className="text-sm text-destructive">
+                      {draftVersionDisp.message}
+                    </p>
+                  ) : (
+                    <>
+                      {draftVersionDisp.mode === "snapshot" &&
+                      draftVersionDisp.contentMissing ? (
+                        <p className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                          Script content for this version was not archived (legacy
+                          data). Comments still appear in the sidebar.
+                        </p>
+                      ) : null}
+                      <ScriptRichTextEditor
+                        key={`${script.id}-draft-${versionView.selectValue || "live"}`}
+                        initialContent={
+                          draftVersionDisp.mode === "live"
+                            ? editContent
+                            : draftVersionDisp.html
+                        }
+                        onChange={
+                          draftVersionDisp.mode === "live"
+                            ? setEditContent
+                            : undefined
+                        }
+                        placeholder="Enter the full script content..."
+                        minHeight="280px"
+                        disabled={draftVersionDisp.mode !== "live"}
+                        feedbackStickers={draftVersionDisp.stickers}
+                        {...(draftVersionDisp.mode === "snapshot" ||
+                        (draftVersionDisp.mode === "live" &&
+                          scriptIsInRejectedState(script))
+                          ? {
+                              feedbackCommentsSidebar: true,
+                              onFeedbackStickersChange:
+                                draftVersionDisp.mode === "live"
+                                  ? handleFeedbackStickersChange
+                                  : undefined,
+                              stickerPermissionContext:
+                                draftVersionDisp.mode === "live"
+                                  ? stickerPermissionContext
+                                  : undefined,
+                            }
+                          : { feedbackCommentsSidebar: false })}
+                      />
+                    </>
+                  )}
                 </div>
-                <Button type="submit" disabled={saving} variant="outline">
+                <Button
+                  type="submit"
+                  disabled={saving || versionView.isViewingSnapshot}
+                  variant="outline"
+                >
                   {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
                   Save changes
                 </Button>
@@ -480,6 +607,13 @@ export default function MedicalAffairsScriptDetailPage() {
           <div className="flex flex-wrap gap-2 border-t pt-6">
             <Button
               onClick={() => {
+                if (versionView.isViewingSnapshot) {
+                  toast.message("Switch to current version", {
+                    description:
+                      "Select the current version in the dropdown to submit.",
+                  })
+                  return
+                }
                 if (hasUnsavedChanges) {
                   toast.error("Please save your changes before submitting.", {
                     description:
@@ -491,6 +625,7 @@ export default function MedicalAffairsScriptDetailPage() {
               }}
               variant="outline"
               className="text-green-600 focus-visible:ring-green-500/30"
+              disabled={versionView.isViewingSnapshot}
             >
               <Send className="mr-2 size-4" />
               Submit to Content/Brand
@@ -523,47 +658,112 @@ export default function MedicalAffairsScriptDetailPage() {
                   <p className="text-sm font-medium text-muted-foreground">
                     Script
                   </p>
-                  <ScriptRichTextEditor
-                    key={`${script.id}-view-${script.updatedAt}`}
-                    initialContent={script.content ?? ""}
-                    minHeight="200px"
-                    className="mt-1"
-                    feedbackStickers={feedbackStickers}
-                    {...(isMedicalReview
-                      ? {
-                          contentReadOnly: true,
-                          feedbackCommentsSidebar: true,
-                          onFeedbackStickersChange:
-                            handleFeedbackStickersChange,
-                          feedbackStickerToolbar: true,
-                          feedbackStickerAuthorId: user?.id ?? null,
-                        }
-                      : {
-                          disabled: true,
-                          feedbackCommentsSidebar: true,
-                        })}
+                  {versionView.listError ? (
+                    <p className="text-xs text-destructive">{versionView.listError}</p>
+                  ) : null}
+                  <ScriptStickerVersionToolbar
+                    showToolbar={versionView.showToolbar}
+                    listLoading={versionView.listLoading}
+                    selectValue={versionView.selectValue}
+                    onSelectValueChange={versionView.onSelectValueChange}
+                    versionOptions={versionView.versionOptions}
+                    isViewingSnapshot={versionView.isViewingSnapshot}
+                    snapshotLoading={versionView.snapshotLoading}
+                    id="ma-view-version-select"
                   />
+                  {scriptViewDisp.mode === "loading" ? (
+                    <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed border-border bg-muted/20">
+                      <Loader2 className="size-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : scriptViewDisp.mode === "error" ? (
+                    <p className="text-sm text-destructive">
+                      {scriptViewDisp.message}
+                    </p>
+                  ) : (
+                    <>
+                      {scriptViewDisp.mode === "snapshot" &&
+                      scriptViewDisp.contentMissing ? (
+                        <p className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                          Script content for this version was not archived (legacy
+                          data). Comments still appear in the sidebar.
+                        </p>
+                      ) : null}
+                      <ScriptRichTextEditor
+                        key={`${script.id}-view-${versionView.selectValue || "live"}-${script.updatedAt}`}
+                        initialContent={
+                          scriptViewDisp.mode === "live"
+                            ? script.content ?? ""
+                            : scriptViewDisp.html
+                        }
+                        minHeight="200px"
+                        className="mt-1"
+                        feedbackStickers={scriptViewDisp.stickers}
+                        stickerPermissionContext={
+                          scriptViewDisp.mode === "live"
+                            ? stickerPermissionContext
+                            : undefined
+                        }
+                        {...(scriptViewDisp.mode !== "live"
+                          ? {
+                              disabled: true,
+                              feedbackCommentsSidebar: true,
+                            }
+                          : isMedicalReview
+                            ? {
+                                contentReadOnly: true,
+                                feedbackCommentsSidebar: true,
+                                onFeedbackStickersChange:
+                                  handleFeedbackStickersChange,
+                                feedbackStickerToolbar: true,
+                                feedbackStickerAuthorId: user?.id ?? null,
+                              }
+                            : {
+                                disabled: true,
+                                feedbackCommentsSidebar: true,
+                              })}
+                      />
+                    </>
+                  )}
                 </div>
               </CardContent>
             </Card>
             {isMedicalReview && (
-              <div className="flex flex-wrap gap-2 border-t pt-6">
-                <Button
-                  variant="outline"
-                  className="text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-500/30 dark:text-red-500 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-                  onClick={() => setRejectDialogOpen(true)}
-                >
-                  <XCircle className="mr-2 size-4" />
-                  Changes needed
-                </Button>
-                <Button
-                  variant="outline"
-                  className="text-green-600 hover:bg-green-50 hover:text-green-700 focus-visible:ring-green-500/30 dark:text-green-500 dark:hover:bg-green-950/50 dark:hover:text-green-400"
-                  onClick={() => setApproveDialogOpen(true)}
-                >
-                  <CheckCircle className="mr-2 size-4" />
-                  Approve
-                </Button>
+              <div className="space-y-3 border-t pt-6">
+                {hasPendingStickerComments ? (
+                  <p className="text-sm text-amber-800 dark:text-amber-200/90">
+                    You have open inline comments. Resolve or delete each one in
+                    the editor before you can approve.
+                  </p>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    className="text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-500/30 dark:text-red-500 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+                    onClick={() => setRejectDialogOpen(true)}
+                    disabled={versionView.isViewingSnapshot}
+                  >
+                    <XCircle className="mr-2 size-4" />
+                    Changes needed
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="text-green-600 hover:bg-green-50 hover:text-green-700 focus-visible:ring-green-500/30 dark:text-green-500 dark:hover:bg-green-950/50 dark:hover:text-green-400"
+                    onClick={() => setApproveDialogOpen(true)}
+                    disabled={
+                      versionView.isViewingSnapshot || hasPendingStickerComments
+                    }
+                    title={
+                      versionView.isViewingSnapshot
+                        ? "Select the current version in the dropdown to approve"
+                        : hasPendingStickerComments
+                          ? "Resolve or remove all open inline comments before approving"
+                          : undefined
+                    }
+                  >
+                    <CheckCircle className="mr-2 size-4" />
+                    Approve
+                  </Button>
+                </div>
               </div>
             )}
           </>
@@ -616,6 +816,12 @@ export default function MedicalAffairsScriptDetailPage() {
               The script will move to Content/Brand Approval. You can add
               optional comments for the record.
             </DialogDescription>
+            {hasPendingStickerComments ? (
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-200/90">
+                Approve is blocked until every inline comment is resolved or
+                removed.
+              </p>
+            ) : null}
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="approve-comments">Comments (optional)</Label>
@@ -639,7 +845,7 @@ export default function MedicalAffairsScriptDetailPage() {
             <Button
               variant="outline"
               onClick={handleApproveRevision}
-              disabled={approving}
+              disabled={approving || hasPendingStickerComments}
               className="text-green-600 hover:bg-green-50 hover:text-green-700 focus-visible:ring-green-500/30 dark:text-green-500 dark:hover:bg-green-950/50 dark:hover:text-green-400"
             >
               {approving && <Loader2 className="mr-2 size-4 animate-spin" />}

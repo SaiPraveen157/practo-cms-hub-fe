@@ -18,6 +18,8 @@ import {
   mockCreateScriptComment,
   mockDeleteScriptComment,
   mockGetScriptComments,
+  mockGetScriptCommentVersions,
+  mockGetScriptCommentVersionDetail,
   mockPatchScriptComment,
   mockPutScriptComments,
 } from "@/lib/script-comments-mock"
@@ -29,6 +31,8 @@ import type {
   ScriptCommentsListResponse,
   ScriptCommentsListResponseWire,
   ScriptCommentsPutBody,
+  ScriptCommentVersionsListResponse,
+  ScriptCommentVersionDetailResponse,
 } from "@/types/script"
 
 function checkToken(token: string | null): asserts token is string {
@@ -126,4 +130,35 @@ export async function putScriptComments(
     success: raw.success,
     comments: raw.comments ?? raw.feedbackStickers ?? [],
   }
+}
+
+/** GET /api/scripts/:scriptId/comments/versions — past version cards (excludes current). */
+export async function getScriptCommentVersions(
+  token: string | null,
+  scriptId: string
+): Promise<ScriptCommentVersionsListResponse> {
+  checkToken(token)
+  if (isScriptCommentsMockEnabled()) {
+    return mockGetScriptCommentVersions(scriptId)
+  }
+  return apiRequest<ScriptCommentVersionsListResponse>(
+    `/api/scripts/${scriptId}/comments/versions`,
+    { token }
+  )
+}
+
+/** GET /api/scripts/:scriptId/comments/versions/:version — archived content + comments. */
+export async function getScriptCommentVersionDetail(
+  token: string | null,
+  scriptId: string,
+  version: number
+): Promise<ScriptCommentVersionDetailResponse> {
+  checkToken(token)
+  if (isScriptCommentsMockEnabled()) {
+    return mockGetScriptCommentVersionDetail(scriptId, version)
+  }
+  return apiRequest<ScriptCommentVersionDetailResponse>(
+    `/api/scripts/${scriptId}/comments/versions/${version}`,
+    { token }
+  )
 }

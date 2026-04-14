@@ -10,6 +10,12 @@ import {
   scrollCommentAnchorIntoView,
 } from "@/lib/feedback-sticker-doc"
 import type { ScriptFeedbackSticker } from "@/types/script"
+import { formatStickerResolvedHint } from "@/lib/script-comment-resolve-label"
+import {
+  canEditScriptStickerBody,
+  canResolveScriptSticker,
+  type ScriptStickerPermissionContext,
+} from "@/lib/script-comment-resolve-permissions"
 import {
   CheckCircle2,
   Circle,
@@ -23,7 +29,9 @@ type FilterTab = "all" | "open" | "resolved"
 export interface ScriptEditorCommentsSidebarProps {
   editor: Editor | null
   feedbackStickers: Record<string, ScriptFeedbackSticker>
-  onFeedbackStickersChange?: (next: Record<string, ScriptFeedbackSticker>) => void
+  onFeedbackStickersChange?: (
+    next: Record<string, ScriptFeedbackSticker>
+  ) => void
   readOnly: boolean
   selectedCommentId: string | null
   onSelectComment: (id: string | null) => void
@@ -32,6 +40,11 @@ export interface ScriptEditorCommentsSidebarProps {
   editorScrollRootRef: RefObject<HTMLElement | null>
   /** Logged-in user id — used to show “You” when `author` is not yet loaded but `authorId` matches. */
   currentUserId?: string | null
+  /**
+   * When set, Edit/Delete/Resolve are gated (recipient may resolve only; author may edit body).
+   * When omitted, legacy behavior: any action allowed if `!readOnly && onFeedbackStickersChange`.
+   */
+  stickerPermissionContext?: ScriptStickerPermissionContext | null
   /**
    * Shown when there are no comment threads (`feedbackStickers` empty and no list items).
    * Defaults to a short “no comments” line; use the long hint when reviewers can add the first comment.
@@ -45,7 +58,8 @@ function formatCommentCreator(
 ): string {
   if (!s) return "Unknown"
   if (s.author) {
-    const name = `${s.author.firstName} ${s.author.lastName}`.trim() || "Unknown"
+    const name =
+      `${s.author.firstName} ${s.author.lastName}`.trim() || "Unknown"
     const role =
       s.author.role === "CONTENT_BRAND"
         ? "Brand"
@@ -75,6 +89,7 @@ export function ScriptEditorCommentsSidebar({
   onRequestEditComment,
   editorScrollRootRef,
   currentUserId = null,
+  stickerPermissionContext = null,
   emptyListHint,
 }: ScriptEditorCommentsSidebarProps) {
   const [filter, setFilter] = useState<FilterTab>("all")
@@ -93,9 +108,7 @@ export function ScriptEditorCommentsSidebar({
   }, [editor])
 
   const orderedIds = useMemo(() => {
-    const fromDoc = editor
-      ? collectFeedbackStickerIdsFromEditor(editor)
-      : []
+    const fromDoc = editor ? collectFeedbackStickerIdsFromEditor(editor) : []
     const sortedFromState = Object.keys(feedbackStickers).sort((a, b) => {
       const sa = feedbackStickers[a]?.anchor?.startOffset ?? 0
       const sb = feedbackStickers[b]?.anchor?.startOffset ?? 0
@@ -152,8 +165,41 @@ export function ScriptEditorCommentsSidebar({
     })
   }
 
+  function legacyActionsUnlocked(id: string) {
+    return (
+      !readOnly &&
+      !!onFeedbackStickersChange &&
+      !!feedbackStickers[id]
+    )
+  }
+
+  function showResolveControl(id: string): boolean {
+    if (!onFeedbackStickersChange) return false
+    const s = feedbackStickers[id]
+    if (!s) return false
+    if (!stickerPermissionContext) return legacyActionsUnlocked(id)
+    return canResolveScriptSticker(
+      stickerPermissionContext.scriptStatus,
+      stickerPermissionContext.currentUserRole,
+      s,
+      stickerPermissionContext.currentUserId
+    )
+  }
+
+  function showEditDeleteControls(id: string): boolean {
+    if (!onFeedbackStickersChange) return false
+    const s = feedbackStickers[id]
+    if (!s) return false
+    if (!stickerPermissionContext) return legacyActionsUnlocked(id)
+    return canEditScriptStickerBody(
+      stickerPermissionContext.currentUserRole,
+      s,
+      stickerPermissionContext.currentUserId
+    )
+  }
+
   function toggleResolved(id: string) {
-    if (!onFeedbackStickersChange || readOnly) return
+    if (!onFeedbackStickersChange || !showResolveControl(id)) return
     const cur = feedbackStickers[id]
     if (!cur) return
     onFeedbackStickersChange({
@@ -163,7 +209,7 @@ export function ScriptEditorCommentsSidebar({
   }
 
   function removeComment(id: string) {
-    if (!onFeedbackStickersChange || readOnly || !editor) return
+    if (!onFeedbackStickersChange || !showEditDeleteControls(id) || !editor) return
     let from = -1
     let to = -1
     editor.state.doc.descendants((node, pos) => {
@@ -201,7 +247,7 @@ export function ScriptEditorCommentsSidebar({
           Comments
         </div>
         {orderedIds.length > 0 ? (
-          <span className="text-xs tabular-nums text-muted-foreground">
+          <span className="text-xs text-muted-foreground tabular-nums">
             {orderedIds.length}
           </span>
         ) : null}
@@ -242,20 +288,23 @@ export function ScriptEditorCommentsSidebar({
         role="region"
         aria-label="Comment threads"
         className={cn(
-          "min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain p-2",
+          "min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain p-2",
           /* ~3 cards tall; further comments scroll inside this region only */
           "max-h-[min(28rem,52vh)]"
         )}
       >
         {filteredIds.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-2 py-8 text-center">
-            <MessageSquare className="size-8 text-muted-foreground/40" aria-hidden />
-            <p className="text-xs text-muted-foreground leading-relaxed">
+            <MessageSquare
+              className="size-8 text-muted-foreground/40"
+              aria-hidden
+            />
+            <p className="text-xs leading-relaxed text-muted-foreground">
               {orderedIds.length === 0
-                ? emptyListHint ??
+                ? (emptyListHint ??
                   (!readOnly && onFeedbackStickersChange
                     ? "Select text (optional), click the message button in the toolbar, or use ⌘⇧M / Ctrl⇧M at the cursor."
-                    : "No comments available.")
+                    : "No comments available."))
                 : filter === "open"
                   ? "No open comments."
                   : filter === "resolved"
@@ -294,16 +343,12 @@ export function ScriptEditorCommentsSidebar({
                           </span>
                           <span className="text-foreground/90">{creator}</span>
                         </p>
-                        {resolved ? (
-                          <CheckCircle2
-                            className="size-3.5 shrink-0 text-muted-foreground"
-                            aria-label="Resolved"
-                          />
-                        ) : null}
                       </div>
-                      <p className="mt-1.5 text-sm leading-snug text-foreground line-clamp-4">
+                      <p className="mt-1.5 line-clamp-4 text-sm leading-snug text-foreground">
                         {bodyText || (
-                          <span className="text-muted-foreground">No comment text.</span>
+                          <span className="text-muted-foreground">
+                            No comment text.
+                          </span>
                         )}
                       </p>
                       {s?.contextSnippet ? (
@@ -311,47 +356,64 @@ export function ScriptEditorCommentsSidebar({
                           “{s.contextSnippet}”
                         </p>
                       ) : null}
+                      {resolved ? (
+                        <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+                          {formatStickerResolvedHint(s) ?? "Resolved"}
+                        </p>
+                      ) : (
+                        <p className="mt-1.5 text-[11px] font-medium text-amber-800/90 dark:text-amber-300/90">
+                          Open
+                        </p>
+                      )}
                     </button>
 
-                    {!readOnly && onFeedbackStickersChange ? (
+                    {showResolveControl(id) || showEditDeleteControls(id) ? (
                       <div className="mt-2 flex justify-end gap-0.5 border-t border-border/50 pt-2">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="size-8 text-muted-foreground"
-                          title={resolved ? "Reopen" : "Resolve"}
-                          aria-label={resolved ? "Reopen thread" : "Mark resolved"}
-                          onClick={() => toggleResolved(id)}
-                        >
-                          {resolved ? (
-                            <Circle className="size-4" />
-                          ) : (
-                            <CheckCircle2 className="size-4" />
-                          )}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="size-8 text-muted-foreground"
-                          title="Edit"
-                          aria-label="Edit comment"
-                          onClick={() => onRequestEditComment(id)}
-                        >
-                          <Pencil className="size-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="size-8 text-destructive hover:text-destructive"
-                          title="Delete"
-                          aria-label="Delete comment"
-                          onClick={() => removeComment(id)}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
+                        {showResolveControl(id) ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-muted-foreground"
+                            title={resolved ? "Reopen" : "Resolve"}
+                            aria-label={
+                              resolved ? "Reopen thread" : "Mark resolved"
+                            }
+                            onClick={() => toggleResolved(id)}
+                          >
+                            {resolved ? (
+                              <Circle className="size-4" />
+                            ) : (
+                              <CheckCircle2 className="size-4" />
+                            )}
+                          </Button>
+                        ) : null}
+                        {showEditDeleteControls(id) ? (
+                          <>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-8 text-muted-foreground"
+                              title="Edit"
+                              aria-label="Edit comment"
+                              onClick={() => onRequestEditComment(id)}
+                            >
+                              <Pencil className="size-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-8 text-destructive hover:text-destructive"
+                              title="Delete"
+                              aria-label="Delete comment"
+                              onClick={() => removeComment(id)}
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>

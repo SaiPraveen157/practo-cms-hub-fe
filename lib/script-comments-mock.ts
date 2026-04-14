@@ -11,6 +11,8 @@ import type {
   ScriptCommentMutationResponse,
   ScriptCommentPatchBody,
   ScriptCommentsListResponse,
+  ScriptCommentVersionsListResponse,
+  ScriptCommentVersionDetailResponse,
 } from "@/types/script"
 
 const STORAGE_KEY = "practo-hub-mock-script-comments-v1"
@@ -128,5 +130,30 @@ export async function mockPutScriptComments(
     success: true,
     scriptVersion: 1,
     comments: Object.values(next),
+  }
+}
+
+export async function mockGetScriptCommentVersions(
+  _scriptId: string
+): Promise<ScriptCommentVersionsListResponse> {
+  await delay(60)
+  return { success: true, currentVersion: 1, versions: [] }
+}
+
+export async function mockGetScriptCommentVersionDetail(
+  scriptId: string,
+  version: number
+): Promise<ScriptCommentVersionDetailResponse> {
+  await delay(80)
+  const store = readStore()
+  const list = Object.values(store[scriptId] ?? {}).filter(
+    (c) => (c.scriptVersion ?? 1) === version
+  )
+  return {
+    success: true,
+    scriptVersion: version,
+    isCurrentVersion: false,
+    content: list.length ? "<p>Mock archived content</p>" : null,
+    comments: list,
   }
 }
