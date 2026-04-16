@@ -278,33 +278,35 @@ export default function ContentBrandReviewerPage() {
                     router.push(`/content-brand-reviewer/${script.id}`)
                   }
                   actions={
-                    <>
-                      <Button
-                        asChild
-                        size="sm"
-                        className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Link href={`/content-brand-reviewer/${script.id}`}>
-                          <CheckCircle className="size-4 shrink-0" />
-                          {script.status === "CONTENT_BRAND_APPROVAL"
-                            ? "Approve"
-                            : "Review"}
-                        </Link>
-                      </Button>
-                      <Button
-                        asChild
-                        size="sm"
-                        variant="destructive"
-                        className="gap-1.5"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Link href={`/content-brand-reviewer/${script.id}`}>
-                          <XCircle className="size-4 shrink-0" />
-                          Reject
-                        </Link>
-                      </Button>
-                    </>
+                    tab === "all" ? (
+                      <>
+                        <Button
+                          asChild
+                          size="sm"
+                          className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Link href={`/content-brand-reviewer/${script.id}`}>
+                            <CheckCircle className="size-4 shrink-0" />
+                            {script.status === "CONTENT_BRAND_APPROVAL"
+                              ? "Approve"
+                              : "Review"}
+                          </Link>
+                        </Button>
+                        <Button
+                          asChild
+                          size="sm"
+                          variant="destructive"
+                          className="gap-1.5"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Link href={`/content-brand-reviewer/${script.id}`}>
+                            <XCircle className="size-4 shrink-0" />
+                            Reject
+                          </Link>
+                        </Button>
+                      </>
+                    ) : null
                   }
                 />
               ))}

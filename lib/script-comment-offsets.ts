@@ -40,6 +40,21 @@ export function commentAnchorFromEditorSelection(editor: Editor): {
 }
 
 /**
+ * UTF-16 offsets for an arbitrary document range `[from, to)` in the same plain-text
+ * projection as {@link commentAnchorOffsetsFromEditorState}.
+ */
+export function commentAnchorOffsetsForRange(
+  state: EditorState,
+  from: number,
+  to: number
+): { startOffset: number; endOffset: number } {
+  const doc = state.doc
+  const startOffset = doc.textBetween(0, from, BLOCK_SEP).length
+  const endOffset = doc.textBetween(0, to, BLOCK_SEP).length
+  return { startOffset, endOffset }
+}
+
+/**
  * Maps a UTF-16 offset in the same plain-text projection as {@link commentAnchorOffsetsFromEditorState}
  * to a ProseMirror position (0…doc.content.size). Used to place inline stickers after `endOffset`
  * characters of body text for `plain_text_utf16` anchors from the API.

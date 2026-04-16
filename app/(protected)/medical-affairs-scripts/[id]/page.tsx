@@ -321,10 +321,12 @@ export default function MedicalAffairsScriptDetailPage() {
     setError(null)
     setSaving(true)
     try {
+      const stickerList = Object.values(feedbackStickers)
       await updateScript(token, id, {
         title: editTitle.trim(),
         insight: editInsight.trim() || undefined,
         content: editContent,
+        ...(stickerList.length > 0 ? { comments: stickerList } : {}),
       })
       refetchScript()
       toast.success("Changes saved", { description: "Draft updated." })
@@ -563,6 +565,7 @@ export default function MedicalAffairsScriptDetailPage() {
                             ? editContent
                             : draftVersionDisp.html
                         }
+                        contentSyncKey={`${script.version}-${versionView.selectValue || "live"}`}
                         onChange={
                           draftVersionDisp.mode === "live"
                             ? setEditContent

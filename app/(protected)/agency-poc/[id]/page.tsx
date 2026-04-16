@@ -283,10 +283,12 @@ export default function AgencyPocScriptPage() {
     setError(null)
     setSaving(true)
     try {
+      const stickerList = Object.values(feedbackStickers)
       await updateScript(token, id, {
         title: editTitle.trim(),
         insight: editInsight.trim() || undefined,
         content: editContent,
+        ...(stickerList.length > 0 ? { comments: stickerList } : {}),
       })
       refetchScript()
       toast.success("Changes saved", {
@@ -472,6 +474,7 @@ export default function AgencyPocScriptPage() {
                               ? editContent
                               : agencyEditVersionDisp.html
                           }
+                          contentSyncKey={`${script.version}-${versionView.selectValue || "live"}`}
                           onChange={
                             agencyEditVersionDisp.mode === "live"
                               ? setEditContent

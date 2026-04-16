@@ -227,7 +227,11 @@ export default function ContentBrandReviewerScriptPage() {
     if (!token || !id) return
     const comments = rejectComments.trim()
     if (!comments) {
-      setError("Please provide feedback for the Medical Affairs team.")
+      setError(
+        canFinalApprove
+          ? "Rejection reason is required so Agency knows what to fix."
+          : "Please provide feedback for the Medical Affairs team."
+      )
       return
     }
     setError(null)
@@ -236,9 +240,16 @@ export default function ContentBrandReviewerScriptPage() {
       await rejectScript(token, id, { comments })
       setRejectDialogOpen(false)
       setRejectComments("")
-      toast.warning("Sent back for changes", {
-        description: "Medical Affairs will be notified. TAT 24 hours.",
-      })
+      if (canFinalApprove) {
+        toast.warning("Sent back to Agency", {
+          description:
+            "Script is now in Agency Production. Agency can revise and resubmit. TAT 24 hours.",
+        })
+      } else {
+        toast.warning("Sent back for changes", {
+          description: "Medical Affairs will be notified. TAT 24 hours.",
+        })
+      }
       router.push("/content-brand-reviewer")
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to reject"
@@ -330,7 +341,7 @@ export default function ContentBrandReviewerScriptPage() {
             <CardTitle>Script content</CardTitle>
             <CardDescription>
               {canFinalApprove
-                ? "Approved by Medical Affairs. Final approve to send to Content Approver for lock. Optional notes can be added in the approve dialog."
+                ? "Approved by Medical Affairs. Use inline comments for specific feedback; resolve or remove each thread before approving. Approve to send to Content Approver for lock, or reject to return the script to Agency Production with a required reason. Optional notes can be added in the approve dialog."
                 : canTakeAction
                   ? "Submitted by Medical Affairs for your review. Use inline comments on the script for specific feedback; approve to send to Agency Production, or reject with a summary so they can revise and resubmit."
                   : "Submitted by Medical Affairs for your review. Approve to send to Agency Production, or reject with feedback so they can revise and resubmit."}
@@ -388,6 +399,9 @@ export default function ContentBrandReviewerScriptPage() {
                     }
                     minHeight="min(480px, 55vh)"
                     className="mt-1"
+                    hideInlineCommentPresentation={
+                      brandViewDisp.mode === "live" && !canTakeAction
+                    }
                     stickerPermissionContext={
                       brandViewDisp.mode === "live"
                         ? stickerPermissionContext
@@ -401,7 +415,7 @@ export default function ContentBrandReviewerScriptPage() {
                           commentsSidebarEmptyHint:
                             "No comments on this version snapshot.",
                         }
-                      : canReview
+                      : canTakeAction
                         ? {
                             feedbackStickers: brandViewDisp.stickers,
                             feedbackCommentsSidebar: true,
@@ -412,23 +426,11 @@ export default function ContentBrandReviewerScriptPage() {
                             feedbackStickerToolbar: true,
                             feedbackStickerAuthorId: user?.id ?? null,
                           }
-                        : canFinalApprove
-                          ? {
-                              feedbackStickers: brandViewDisp.stickers,
-                              feedbackCommentsSidebar: true,
-                              commentsSidebarEmptyHint:
-                                "No inline comments loaded.",
-                              contentReadOnly: true,
-                              onFeedbackStickersChange:
-                                handleFeedbackStickersChange,
-                              feedbackStickerToolbar: false,
-                              feedbackStickerAuthorId: user?.id ?? null,
-                            }
-                          : {
-                              disabled: true,
-                              feedbackStickers: brandViewDisp.stickers,
-                              feedbackCommentsSidebar: false,
-                            })}
+                        : {
+                            disabled: true,
+                            feedbackStickers: brandViewDisp.stickers,
+                            feedbackCommentsSidebar: false,
+                          })}
                   />
                 </>
               )}
@@ -445,15 +447,20 @@ export default function ContentBrandReviewerScriptPage() {
               </p>
             ) : null}
             <div className="flex flex-wrap gap-2">
-              {canReview && (
+              {(canReview || canFinalApprove) && (
                 <Button
                   variant="outline"
                   className="text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-500/30 dark:text-red-500 dark:hover:bg-red-950/50 dark:hover:text-red-400"
                   onClick={() => setRejectDialogOpen(true)}
                   disabled={versionView.isViewingSnapshot}
+                  title={
+                    versionView.isViewingSnapshot
+                      ? "Select the current version in the dropdown to reject"
+                      : undefined
+                  }
                 >
                   <XCircle className="mr-2 size-4" />
-                  Needs changes
+                  {canFinalApprove ? "Reject" : "Needs changes"}
                 </Button>
               )}
               <Button
@@ -494,7 +501,7 @@ export default function ContentBrandReviewerScriptPage() {
                 ? "The script will move to Content Approver Review. Content Approver can then lock it for production. You can add optional comments."
                 : "The script will move to Agency Production. Medical Affairs will no longer edit this version. You can add optional comments for the record."}
             </DialogDescription>
-            {canReview && hasPendingStickerComments ? (
+            {canTakeAction && hasPendingStickerComments ? (
               <p className="text-sm font-medium text-amber-800 dark:text-amber-200/90">
                 Approve is blocked until every inline comment is resolved or
                 removed.
@@ -538,22 +545,40 @@ export default function ContentBrandReviewerScriptPage() {
         <DialogContent className="gap-6 p-6 sm:max-w-lg sm:p-8" showCloseButton>
           <DialogHeader className="gap-3 space-y-1">
             <DialogTitle className="text-lg font-semibold tracking-tight">
-              Send back for changes
+              {canFinalApprove
+                ? "Reject — send back to Agency"
+                : "Send back for changes"}
             </DialogTitle>
             <DialogDescription className="max-w-[42ch] text-sm leading-relaxed">
-              The script will return to Draft. Medical Affairs will be notified
-              and can revise and resubmit. Add inline comments in the script
-              above for specific passages, and summarize below so they know what
-              to change. TAT 24 hours.
+              {canFinalApprove ? (
+                <>
+                  The script will move to Agency Production. Agency can fix and
+                  resubmit; it will go through Medical Affairs and Content/Brand
+                  again. Enter a rejection reason below (required). TAT 24 hours.
+                </>
+              ) : (
+                <>
+                  The script will return to Draft. Medical Affairs will be
+                  notified and can revise and resubmit. Add inline comments in
+                  the script above for specific passages, and summarize below so
+                  they know what to change. TAT 24 hours.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="reject-comments">Feedback (required)</Label>
+            <Label htmlFor="reject-comments">
+              {canFinalApprove ? "Rejection reason (required)" : "Feedback (required)"}
+            </Label>
             <Textarea
               id="reject-comments"
               value={rejectComments}
               onChange={(e) => setRejectComments(e.target.value)}
-              placeholder="e.g. Script needs more clarity on the medication section. Please revise."
+              placeholder={
+                canFinalApprove
+                  ? "e.g. Agency needs to fix the medical claims section before final approval."
+                  : "e.g. Script needs more clarity on the medication section. Please revise."
+              }
               rows={4}
               className="resize-y"
               required
@@ -574,7 +599,7 @@ export default function ContentBrandReviewerScriptPage() {
               disabled={rejecting || !rejectComments.trim()}
             >
               {rejecting && <Loader2 className="mr-2 size-4 animate-spin" />}
-              Reject & send feedback
+              {canFinalApprove ? "Reject" : "Reject & send feedback"}
             </Button>
           </DialogFooter>
         </DialogContent>

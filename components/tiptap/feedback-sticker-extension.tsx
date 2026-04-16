@@ -14,6 +14,8 @@ import { stickerOrdinalInDoc } from "@/lib/feedback-sticker-doc"
 export type FeedbackStickerExtensionOptions = {
   getStickers: () => Record<string, ScriptFeedbackSticker>
   onOpenDetail: (feedbackId: string) => void
+  /** When true, inline marker buttons are not shown (doc structure unchanged). */
+  shouldHideInlinePresentation?: () => boolean
 }
 
 function FeedbackStickerNodeView(props: ReactNodeViewProps) {
@@ -26,6 +28,18 @@ function FeedbackStickerNodeView(props: ReactNodeViewProps) {
     sticker?.body?.trim() ||
     "No comment text yet (loads from server when available)."
   const resolved = Boolean(sticker?.resolved)
+
+  if (opts.shouldHideInlinePresentation?.()) {
+    return (
+      <NodeViewWrapper
+        as="span"
+        className="inline-block size-0 max-h-0 overflow-hidden p-0 align-baseline opacity-0"
+        data-feedback-sticker=""
+        contentEditable={false}
+        aria-hidden
+      />
+    )
+  }
 
   return (
     <NodeViewWrapper
@@ -76,6 +90,7 @@ export const FeedbackSticker = Node.create({
     return {
       getStickers: () => ({}),
       onOpenDetail: () => {},
+      shouldHideInlinePresentation: () => false,
     }
   },
 
