@@ -22,6 +22,8 @@ export function recipientRolesForStickerResolve(
       return ["MEDICAL_AFFAIRS"]
     case "CONTENT_BRAND_APPROVAL":
       return ["CONTENT_BRAND", "MEDICAL_AFFAIRS"]
+    case "CONTENT_APPROVER_REVIEW":
+      return ["CONTENT_APPROVER"]
     default:
       return []
   }

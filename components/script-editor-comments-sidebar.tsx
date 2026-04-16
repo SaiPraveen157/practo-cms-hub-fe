@@ -235,9 +235,9 @@ export function ScriptEditorCommentsSidebar({
   return (
     <aside
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden border-l border-border bg-muted/20",
-        "w-full min-w-0 shrink-0 sm:max-w-[300px]",
-        "lg:self-stretch"
+        "flex h-full min-h-0 max-w-full flex-col overflow-hidden border-l border-border bg-muted/20",
+        "w-full min-w-0 shrink-0 sm:max-w-[min(100%,300px)]",
+        "lg:max-w-[300px] lg:self-stretch"
       )}
       aria-label="Comments"
     >

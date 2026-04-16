@@ -52,10 +52,13 @@ import {
 import {
   CommentRangeHighlight,
   commentRangeHighlightPluginKey,
+  getCommentHighlightRangeState,
 } from "@/components/tiptap/comment-range-highlight-extension"
+import { feedbackStickersWithAnchorsFromLiveRanges } from "@/lib/script-comment-anchor-live-sync"
 import {
   collectFeedbackStickerIdsFromEditor,
   FEEDBACK_STICKER_NODE,
+  pruneOrphanFeedbackStickerNodes,
 } from "@/lib/feedback-sticker-doc"
 import type { ScriptCommentAnchor, ScriptFeedbackSticker } from "@/types/script"
 import { formatStickerResolvedHint } from "@/lib/script-comment-resolve-label"
@@ -108,6 +111,18 @@ export interface ScriptRichTextEditorProps {
    * is allowed whenever `onFeedbackStickersChange` is set and the editor is not disabled.
    */
   stickerPermissionContext?: ScriptStickerPermissionContext | null
+  /**
+   * When this value changes, the editor body is reset from `initialContent` (and orphan
+   * sticker nodes are pruned). Omit for purely local editing: if you tie `initialContent`
+   * to the same state as `onChange`, the key must stay stable while typing or the caret
+   * will jump to the end on every keystroke.
+   */
+  contentSyncKey?: string | number
+  /**
+   * When true, inline comment markers and range highlights are not shown in the document.
+   * Threads/sidebar and API sync are unchanged.
+   */
+  hideInlineCommentPresentation?: boolean
 }
 
 const scriptContentLockPluginKey = new PluginKey("scriptContentReadOnlyLock")
@@ -164,6 +179,8 @@ export function ScriptRichTextEditor({
   feedbackStickerAuthorId,
   contentReadOnly = false,
   stickerPermissionContext = null,
+  contentSyncKey,
+  hideInlineCommentPresentation = false,
 }: ScriptRichTextEditorProps) {
   const stickersRef = useRef<Record<string, ScriptFeedbackSticker>>({})
   const contentReadOnlyRef = useRef(false)
@@ -201,6 +218,12 @@ export function ScriptRichTextEditor({
   const prevStickerIdsInDocRef = useRef<Set<string>>(new Set())
   const selectedCommentIdRef = useRef<string | null>(null)
   const onCommentRangeClickRef = useRef<(id: string) => void>(() => {})
+  const anchorSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hideInlinePresentationRef = useRef(hideInlineCommentPresentation)
+
+  useLayoutEffect(() => {
+    hideInlinePresentationRef.current = hideInlineCommentPresentation
+  }, [hideInlineCommentPresentation])
 
   useLayoutEffect(() => {
     showStickerToolsRef.current = showStickerTools
@@ -242,6 +265,7 @@ export function ScriptRichTextEditor({
     () => ({
       getStickers: () => stickersRef.current,
       onOpenDetail: (id) => onOpenDetailRef.current(id),
+      shouldHideInlinePresentation: () => hideInlinePresentationRef.current,
     }),
     []
   )
@@ -255,6 +279,7 @@ export function ScriptRichTextEditor({
     () => ({
       getStickers: () => stickersRef.current,
       getSelectedId: () => selectedCommentIdRef.current,
+      suppressInlineDecorations: () => hideInlinePresentationRef.current,
     }),
     []
   )
@@ -294,7 +319,7 @@ export function ScriptRichTextEditor({
     () => ({
       attributes: {
         class:
-          "min-h-[200px] focus:outline-none px-3 py-2 text-sm leading-relaxed [&_p]:mb-2 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-bold [&_h3]:mb-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_a]:text-primary [&_a]:underline",
+          "min-h-[200px] min-w-0 max-w-full break-words [overflow-wrap:anywhere] focus:outline-none px-3 py-2 text-sm leading-relaxed [&_p]:mb-2 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-bold [&_h3]:mb-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_a]:text-primary [&_a]:underline [&_a]:break-all",
       },
       handleDOMEvents: {
         click(_view: EditorView, event: MouseEvent) {
@@ -365,12 +390,41 @@ export function ScriptRichTextEditor({
           if (changed) onFeedbackStickersChange(next)
         }
       }
+      if (
+        onFeedbackStickersChangeRef.current &&
+        Object.keys(stickersRef.current).length > 0
+      ) {
+        if (anchorSyncTimerRef.current) clearTimeout(anchorSyncTimerRef.current)
+        anchorSyncTimerRef.current = setTimeout(() => {
+          anchorSyncTimerRef.current = null
+          const current = editorRef.current
+          if (!current || current.isDestroyed) return
+          const cb = onFeedbackStickersChangeRef.current
+          if (!cb) return
+          const live = getCommentHighlightRangeState(current.state)?.ranges
+          if (!live?.size) return
+          const merged = feedbackStickersWithAnchorsFromLiveRanges(
+            stickersRef.current,
+            current,
+            live
+          )
+          if (merged !== stickersRef.current) {
+            cb(merged)
+          }
+        }, 400)
+      }
     },
   })
 
   useEffect(() => {
     editorRef.current = editor
   }, [editor])
+
+  useEffect(() => {
+    return () => {
+      if (anchorSyncTimerRef.current) clearTimeout(anchorSyncTimerRef.current)
+    }
+  }, [])
 
   const openAddStickerDialog = useCallback(() => {
     const ed = editorRef.current
@@ -400,49 +454,41 @@ export function ScriptRichTextEditor({
     openAddStickerDialogRef.current = openAddStickerDialog
   }, [openAddStickerDialog])
 
-  const setContent = useCallback(
-    (html: string) => {
-      editor?.commands.setContent(html || "<p></p>")
-    },
-    [editor]
-  )
-
-  useEffect(() => {
-    prevStickerIdsInDocRef.current = new Set()
-    setContent(initialContent || "<p></p>")
-  }, [initialContent, setContent])
-
   /**
-   * Drop inline marker nodes when there are no comment threads, or when the doc still
-   * contains markers from a previous script version / revision (id not in the current map).
-   * Runs before hydration so API-backed markers can be re-inserted by anchor.
+   * Reset body from `initialContent` only when `contentSyncKey` changes (external load:
+   * new script version, version dropdown, etc.). Do **not** sync on every `initialContent`
+   * change — parents often pass `editContent` as `initialContent`, which updates every
+   * keystroke and would call `setContent` repeatedly (caret jumps to end).
    */
   useEffect(() => {
-    if (!editor) return
-    const stickers = feedbackStickers ?? {}
-    const stickerIds = new Set(Object.keys(stickers))
-    const mapEmpty = stickerIds.size === 0
+    if (!editor || contentSyncKey === undefined) return
+    prevStickerIdsInDocRef.current = new Set()
+    editor.commands.setContent(initialContent || "<p></p>")
+    pruneOrphanFeedbackStickerNodes(
+      editor,
+      new Set(Object.keys(stickersRef.current))
+    )
+    queueMicrotask(() => {
+      if (editor.isDestroyed) return
+      editor.view.dispatch(
+        editor.state.tr.setMeta(commentRangeHighlightPluginKey, {
+          kind: "full-reset",
+        })
+      )
+    })
+    /* `initialContent` is applied here but omitted from deps: it must be the value from
+       the same render as `contentSyncKey` — not every editContent keystroke. */
+  }, [editor, contentSyncKey])
 
+  /** When only the sticker map changes, prune orphan markers without resetting body text. */
+  useEffect(() => {
+    if (!editor) return
     const ed = editor
+    const ids = new Set(Object.keys(feedbackStickers ?? {}))
     let cancelled = false
     queueMicrotask(() => {
       if (cancelled || ed.isDestroyed) return
-      const ranges: { from: number; to: number }[] = []
-      ed.state.doc.descendants((node, pos) => {
-        if (node.type.name !== FEEDBACK_STICKER_NODE) return true
-        const fid = String(node.attrs.feedbackId ?? "")
-        if (mapEmpty || !stickerIds.has(fid)) {
-          ranges.push({ from: pos, to: pos + node.nodeSize })
-        }
-        return true
-      })
-      if (ranges.length === 0) return
-      ranges.sort((a, b) => b.from - a.from)
-      let chain = ed.chain()
-      for (const r of ranges) {
-        chain = chain.deleteRange({ from: r.from, to: r.to })
-      }
-      chain.run()
+      pruneOrphanFeedbackStickerNodes(ed, ids)
     })
     return () => {
       cancelled = true
@@ -488,7 +534,7 @@ export function ScriptRichTextEditor({
     }
   }, [editor, feedbackStickersSyncKey])
 
-  /** Refresh comment-range decorations when sticker map or selection changes (refs read inside plugin). */
+  /** Reconcile highlight ranges when sticker list changes (merge new ids; keep live-mapped ranges). */
   useEffect(() => {
     if (!editor) return
     const ed = editor
@@ -496,13 +542,33 @@ export function ScriptRichTextEditor({
     queueMicrotask(() => {
       if (cancelled || ed.isDestroyed) return
       ed.view.dispatch(
-        ed.state.tr.setMeta(commentRangeHighlightPluginKey, true)
+        ed.state.tr.setMeta(commentRangeHighlightPluginKey, {
+          kind: "sticker-sync",
+        })
       )
     })
     return () => {
       cancelled = true
     }
-  }, [editor, feedbackStickersSyncKey, selectedCommentId])
+  }, [editor, feedbackStickersSyncKey])
+
+  /** Redraw highlight selection styling when sidebar selection changes. */
+  useEffect(() => {
+    if (!editor) return
+    const ed = editor
+    let cancelled = false
+    queueMicrotask(() => {
+      if (cancelled || ed.isDestroyed) return
+      ed.view.dispatch(
+        ed.state.tr.setMeta(commentRangeHighlightPluginKey, {
+          kind: "selection",
+        })
+      )
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [editor, selectedCommentId])
 
   useEffect(() => {
     editor?.setEditable(
@@ -723,7 +789,7 @@ export function ScriptRichTextEditor({
     <>
       <div
         className={cn(
-          "overflow-hidden rounded-lg border border-input bg-background",
+          "w-full max-w-full min-w-0 overflow-hidden rounded-lg border border-input bg-background",
           disabled && "cursor-default",
           showCommentsSidebar &&
             "flex min-h-[min(420px,55vh)] flex-col lg:min-h-[320px] lg:flex-row lg:items-stretch",
@@ -732,9 +798,9 @@ export function ScriptRichTextEditor({
       >
         <div
           className={cn(
-            "flex min-h-0 flex-1 flex-col",
+            "flex min-h-0 min-w-0 max-w-full flex-1 flex-col",
             showCommentsSidebar &&
-              "min-w-0 border-b border-input lg:border-r lg:border-b-0"
+              "border-b border-input lg:border-r lg:border-b-0"
           )}
         >
           <div className="border-b border-input bg-muted/30">
@@ -904,7 +970,7 @@ export function ScriptRichTextEditor({
               ) : null}
             </div>
             {contentReadOnly && showStickerTools ? (
-              <div className="border-t border-border/60 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
+              <div className="break-words border-t border-border/60 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
                 <span className="font-medium text-foreground/80">
                   Inline comments
                 </span>{" "}
@@ -924,7 +990,8 @@ export function ScriptRichTextEditor({
           <div
             ref={editorShellRef}
             className={cn(
-              showCommentsSidebar && "min-h-0 flex-1 overflow-y-auto"
+              "min-w-0 max-w-full",
+              showCommentsSidebar && "min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
             )}
             style={showCommentsSidebar ? undefined : { minHeight }}
           >

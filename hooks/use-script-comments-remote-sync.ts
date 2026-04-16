@@ -121,12 +121,21 @@ export function useScriptCommentsRemoteSync({
               const anchorChanged =
                 JSON.stringify(a.anchor ?? null) !==
                 JSON.stringify(b.anchor ?? null)
-              const bodyOrMetaChanged =
+              const textOrSnippetChanged =
                 a.body !== b.body ||
-                (a.contextSnippet ?? "") !== (b.contextSnippet ?? "") ||
-                anchorChanged
+                (a.contextSnippet ?? "") !== (b.contextSnippet ?? "")
               const resolvedChanged =
                 Boolean(a.resolved) !== Boolean(b.resolved)
+              /**
+               * Anchor-only updates happen while editing script body (live range mapping).
+               * Those belong in script save (`PATCH /api/scripts/:id` with `comments`), not
+               * `PATCH .../comments/:id` per keystroke/debounce.
+               */
+              if (anchorChanged && !textOrSnippetChanged && !resolvedChanged) {
+                continue
+              }
+              const bodyOrMetaChanged =
+                textOrSnippetChanged || anchorChanged
               if (bodyOrMetaChanged || resolvedChanged) {
                 const patchBody =
                   resolvedChanged && !bodyOrMetaChanged

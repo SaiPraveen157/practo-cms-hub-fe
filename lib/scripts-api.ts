@@ -129,7 +129,13 @@ export async function approveScript(
   })
 }
 
-/** Phase 2: Content/Brand reject → CONTENT_BRAND_REVIEW to DRAFT (feedback to Medical Affairs) */
+/**
+ * Reject script — destination depends on current status (see Phase 3 flow):
+ * - CONTENT_BRAND_REVIEW → DRAFT (Medical Affairs)
+ * - MEDICAL_REVIEW → AGENCY_PRODUCTION
+ * - CONTENT_BRAND_APPROVAL → AGENCY_PRODUCTION (Brand)
+ * - CONTENT_APPROVER_REVIEW → AGENCY_PRODUCTION (Content Approver)
+ */
 export async function rejectScript(
   token: string | null,
   id: string,
