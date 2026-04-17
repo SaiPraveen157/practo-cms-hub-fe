@@ -16,6 +16,7 @@ export const LANGUAGE_VIDEO_STATUS_LABELS: Record<
 export const PACKAGE_LANGUAGE_LABELS: Record<PackageLanguage, string> = {
   ENGLISH: "English",
   HINDI: "Hindi",
+  BENGALI: "Bengali",
   TAMIL: "Tamil",
   TELUGU: "Telugu",
   KANNADA: "Kannada",
@@ -23,8 +24,10 @@ export const PACKAGE_LANGUAGE_LABELS: Record<PackageLanguage, string> = {
   MARATHI: "Marathi",
 }
 
+/** Target languages Agency can create a Phase 7 package for (per script). */
 export const PHASE_7_CREATE_LANGUAGES: PackageLanguage[] = [
   "HINDI",
+  "BENGALI",
   "TAMIL",
   "TELUGU",
   "KANNADA",

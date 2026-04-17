@@ -12,7 +12,7 @@ export default function ProtectedHomeRedirect() {
   const user = useAuthStore((s) => s.user)
 
   useEffect(() => {
-    const roleHome = user?.role ? getHomePathForRole(user.role as UserRole) : "/admin"
+    const roleHome = user?.role ? getHomePathForRole(user.role as UserRole) : "/dashboard"
     router.replace(roleHome)
   }, [user?.role, router])
 

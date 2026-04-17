@@ -25,6 +25,8 @@ import {
   User,
   Settings,
   ChevronLeft,
+  Home,
+  BarChart3,
 } from "lucide-react"
 import { GSAP_DURATION, GSAP_EASE, prefersReducedMotion } from "@/lib/gsap-motion"
 import { cn } from "@/lib/utils"
@@ -56,6 +58,8 @@ const iconMap: Record<
   "book-open": BookOpen,
   user: User,
   settings: Settings,
+  home: Home,
+  "bar-chart": BarChart3,
 }
 
 function getInitials(firstName: string, lastName: string, email: string) {
@@ -200,7 +204,9 @@ export function AppSidebar() {
         className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2"
       >
         {navItems.map((item) => {
-          const isActive = pathname === item.href
+          const isActive =
+            pathname === item.href ||
+            (item.href !== "/" && pathname.startsWith(`${item.href}/`))
           const Icon = iconMap[item.icon] ?? LayoutDashboard
           const showUnreadBadge =
             (item.key === "NOTIFICATIONS" || item.key === "NOCIFICATIONS") &&
@@ -211,10 +217,10 @@ export function AppSidebar() {
               href={item.href}
               title={collapsed ? item.label : undefined}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
                 isActive
-                  ? "bg-blue-600 text-white"
-                  : "text-slate-300 hover:bg-slate-700/50 hover:text-white"
+                  ? "bg-white/10 text-white shadow-sm"
+                  : "text-slate-400 hover:bg-slate-700/50 hover:text-white"
               )}
             >
               <span className="relative shrink-0">

@@ -8,6 +8,7 @@ import type { PackageScriptRef, PackageUserRef } from "@/types/package"
 export type PackageLanguage =
   | "ENGLISH"
   | "HINDI"
+  | "BENGALI"
   | "TAMIL"
   | "TELUGU"
   | "KANNADA"

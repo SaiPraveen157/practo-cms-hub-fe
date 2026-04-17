@@ -18,6 +18,8 @@ export type SidebarNavIcon =
   | "book-open"
   | "user"
   | "settings"
+  | "home"
+  | "bar-chart"
 
 export interface SidebarNavItem {
   label: string

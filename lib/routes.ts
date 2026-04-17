@@ -9,7 +9,8 @@ export const ROUTES = {
   UPLOAD_WITH_ID: "/upload/[id]",
   MY_TOPICS: "/my-topics",
   REVIEW_QUEUE: "/review-queue",
-  USERS: "/users",
+  USERS: "/admin/users",
+  WORKFLOW_TOOLS: "/admin/workflow-tools",
   SETTINGS: "/settings",
   USER_PROFILE: "/profile",
   NOTIFICATIONS: "/notifications",
@@ -60,17 +61,20 @@ export const ROUTE_META: Record<
       | "book-open"
       | "user"
       | "settings"
+      | "home"
+      | "bar-chart"
   }
 > = {
   LOGIN: { label: "Login", icon: "layout-dashboard" },
   FORGET_PASSWORD: { label: "Forgot Password", icon: "layout-dashboard" },
   RESET_PASSWORD: { label: "Reset Password", icon: "layout-dashboard" },
-  DASHBOARD: { label: "Dashboard", icon: "layout-dashboard" },
+  DASHBOARD: { label: "Dashboard", icon: "home" },
   UPLOAD: { label: "Upload", icon: "upload" },
   UPLOAD_WITH_ID: { label: "Upload", icon: "upload" },
   MY_TOPICS: { label: "My Topics", icon: "folder-open" },
-  REVIEW_QUEUE: { label: "Review Queue", icon: "clipboard-list" },
+  REVIEW_QUEUE: { label: "Review Queue", icon: "bar-chart" },
   USERS: { label: "Users", icon: "users" },
+  WORKFLOW_TOOLS: { label: "Workflow tools", icon: "clipboard-list" },
   SETTINGS: { label: "Settings", icon: "settings" },
   USER_PROFILE: { label: "Profile", icon: "user" },
   NOTIFICATIONS: { label: "Notifications", icon: "bell" },
@@ -105,5 +109,5 @@ export const ROUTE_META: Record<
   },
   PUBLISHER: { label: "Publisher", icon: "layout-dashboard" },
   // DOCTOR_PROFILE: { label: "Doctor Profile", icon: "user" },
-  CONTENT_LIBRARY: { label: "Content Library", icon: "folder-open" },
+  CONTENT_LIBRARY: { label: "Content Library", icon: "file-text" },
 }
