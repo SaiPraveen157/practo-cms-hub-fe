@@ -1,0 +1,324 @@
+{
+  "info": {
+    "name": "Practo CMS V2 — Super Admin Dashboard APIs",
+    "description": "All admin dashboard endpoints for Super Admin role.\n\nLogin: admin@practo.com / Admin@123\nBase URL: http://164.52.204.34:5001/api\n\nAll endpoints require view_analytics permission (Super Admin only).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://164.52.204.34:5001/api" },
+    { "key": "admin_token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0. Login (Super Admin)",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/auth/login",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"admin@practo.com\",\n  \"password\": \"Admin@123\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": ["var data = pm.response.json(); pm.collectionVariables.set('admin_token', data.token);"] }
+      }]
+    },
+    {
+      "name": "1. Dashboard Overview",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/overview",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "2. Overdue Items",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/overdue",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "3a. Team Performance (this week)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/team-performance?period=week",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "3b. Team Performance (today)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/team-performance?period=today",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "3c. Team Performance (this month)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/team-performance?period=month",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "4. Script Timeline (replace :scriptId)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/script-timeline/:scriptId",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "5a. Rejection Report (this month)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/rejection-report?period=month",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "5b. Rejection Report (all time)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/rejection-report?period=all",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "6a. Pipeline Metrics (this month)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/pipeline?period=month",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "6b. Pipeline Metrics (all time)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/pipeline?period=all",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "7a. Content List (all, page 1)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/content?page=1&limit=20&sort=newest",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "7b. Content — Search",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/content?search=diabetes",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "7c. Content — Filter by Phase",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/content?phase=FINAL_PACKAGE",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "7d. Content — Filter by Status",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/content?status=APPROVED",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "7e. Content — Filter by Specialty",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/content?specialty=ENDOCRINOLOGY",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "7f. Content — Filter by Language",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/content?language=HINDI",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "7g. Content — Filter by Type",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/content?type=LONG_FORM",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "7h. Content — Combined Filters",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/admin/content?phase=FINAL_PACKAGE&specialty=ENDOCRINOLOGY&type=LONG_FORM&sort=newest",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "8a. User Management — List All",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/users",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ]
+      }
+    },
+    {
+      "name": "8b. User Management — Create User",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/users",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"firstName\": \"New\",\n  \"lastName\": \"User\",\n  \"email\": \"newuser@practo.com\",\n  \"password\": \"Admin@123\",\n  \"role\": \"MEDICAL_AFFAIRS\"\n}"
+        }
+      }
+    },
+    {
+      "name": "8c. User Management — Edit User",
+      "request": {
+        "method": "PATCH",
+        "url": "{{base_url}}/users/:userId",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"firstName\": \"Updated\",\n  \"lastName\": \"Name\",\n  \"email\": \"updated@practo.com\"\n}"
+        }
+      }
+    },
+    {
+      "name": "8d. User Management — Reset Password",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/users/:userId/reset-password",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"newPassword\": \"NewPassword@123\"\n}"
+        }
+      }
+    },
+    {
+      "name": "8e. User Management — Toggle Status",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/users/toggle-status",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"<user-id-here>\"\n}"
+        }
+      }
+    },
+    {
+      "name": "8f. User Management — Update Role",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/users/update-role",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"<user-id-here>\",\n  \"role\": \"CONTENT_BRAND\"\n}"
+        }
+      }
+    },
+    {
+      "name": "8g. User Management — Force Move Workflow",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/users/force-move-workflow",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"contentId\": \"<script-id-here>\",\n  \"targetStage\": \"LOCKED\"\n}"
+        }
+      }
+    },
+    {
+      "name": "8h. User Management — Unlock Script",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/users/unlock-content",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"contentId\": \"<script-id-here>\"\n}"
+        }
+      }
+    }
+  ]
+}

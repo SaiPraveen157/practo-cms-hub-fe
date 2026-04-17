@@ -616,7 +616,8 @@ export default function AgencyNewLanguagePackagePage() {
                     </Select>
                     {languageOptions.length === 0 ? (
                       <p className="text-sm text-amber-600 dark:text-amber-400">
-                        All six target languages already have a package for this
+                        All {PHASE_7_CREATE_LANGUAGES.length} target languages already
+                        have a package for this
                         script. Open an existing package to add videos.
                       </p>
                     ) : null}

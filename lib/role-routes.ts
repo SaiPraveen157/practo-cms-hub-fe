@@ -5,7 +5,7 @@ import type { UserRole } from "@/types/auth"
  * Each role lands on their scripts list by default.
  */
 export const ROLE_HOME: Record<UserRole, string> = {
-  SUPER_ADMIN: "/admin",
+  SUPER_ADMIN: "/dashboard",
   MEDICAL_AFFAIRS: "/medical-affairs-scripts",
   CONTENT_BRAND: "/content-brand-reviewer",
   AGENCY_POC: "/agency-poc",
@@ -13,7 +13,7 @@ export const ROLE_HOME: Record<UserRole, string> = {
 }
 
 export function getHomePathForRole(role: UserRole): string {
-  return ROLE_HOME[role] ?? "/admin"
+  return ROLE_HOME[role] ?? "/dashboard"
 }
 
 export const ROLE_LABELS: Record<UserRole, string> = {
