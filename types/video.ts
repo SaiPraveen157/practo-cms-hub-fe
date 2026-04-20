@@ -114,6 +114,8 @@ export interface SubmitVideoResponse {
 export interface VideoQueueResponse {
   available: Video[]
   myReviews: Video[]
+  /** Optional fourth bucket from some backends — merged client-side with available + myReviews. */
+  pendingUpload?: Video[]
   total: number
 }
 

@@ -1,13 +1,6 @@
 "use client"
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type Dispatch,
-  type SetStateAction,
-} from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useParams, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -51,6 +44,11 @@ import {
   LANGUAGE_VIDEO_STATUS_LABELS,
 } from "@/lib/language-package-ui"
 import { LanguageVideoPlayerWithThread } from "@/components/language-packages/language-video-player-with-thread"
+import {
+  emptyLangRejectDraft,
+  RejectLanguageVideoDialogBody,
+  type LangRejectDraft,
+} from "@/components/language-packages/reject-language-video-dialog-body"
 import { TagPillList } from "@/components/packages/tag-pill-list"
 import { languageVideoAwaitingAgencyAfterBrandRejectOnCurrentAsset } from "@/lib/language-phase-gates"
 import { formatPackageDate } from "@/lib/package-ui"
@@ -60,42 +58,12 @@ import {
   VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
   videoThreadBlocksApprove,
 } from "@/lib/video-comment"
-import { formatVideoTimestamp } from "@/lib/video-timestamp"
 import { useLanguageVideoThreadBlockMap } from "@/hooks/use-language-video-thread-block-map"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
 const VIDEO_CLASS =
   "h-auto w-full max-w-full object-contain max-h-[min(85vh,40rem)]"
-
-type LangRejectFieldState = { flag: boolean; comment: string }
-
-/** Same shape as Phase 6 metadata reject thumbnails (`MetaRejectThumbState`). */
-type LangRejectThumbRow = { reject: boolean; comment: string }
-
-type LangRejectDraft = {
-  overallComments: string
-  title: LangRejectFieldState
-  description: LangRejectFieldState
-  tags: LangRejectFieldState
-  thumbs: Record<string, LangRejectThumbRow>
-}
-
-function emptyLangRejectDraft(
-  asset?: LanguageVideoAsset | null
-): LangRejectDraft {
-  const thumbs: Record<string, LangRejectThumbRow> = {}
-  for (const t of asset?.thumbnails ?? []) {
-    thumbs[t.id] = { reject: false, comment: "" }
-  }
-  return {
-    overallComments: "",
-    title: { flag: false, comment: "" },
-    description: { flag: false, comment: "" },
-    tags: { flag: false, comment: "" },
-    thumbs,
-  }
-}
 
 export default function ContentBrandLanguagePackageDetailPage() {
   const params = useParams()
@@ -312,9 +280,22 @@ export default function ContentBrandLanguagePackageDetailPage() {
     const d = rejectDraft
     const itemFeedback: LanguageItemFeedbackEntry[] = []
 
+    if (d.video.flag) {
+      if (!d.video.comment.trim()) {
+        toast.error("Add a comment for the video file.")
+        return
+      }
+      itemFeedback.push({
+        videoAssetId: asset.id,
+        field: "video",
+        hasIssue: true,
+        comment: d.video.comment.trim(),
+      })
+    }
+
     const pushField = (
       field: "title" | "description" | "tags",
-      state: LangRejectFieldState
+      state: { flag: boolean; comment: string }
     ) => {
       if (!state.flag) return
       if (!state.comment.trim()) {
@@ -720,6 +701,7 @@ export default function ContentBrandLanguagePackageDetailPage() {
         >
           {rejectTargetVideo && rejectAsset ? (
             <RejectLanguageVideoDialogBody
+              variant="brand"
               asset={rejectAsset}
               videoLabel={
                 rejectAsset.title?.trim() ||
@@ -744,330 +726,5 @@ export default function ContentBrandLanguagePackageDetailPage() {
         </DialogContent>
       </Dialog>
     </div>
-  )
-}
-
-function RejectLanguageVideoDialogBody({
-  asset,
-  videoLabel,
-  draft,
-  setDraft,
-  timelineComments,
-  timelineLoading,
-  onCancel,
-  onSubmit,
-  isPending,
-}: {
-  asset: LanguageVideoAsset
-  videoLabel: string
-  draft: LangRejectDraft
-  setDraft: Dispatch<SetStateAction<LangRejectDraft>>
-  timelineComments: VideoComment[]
-  timelineLoading: boolean
-  onCancel: () => void
-  onSubmit: () => void
-  isPending: boolean
-}) {
-  const titlePreview = (asset.title ?? "").trim() || "—"
-  const descPreview = (asset.description ?? "").trim() || "—"
-
-  return (
-    <>
-      <DialogHeader className="shrink-0 space-y-2 border-b border-border px-6 py-4 pr-14">
-        <DialogTitle>Reject language video</DialogTitle>
-        <DialogDescription>
-          <span className="font-medium text-foreground">{videoLabel}</span> —
-          Review the timestamp comments below before sending. You can reject
-          using those only, or add an overall summary. Flag title, description,
-          or tags, or reject thumbnails — each flagged item needs a comment.
-          Thumbnail reviews are saved first, then the rejection is sent.
-        </DialogDescription>
-      </DialogHeader>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-        <div className="space-y-6">
-          <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-4">
-            <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-              Video — timestamp comments (this version)
-            </p>
-            {timelineLoading ? (
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin shrink-0" />
-                Loading comments…
-              </p>
-            ) : timelineComments.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No timestamp comments on this version yet. Add them on the video
-                player, or use the overall summary and metadata sections below.
-              </p>
-            ) : (
-              <ul className="max-h-[min(12rem,40vh)] space-y-3 overflow-y-auto pr-1">
-                {timelineComments.map((c) => {
-                  const ts = c.timestampSeconds
-                  const label =
-                    ts != null && Number.isFinite(ts)
-                      ? formatVideoTimestamp(ts)
-                      : "—"
-                  const author =
-                    c.author &&
-                    `${c.author.firstName ?? ""} ${c.author.lastName ?? ""}`.trim()
-                  return (
-                    <li
-                      key={c.id}
-                      className="rounded-md border border-border bg-background p-3 text-sm"
-                    >
-                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-                        <span className="font-mono font-medium tabular-nums text-foreground">
-                          {label}
-                        </span>
-                        {author ? <span>{author}</span> : null}
-                      </div>
-                      <p className="mt-1.5 whitespace-pre-wrap text-foreground">
-                        {c.content}
-                      </p>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="lang-reject-overall">
-              Overall summary (optional)
-            </Label>
-            <Textarea
-              id="lang-reject-overall"
-              value={draft.overallComments}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, overallComments: e.target.value }))
-              }
-              rows={2}
-              placeholder="Optional note for the rejection record (e.g. if you only use timestamp comments on the video, you can leave this blank)."
-              className="resize-y"
-            />
-          </div>
-
-          <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
-            <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-              Title, description & tags
-            </p>
-
-            <label className="flex cursor-pointer gap-3 rounded-md border border-transparent p-2 hover:bg-muted/40 has-checked:border-border has-checked:bg-background">
-              <input
-                type="checkbox"
-                checked={draft.title.flag}
-                onChange={(e) =>
-                  setDraft((d) => ({
-                    ...d,
-                    title: { ...d.title, flag: e.target.checked },
-                  }))
-                }
-                className="mt-1 size-4 shrink-0 rounded border-input"
-              />
-              <div className="min-w-0 flex-1 space-y-2">
-                <span className="text-sm font-medium">Title</span>
-                <p className="line-clamp-3 text-xs text-muted-foreground">
-                  {titlePreview}
-                </p>
-                {draft.title.flag ? (
-                  <Textarea
-                    value={draft.title.comment}
-                    onChange={(e) =>
-                      setDraft((d) => ({
-                        ...d,
-                        title: { ...d.title, comment: e.target.value },
-                      }))
-                    }
-                    rows={2}
-                    placeholder="What should change in the title?"
-                    className="resize-y text-sm"
-                  />
-                ) : null}
-              </div>
-            </label>
-
-            <label className="flex cursor-pointer gap-3 rounded-md border border-transparent p-2 hover:bg-muted/40 has-checked:border-border has-checked:bg-background">
-              <input
-                type="checkbox"
-                checked={draft.description.flag}
-                onChange={(e) =>
-                  setDraft((d) => ({
-                    ...d,
-                    description: {
-                      ...d.description,
-                      flag: e.target.checked,
-                    },
-                  }))
-                }
-                className="mt-1 size-4 shrink-0 rounded border-input"
-              />
-              <div className="min-w-0 flex-1 space-y-2">
-                <span className="text-sm font-medium">Description</span>
-                <p className="line-clamp-4 text-xs whitespace-pre-wrap text-muted-foreground">
-                  {descPreview}
-                </p>
-                {draft.description.flag ? (
-                  <Textarea
-                    value={draft.description.comment}
-                    onChange={(e) =>
-                      setDraft((d) => ({
-                        ...d,
-                        description: {
-                          ...d.description,
-                          comment: e.target.value,
-                        },
-                      }))
-                    }
-                    rows={3}
-                    placeholder="What should change in the description?"
-                    className="resize-y text-sm"
-                  />
-                ) : null}
-              </div>
-            </label>
-
-            <label className="flex cursor-pointer gap-3 rounded-md border border-transparent p-2 hover:bg-muted/40 has-checked:border-border has-checked:bg-background">
-              <input
-                type="checkbox"
-                checked={draft.tags.flag}
-                onChange={(e) =>
-                  setDraft((d) => ({
-                    ...d,
-                    tags: { ...d.tags, flag: e.target.checked },
-                  }))
-                }
-                className="mt-1 size-4 shrink-0 rounded border-input"
-              />
-              <div className="min-w-0 flex-1 space-y-2">
-                <span className="text-sm font-medium">Tags</span>
-                <TagPillList
-                  tags={asset.tags ?? []}
-                  emptyLabel={
-                    <span className="text-xs text-muted-foreground">—</span>
-                  }
-                />
-                {draft.tags.flag ? (
-                  <Textarea
-                    value={draft.tags.comment}
-                    onChange={(e) =>
-                      setDraft((d) => ({
-                        ...d,
-                        tags: { ...d.tags, comment: e.target.value },
-                      }))
-                    }
-                    rows={2}
-                    placeholder="What should change in the tags?"
-                    className="resize-y text-sm"
-                  />
-                ) : null}
-              </div>
-            </label>
-          </div>
-
-          {(asset.thumbnails?.length ?? 0) > 0 ? (
-            <div className="space-y-3">
-              <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                Thumbnails
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Check thumbnails to include in this rejection and add a comment
-                for each selected image. Unchecked thumbnails are marked
-                approved when you submit.
-              </p>
-              <div className="grid gap-4 sm:grid-cols-2">
-                {(asset.thumbnails ?? []).map((t) => {
-                  const row = draft.thumbs[t.id] ?? {
-                    reject: false,
-                    comment: "",
-                  }
-                  return (
-                    <div
-                      key={t.id}
-                      className="overflow-hidden rounded-lg border border-border bg-card"
-                    >
-                      <a
-                        href={t.fileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block aspect-video bg-muted"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={t.fileUrl}
-                          alt={t.fileName ?? "Thumbnail"}
-                          className="size-full object-cover"
-                        />
-                      </a>
-                      <div className="space-y-2 p-3">
-                        <p className="truncate text-xs text-muted-foreground">
-                          {t.fileName ?? t.id.slice(0, 8)}
-                        </p>
-                        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
-                          <input
-                            type="checkbox"
-                            checked={row.reject}
-                            onChange={(e) =>
-                              setDraft((d) => ({
-                                ...d,
-                                thumbs: {
-                                  ...d.thumbs,
-                                  [t.id]: {
-                                    reject: e.target.checked,
-                                    comment: e.target.checked
-                                      ? (d.thumbs[t.id]?.comment ?? "")
-                                      : "",
-                                  },
-                                },
-                              }))
-                            }
-                            className="size-4 shrink-0 rounded border-input"
-                          />
-                          Reject this thumbnail
-                        </label>
-                        {row.reject ? (
-                          <Textarea
-                            value={row.comment}
-                            onChange={(e) =>
-                              setDraft((d) => ({
-                                ...d,
-                                thumbs: {
-                                  ...d.thumbs,
-                                  [t.id]: {
-                                    ...row,
-                                    comment: e.target.value,
-                                  },
-                                },
-                              }))
-                            }
-                            rows={2}
-                            placeholder="What is wrong with this thumbnail?"
-                            className="resize-y text-xs"
-                          />
-                        ) : null}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      <DialogFooter className="mx-0 mb-0 shrink-0 border-t border-border bg-muted/30 px-6 py-4 sm:mx-0">
-        <Button variant="outline" onClick={onCancel} disabled={isPending}>
-          Cancel
-        </Button>
-        <Button variant="destructive" onClick={onSubmit} disabled={isPending}>
-          {isPending ? (
-            <Loader2 className="mr-2 size-4 animate-spin" />
-          ) : (
-            <XCircle className="mr-2 size-4" />
-          )}
-          Reject & send feedback
-        </Button>
-      </DialogFooter>
-    </>
   )
 }

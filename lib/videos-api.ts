@@ -153,6 +153,7 @@ export async function getVideoQueue(
     ...res,
     available: (res.available ?? []).map(coerceVideoFileCategory),
     myReviews: (res.myReviews ?? []).map(coerceVideoFileCategory),
+    pendingUpload: (res.pendingUpload ?? []).map(coerceVideoFileCategory),
   }
 }
 

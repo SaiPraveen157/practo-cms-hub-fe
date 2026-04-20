@@ -363,7 +363,9 @@ export default function ContentBrandReviewerScriptPage() {
                 Script
               </p>
               {versionView.listError ? (
-                <p className="text-xs text-destructive">{versionView.listError}</p>
+                <p className="text-xs text-destructive">
+                  {versionView.listError}
+                </p>
               ) : null}
               <ScriptStickerVersionToolbar
                 showToolbar={versionView.showToolbar}
@@ -380,7 +382,9 @@ export default function ContentBrandReviewerScriptPage() {
                   <Loader2 className="size-8 animate-spin text-muted-foreground" />
                 </div>
               ) : brandViewDisp.mode === "error" ? (
-                <p className="text-sm text-destructive">{brandViewDisp.message}</p>
+                <p className="text-sm text-destructive">
+                  {brandViewDisp.message}
+                </p>
               ) : (
                 <>
                   {brandViewDisp.mode === "snapshot" &&
@@ -390,17 +394,19 @@ export default function ContentBrandReviewerScriptPage() {
                       data). Comments still appear in the sidebar.
                     </p>
                   ) : null}
+                  {/* Live editor = current version. Snapshot mode keeps inline markers for historical review. */}
                   <ScriptRichTextEditor
                     key={`${script.id}-cb-${versionView.selectValue || "live"}-${script.updatedAt}`}
                     initialContent={
                       brandViewDisp.mode === "live"
-                        ? script.content ?? ""
+                        ? (script.content ?? "")
                         : brandViewDisp.html
                     }
                     minHeight="min(480px, 55vh)"
                     className="mt-1"
                     hideInlineCommentPresentation={
-                      brandViewDisp.mode === "live" && !canTakeAction
+                      brandViewDisp.mode === "live" &&
+                      (!canTakeAction || !hasPendingStickerComments)
                     }
                     stickerPermissionContext={
                       brandViewDisp.mode === "live"
@@ -554,7 +560,8 @@ export default function ContentBrandReviewerScriptPage() {
                 <>
                   The script will move to Agency Production. Agency can fix and
                   resubmit; it will go through Medical Affairs and Content/Brand
-                  again. Enter a rejection reason below (required). TAT 24 hours.
+                  again. Enter a rejection reason below (required). TAT 24
+                  hours.
                 </>
               ) : (
                 <>
@@ -568,7 +575,9 @@ export default function ContentBrandReviewerScriptPage() {
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="reject-comments">
-              {canFinalApprove ? "Rejection reason (required)" : "Feedback (required)"}
+              {canFinalApprove
+                ? "Rejection reason (required)"
+                : "Feedback (required)"}
             </Label>
             <Textarea
               id="reject-comments"

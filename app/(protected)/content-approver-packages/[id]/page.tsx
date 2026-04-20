@@ -34,6 +34,7 @@ import {
   getPackage,
   getPackageSpecialties,
   getPackageVideoComments,
+  rejectPackageVideo,
 } from "@/lib/packages-api"
 import { labelForSpecialtyValue } from "@/lib/package-specialty-label"
 import {
@@ -48,8 +49,10 @@ import {
 } from "@/lib/package-video-helpers"
 import type {
   FinalPackage,
+  PackageItemFeedbackEntry,
   PackageSpecialtyOption,
   PackageThumbnailRecord,
+  PackageVideo,
 } from "@/types/package"
 import type { UserRole } from "@/types/auth"
 import {
@@ -69,14 +72,23 @@ import {
   Loader2,
   Package,
   Smartphone,
+  XCircle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
+  filterVideoCommentsForAssetVersion,
   VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
   videoThreadBlocksApprove,
 } from "@/lib/video-comment"
 import { usePackageVideoThreadBlockMap } from "@/hooks/use-package-video-thread-block-map"
 import { toast } from "sonner"
+import {
+  emptyApproverP6RejectDraft,
+  PackageVideoApproverRejectDialogBody,
+  type ApproverP6FieldState,
+  type ApproverP6RejectDraft,
+} from "@/components/packages/package-video-approver-reject-dialog-body"
+import type { VideoComment } from "@/types/video"
 
 function thumbBadgeClass(s: PackageThumbnailRecord["status"]) {
   switch (s) {
@@ -110,6 +122,18 @@ export default function ContentApproverPackageDetailPage() {
   const [approveOpen, setApproveOpen] = useState(false)
   const [approveComments, setApproveComments] = useState("")
   const [busy, setBusy] = useState(false)
+
+  const [rejectTargetVideo, setRejectTargetVideo] = useState<PackageVideo | null>(
+    null
+  )
+  const [rejectDraft, setRejectDraft] = useState<ApproverP6RejectDraft>(() =>
+    emptyApproverP6RejectDraft()
+  )
+  const [rejectTimelineComments, setRejectTimelineComments] = useState<
+    VideoComment[]
+  >([])
+  const [rejectTimelineLoading, setRejectTimelineLoading] = useState(false)
+  const [rejectBusy, setRejectBusy] = useState(false)
 
   const load = useCallback(async () => {
     if (!token || !id) return
@@ -160,10 +184,8 @@ export default function ContentApproverPackageDetailPage() {
     [sortedVideos]
   )
 
-  const { threadBlockByVideoId } = usePackageVideoThreadBlockMap(
-    token,
-    awaitingVideos
-  )
+  const { threadBlockByVideoId, recheckThreadBlocks } =
+    usePackageVideoThreadBlockMap(token, awaitingVideos)
 
   const anyAwaitingThreadBlocked = useMemo(
     () => awaitingVideos.some((v) => threadBlockByVideoId[v.id]),
@@ -179,6 +201,157 @@ export default function ContentApproverPackageDetailPage() {
     }, 100)
     return () => window.clearTimeout(t)
   }, [focusVideoId, loading])
+
+  useEffect(() => {
+    if (!rejectTargetVideo || !token) return
+    let cancelled = false
+    setRejectTimelineLoading(true)
+    void getPackageVideoComments(token, rejectTargetVideo.id)
+      .then((list) => {
+        if (cancelled) return
+        const scoped = filterVideoCommentsForAssetVersion(
+          list,
+          rejectTargetVideo.currentVersion
+        )
+        const sorted = [...scoped].sort(
+          (a, b) => (a.timestampSeconds ?? 0) - (b.timestampSeconds ?? 0)
+        )
+        setRejectTimelineComments(sorted)
+      })
+      .catch(() => {
+        if (!cancelled) setRejectTimelineComments([])
+      })
+      .finally(() => {
+        if (!cancelled) setRejectTimelineLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [rejectTargetVideo, token])
+
+  function openRejectDialog(video: PackageVideo) {
+    if (video.status !== "AWAITING_APPROVER") return
+    setRejectTargetVideo(video)
+    setRejectDraft(emptyApproverP6RejectDraft(video))
+  }
+
+  async function submitApproverP6Reject() {
+    if (!token || !rejectTargetVideo) return
+    const asset = getCurrentVideoAsset(rejectTargetVideo)
+    if (!asset?.id) return
+
+    const d = rejectDraft
+    const itemFeedback: PackageItemFeedbackEntry[] = []
+
+    if (d.video.flag) {
+      if (!d.video.comment.trim()) {
+        toast.error("Add a comment for the video file.")
+        return
+      }
+      itemFeedback.push({
+        videoAssetId: asset.id,
+        field: "VIDEO",
+        hasIssue: true,
+        comment: d.video.comment.trim(),
+      })
+    }
+
+    const pushField = (
+      field: "TITLE" | "DESCRIPTION" | "TAGS",
+      state: ApproverP6FieldState
+    ) => {
+      if (!state.flag) return
+      if (!state.comment.trim()) {
+        throw new Error(
+          field === "TITLE"
+            ? "Add a comment for the title."
+            : field === "DESCRIPTION"
+              ? "Add a comment for the description."
+              : "Add a comment for the tags."
+        )
+      }
+      itemFeedback.push({
+        videoAssetId: asset.id,
+        field,
+        hasIssue: true,
+        comment: state.comment.trim(),
+      })
+    }
+
+    try {
+      pushField("TITLE", d.title)
+      pushField("DESCRIPTION", d.description)
+      pushField("TAGS", d.tags)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Invalid feedback")
+      return
+    }
+
+    for (const t of thumbnailsOnAsset(asset)) {
+      const row = d.thumbs[t.id]
+      if (!row?.reject) continue
+      if (!row.comment.trim()) {
+        toast.error(
+          `Add a rejection comment for thumbnail${t.fileName ? ` “${t.fileName}”` : ""}.`
+        )
+        return
+      }
+      itemFeedback.push({
+        videoAssetId: asset.id,
+        thumbnailId: t.id,
+        field: "THUMBNAIL",
+        hasIssue: true,
+        comment: row.comment.trim(),
+      })
+    }
+
+    if (itemFeedback.length === 0) {
+      const timelineForVersion = filterVideoCommentsForAssetVersion(
+        await getPackageVideoComments(token, rejectTargetVideo.id),
+        rejectTargetVideo.currentVersion
+      )
+      const summary = d.overallComments.trim()
+      const videoOnlyComment =
+        summary ||
+        (timelineForVersion.length > 0
+          ? "Video feedback — see timestamp comments on the video."
+          : "")
+      if (!videoOnlyComment) {
+        toast.error(
+          "Add timestamp comments on the video, write an overall summary, or flag video, title, description, tags, or thumbnails — each flagged item needs a comment."
+        )
+        return
+      }
+      itemFeedback.push({
+        videoAssetId: asset.id,
+        field: "VIDEO",
+        hasIssue: true,
+        comment: videoOnlyComment,
+      })
+    }
+
+    const overall =
+      d.overallComments.trim() ||
+      "Final package video rejected — see itemized feedback below."
+
+    setRejectBusy(true)
+    try {
+      const res = await rejectPackageVideo(token, rejectTargetVideo.id, {
+        overallComments: overall,
+        itemFeedback,
+      })
+      setPkg((p) => (p ? mergeVideoIntoPackage(p, res.video) : p))
+      toast.warning(res.message ?? "Video rejected — sent back for review")
+      setRejectTargetVideo(null)
+      setRejectDraft(emptyApproverP6RejectDraft())
+      await load()
+      void recheckThreadBlocks()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Reject failed")
+    } finally {
+      setRejectBusy(false)
+    }
+  }
 
   async function handleApprovePackage() {
     if (!token || awaitingVideos.length === 0) return
@@ -258,6 +431,9 @@ export default function ContentApproverPackageDetailPage() {
   const showPackageApprove =
     packageUnlocked && awaitingVideos.length > 0 && canAccess
 
+  const canRejectAwaitingDeliverable = (video: PackageVideo) =>
+    video.status === "AWAITING_APPROVER" && canAccess
+
   return (
     <div className="min-h-full bg-background pb-16">
       <div className="mx-auto max-w-5xl space-y-8 px-4 py-6 sm:px-6 md:py-8">
@@ -309,13 +485,14 @@ export default function ContentApproverPackageDetailPage() {
               </>
             ) : (
               <>
-                Review every deliverable below, then use{" "}
+                Review every deliverable below. Add optional timestamp comments
+                on each video while it awaits final approval. Use{" "}
                 <strong className="font-medium text-foreground">
                   Final approve package
                 </strong>{" "}
-                when you are ready to sign off on the whole package. You cannot
-                reject at this stage — escalate offline or use Super Admin
-                withdraw if needed.
+                to approve all deliverables still awaiting sign-off, or reject
+                an individual deliverable to send it back through Medical and
+                Brand review.
               </>
             )}
           </p>
@@ -329,12 +506,16 @@ export default function ContentApproverPackageDetailPage() {
               </CardTitle>
               <CardDescription className="text-sm leading-relaxed">
                 At least one deliverable is still in Medical review or Brand
-                video quality review. When all deliverables are in{" "}
+                video quality review, so full video players stay hidden. If any
+                deliverable is already{" "}
                 <span className="font-medium text-foreground">
                   Awaiting final approval
                 </span>
-                , are already approved, or withdrawn, this page will show the
-                full contents and final sign-off actions.
+                , you can still <strong className="font-medium">reject</strong>{" "}
+                it from the list below to send it back — other deliverables can
+                keep moving independently. When every deliverable has left Medical
+                / Brand stages (or is approved/withdrawn), the full package
+                opens here.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -347,7 +528,7 @@ export default function ContentApproverPackageDetailPage() {
                   return (
                     <li
                       key={video.id}
-                      className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between"
+                      className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between"
                     >
                       <div className="min-w-0 flex-1 space-y-2">
                         <span className="font-medium text-foreground">
@@ -355,15 +536,29 @@ export default function ContentApproverPackageDetailPage() {
                         </span>
                         <PackageVideoTatInline video={video} />
                       </div>
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "w-fit shrink-0 font-normal",
-                          videoStatusBadgeClass(video.status)
-                        )}
-                      >
-                        {VIDEO_STATUS_LABELS[video.status]}
-                      </Badge>
+                      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "w-fit shrink-0 font-normal",
+                            videoStatusBadgeClass(video.status)
+                          )}
+                        >
+                          {VIDEO_STATUS_LABELS[video.status]}
+                        </Badge>
+                        {canRejectAwaitingDeliverable(video) ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10"
+                            onClick={() => openRejectDialog(video)}
+                          >
+                            <XCircle className="size-3.5" />
+                            Reject deliverable
+                          </Button>
+                        ) : null}
+                      </div>
                     </li>
                   )
                 })}
@@ -374,39 +569,56 @@ export default function ContentApproverPackageDetailPage() {
           <>
             {showPackageApprove && (
               <Card className="border-primary/35 bg-primary/5 shadow-sm dark:bg-primary/10">
-                <CardContent className="flex flex-col gap-4 py-6 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex gap-3">
-                    <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
-                      <Package className="size-5" />
-                    </div>
-                    <div className="min-w-0 space-y-1">
-                      <p className="font-semibold text-foreground">
-                        Final approval
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        <strong className="text-foreground">
-                          {awaitingVideos.length}
-                        </strong>{" "}
-                        deliverable
-                        {awaitingVideos.length === 1 ? "" : "s"} awaiting your
-                        sign-off. One action records final approval for the
-                        whole package (same optional note for each deliverable).
-                      </p>
-                      {anyAwaitingThreadBlocked ? (
-                        <p className="text-sm text-amber-700 dark:text-amber-400">
-                          {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+                <CardContent className="py-6">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="flex min-w-0 gap-3">
+                      <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                        <Package className="size-5" />
+                      </div>
+                      <div className="min-w-0 space-y-1">
+                        <p className="font-semibold text-foreground">
+                          Final approval
                         </p>
-                      ) : null}
+                        <p className="text-sm text-muted-foreground">
+                          <strong className="text-foreground">
+                            {awaitingVideos.length}
+                          </strong>{" "}
+                          deliverable
+                          {awaitingVideos.length === 1 ? "" : "s"} awaiting your
+                          sign-off. Approve all at once, or reject a specific
+                          deliverable to send it back through review.
+                        </p>
+                        {anyAwaitingThreadBlocked ? (
+                          <p className="text-sm text-amber-700 dark:text-amber-400">
+                            {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap items-center justify-start gap-2 sm:justify-end lg:pt-0">
+                      <Button
+                        className="gap-2 bg-green-600 text-white hover:bg-green-700"
+                        disabled={anyAwaitingThreadBlocked}
+                        onClick={() => setApproveOpen(true)}
+                      >
+                        <CheckCircle2 className="size-4" />
+                        Final approve package
+                      </Button>
+                      {awaitingVideos.map((v) => (
+                        <Button
+                          key={v.id}
+                          type="button"
+                          variant="outline"
+                          className="gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10"
+                          onClick={() => openRejectDialog(v)}
+                        >
+                          <XCircle className="size-4" />
+                          Reject:{" "}
+                          {deliverableLabels.get(v.id) ?? v.id.slice(0, 8)}
+                        </Button>
+                      ))}
                     </div>
                   </div>
-                  <Button
-                    className="shrink-0 gap-2 bg-green-600 text-white hover:bg-green-700"
-                    disabled={anyAwaitingThreadBlocked}
-                    onClick={() => setApproveOpen(true)}
-                  >
-                    <CheckCircle2 className="size-4" />
-                    Final approve package
-                  </Button>
                 </CardContent>
               </Card>
             )}
@@ -512,27 +724,41 @@ export default function ContentApproverPackageDetailPage() {
                               </span>
                             </CardDescription>
                           </div>
-                          <div className="flex flex-wrap gap-2">
-                            <Badge
-                              variant="outline"
-                              className={videoStatusBadgeClass(video.status)}
-                            >
-                              {VIDEO_STATUS_LABELS[video.status]}
-                            </Badge>
-                            <Badge
-                              variant="secondary"
-                              className="text-xs font-normal"
-                            >
-                              Video track:{" "}
-                              {TRACK_STATUS_LABELS[video.videoTrackStatus]}
-                            </Badge>
-                            <Badge
-                              variant="secondary"
-                              className="text-xs font-normal"
-                            >
-                              Metadata:{" "}
-                              {TRACK_STATUS_LABELS[video.metadataTrackStatus]}
-                            </Badge>
+                          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                            <div className="flex flex-wrap gap-2">
+                              <Badge
+                                variant="outline"
+                                className={videoStatusBadgeClass(video.status)}
+                              >
+                                {VIDEO_STATUS_LABELS[video.status]}
+                              </Badge>
+                              <Badge
+                                variant="secondary"
+                                className="text-xs font-normal"
+                              >
+                                Video track:{" "}
+                                {TRACK_STATUS_LABELS[video.videoTrackStatus]}
+                              </Badge>
+                              <Badge
+                                variant="secondary"
+                                className="text-xs font-normal"
+                              >
+                                Metadata:{" "}
+                                {TRACK_STATUS_LABELS[video.metadataTrackStatus]}
+                              </Badge>
+                            </div>
+                            {packageUnlocked &&
+                            canRejectAwaitingDeliverable(video) ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10"
+                                onClick={() => openRejectDialog(video)}
+                              >
+                                <XCircle className="size-4" />
+                                Reject deliverable
+                              </Button>
+                            ) : null}
                           </div>
                         </div>
                         <PackageVideoTatInline
@@ -552,6 +778,15 @@ export default function ContentApproverPackageDetailPage() {
                           icon={icon}
                           videoOnly
                           specialtyOptions={specialtyOptions}
+                          packageVideo={
+                            packageUnlocked &&
+                            canRejectAwaitingDeliverable(video)
+                              ? video
+                              : null
+                          }
+                          onPackageVideoCommentsUpdated={() => {
+                            void recheckThreadBlocks()
+                          }}
                         />
                       </div>
 
@@ -694,6 +929,42 @@ export default function ContentApproverPackageDetailPage() {
               Final approve package
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={rejectTargetVideo != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRejectTargetVideo(null)
+            setRejectDraft(emptyApproverP6RejectDraft())
+            setRejectTimelineComments([])
+          }
+        }}
+      >
+        <DialogContent
+          showCloseButton
+          className="flex max-h-[min(90vh,44rem)] w-[calc(100vw-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+        >
+          {rejectTargetVideo ? (
+            <PackageVideoApproverRejectDialogBody
+              video={rejectTargetVideo}
+              deliverableLabel={
+                deliverableLabels.get(rejectTargetVideo.id) ?? "Deliverable"
+              }
+              draft={rejectDraft}
+              setDraft={setRejectDraft}
+              timelineComments={rejectTimelineComments}
+              timelineLoading={rejectTimelineLoading}
+              onCancel={() => {
+                setRejectTargetVideo(null)
+                setRejectDraft(emptyApproverP6RejectDraft())
+                setRejectTimelineComments([])
+              }}
+              onSubmit={() => void submitApproverP6Reject()}
+              isPending={rejectBusy}
+            />
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>

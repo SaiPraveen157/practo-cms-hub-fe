@@ -115,6 +115,7 @@ export default function MedicalAffairsScriptDetailPage() {
   const isDraft = script?.status === "DRAFT"
   const isMedicalReview = script?.status === "MEDICAL_REVIEW"
   const showSubmitFromQuery = searchParams.get("submit") === "1"
+  const reviewActionFromQuery = searchParams.get("action")
 
   const [editTitle, setEditTitle] = useState("")
   const [editInsight, setEditInsight] = useState("")
@@ -154,11 +155,11 @@ export default function MedicalAffairsScriptDetailPage() {
 
   const commentsHistoryEnabled = Boolean(
     isMedicalAffairs &&
-      token &&
-      id &&
-      (script == null ||
-        script.status !== "DRAFT" ||
-        scriptIsInRejectedState(script))
+    token &&
+    id &&
+    (script == null ||
+      script.status !== "DRAFT" ||
+      scriptIsInRejectedState(script))
   )
 
   const stickerPermissionContext = script
@@ -191,12 +192,12 @@ export default function MedicalAffairsScriptDetailPage() {
     // Persist stickers at Medical review; resolve-only at rejected DRAFT (recipient).
     pushEnabled: Boolean(
       isMedicalAffairs &&
-        token &&
-        id &&
-        (script?.status === "MEDICAL_REVIEW" ||
-          (script?.status === "DRAFT" &&
-            script &&
-            scriptIsInRejectedState(script)))
+      token &&
+      id &&
+      (script?.status === "MEDICAL_REVIEW" ||
+        (script?.status === "DRAFT" &&
+          script &&
+          scriptIsInRejectedState(script)))
     ),
     commentsRefetchKey: script?.version,
     onMergeFromServer: onCommentsMergeFromApiStable,
@@ -310,6 +311,18 @@ export default function MedicalAffairsScriptDetailPage() {
     if (showSubmitFromQuery && script?.status === "DRAFT")
       setSubmitDialogOpen(true)
   }, [showSubmitFromQuery, script?.status])
+
+  /** Open approve/reject dialog when arriving from list card shortcuts; then drop query. */
+  useEffect(() => {
+    if (!script || script.status !== "MEDICAL_REVIEW" || loading) return
+    if (reviewActionFromQuery === "approve") {
+      setApproveDialogOpen(true)
+      router.replace(`/medical-affairs-scripts/${id}`, { scroll: false })
+    } else if (reviewActionFromQuery === "reject") {
+      setRejectDialogOpen(true)
+      router.replace(`/medical-affairs-scripts/${id}`, { scroll: false })
+    }
+  }, [script?.id, script?.status, loading, reviewActionFromQuery, id, router])
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -529,7 +542,9 @@ export default function MedicalAffairsScriptDetailPage() {
                 <div className="space-y-2">
                   <Label>Script (English)</Label>
                   {versionView.listError ? (
-                    <p className="text-xs text-destructive">{versionView.listError}</p>
+                    <p className="text-xs text-destructive">
+                      {versionView.listError}
+                    </p>
                   ) : null}
                   <ScriptStickerVersionToolbar
                     showToolbar={versionView.showToolbar}
@@ -554,8 +569,8 @@ export default function MedicalAffairsScriptDetailPage() {
                       {draftVersionDisp.mode === "snapshot" &&
                       draftVersionDisp.contentMissing ? (
                         <p className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                          Script content for this version was not archived (legacy
-                          data). Comments still appear in the sidebar.
+                          Script content for this version was not archived
+                          (legacy data). Comments still appear in the sidebar.
                         </p>
                       ) : null}
                       <ScriptRichTextEditor
@@ -662,7 +677,9 @@ export default function MedicalAffairsScriptDetailPage() {
                     Script
                   </p>
                   {versionView.listError ? (
-                    <p className="text-xs text-destructive">{versionView.listError}</p>
+                    <p className="text-xs text-destructive">
+                      {versionView.listError}
+                    </p>
                   ) : null}
                   <ScriptStickerVersionToolbar
                     showToolbar={versionView.showToolbar}
@@ -687,15 +704,15 @@ export default function MedicalAffairsScriptDetailPage() {
                       {scriptViewDisp.mode === "snapshot" &&
                       scriptViewDisp.contentMissing ? (
                         <p className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                          Script content for this version was not archived (legacy
-                          data). Comments still appear in the sidebar.
+                          Script content for this version was not archived
+                          (legacy data). Comments still appear in the sidebar.
                         </p>
                       ) : null}
                       <ScriptRichTextEditor
                         key={`${script.id}-view-${versionView.selectValue || "live"}-${script.updatedAt}`}
                         initialContent={
                           scriptViewDisp.mode === "live"
-                            ? script.content ?? ""
+                            ? (script.content ?? "")
                             : scriptViewDisp.html
                         }
                         minHeight="200px"
