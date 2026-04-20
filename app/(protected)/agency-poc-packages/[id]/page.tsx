@@ -35,7 +35,10 @@ import {
   uploadPackageVideoFile,
   withdrawPackageVideo,
 } from "@/lib/packages-api"
-import { labelForSpecialtyValue, optionalDoctorSpecialtyPayload } from "@/lib/package-specialty-label"
+import {
+  labelForSpecialtyValue,
+  optionalDoctorSpecialtyPayload,
+} from "@/lib/package-specialty-label"
 import { DELIVERABLE_VIDEO_INPUT_ACCEPT } from "@/lib/video-file-validation"
 import type {
   FinalPackage,
@@ -48,6 +51,7 @@ import type {
 } from "@/types/package"
 import {
   getLatestDisplayableRejectionForVideo,
+  getLatestRejectionForVideoByTrack,
   isOverallCommentsRedundantWithItemFeedback,
   type PackageRejectionDisplay,
 } from "@/lib/package-list-utils"
@@ -56,9 +60,11 @@ import {
   deliverableLabelsByVideoId,
   displayThumbnailStatus,
   getCurrentVideoAsset,
+  getLatestPackageVideoRejectionIssueItems,
   getMetadataTrackFeedbackItems,
   getVideoTrackFeedbackItems,
   mergeVideoIntoPackage,
+  packageMetadataResubmitRequiredThumbnailIds,
   packageVideosSorted,
   thumbnailsOnAsset,
   videoAssetToPackageAsset,
@@ -811,6 +817,26 @@ function RejectionContextBlock({
   )
 }
 
+function tagsFingerprintFromArray(tags: string[] | null | undefined): string {
+  return [...(tags ?? [])]
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .sort()
+    .join("\0")
+}
+
+function tagsFingerprintFromInput(s: string): string {
+  return parseTagsFromCommaInput(s).sort().join("\0")
+}
+
+function baselineTitleFromAsset(asset: PackageAsset): string {
+  return asset.title?.trim() ?? ""
+}
+
+function baselineDescriptionFromAsset(asset: PackageAsset): string {
+  return asset.description?.trim() ?? ""
+}
+
 function VideoRevisionPanel({
   pkg,
   token,
@@ -831,7 +857,16 @@ function VideoRevisionPanel({
   const videos = packageVideosSorted(pkg)
   let shortN = 0
 
-  async function handleResubmitVideoFile(videoId: string) {
+  async function handleResubmitVideoFile(
+    videoId: string,
+    needsFileReplace: boolean
+  ) {
+    if (!needsFileReplace) {
+      toast.error(
+        "Reviewers did not flag the video file in this checklist. Use the Metadata tab if copy or thumbnails were flagged."
+      )
+      return
+    }
     const f = replaceFileByVideoId[videoId]
     if (!token) {
       toast.error("Sign in to resubmit")
@@ -889,10 +924,26 @@ function VideoRevisionPanel({
         const va = getCurrentVideoAsset(video)
         const asset = va ? videoAssetToPackageAsset(va) : null
         const vts = video.videoTrackStatus
-        const latest = getLatestDisplayableRejectionForVideo(video)
-        const feedbackItems = getVideoTrackFeedbackItems(video.reviews)
+        const videoChecklistIssues = getLatestPackageVideoRejectionIssueItems(
+          video,
+          "VIDEO_TRACK"
+        )
         const needsVideoResubmit =
-          video.status === "MEDICAL_REVIEW" && vts === "REJECTED"
+          video.status === "MEDICAL_REVIEW" &&
+          vts === "REJECTED" &&
+          (videoChecklistIssues.length === 0 ||
+            videoChecklistIssues.some((i) => i.field === "VIDEO"))
+        const videoResubmitReady =
+          !needsVideoResubmit || Boolean(replaceFileByVideoId[video.id])
+        const latestVideoRejection =
+          getLatestRejectionForVideoByTrack(video, "VIDEO_TRACK") ??
+          (vts === "REJECTED"
+            ? getLatestDisplayableRejectionForVideo(video)
+            : null)
+        const feedbackItems =
+          videoChecklistIssues.length > 0
+            ? videoChecklistIssues
+            : getVideoTrackFeedbackItems(video.reviews)
         const canWithdraw =
           role === "SUPER_ADMIN" &&
           video.status !== "WITHDRAWN" &&
@@ -984,13 +1035,22 @@ function VideoRevisionPanel({
                 ) : null}
                 {needsVideoResubmit ? (
                   <p className="text-foreground">
-                    Upload a new video file below. Use the Metadata tab if
-                    titles, tags, or thumbnails need changes.
+                    Reviewers flagged the video file. Upload a new file below.
+                    Use the Metadata tab if only copy or thumbnails were flagged.
+                  </p>
+                ) : null}
+                {video.status === "MEDICAL_REVIEW" &&
+                vts === "REJECTED" &&
+                !needsVideoResubmit ? (
+                  <p className="text-foreground">
+                    The video track is rejected, but the checklist does not flag
+                    the video file — use the Metadata tab for title, description,
+                    tags, or thumbnails.
                   </p>
                 ) : null}
               </TrackStatusCallout>
 
-              {/* {needsVideoResubmit && latest ? (
+              {vts === "REJECTED" && latestVideoRejection ? (
                 <Card className="border-destructive/40 bg-destructive/5 shadow-none">
                   <CardHeader className="space-y-1 pb-3">
                     <CardTitle className="text-lg font-semibold text-destructive">
@@ -999,8 +1059,10 @@ function VideoRevisionPanel({
                   </CardHeader>
                   <CardContent className="space-y-4 border-t border-border/60 pt-4">
                     <RejectionContextBlock
-                      latestRejection={latest}
-                      showOverall={Boolean(latest.overallComments?.trim())}
+                      latestRejection={latestVideoRejection}
+                      showOverall={Boolean(
+                        latestVideoRejection.overallComments?.trim()
+                      )}
                       itemFeedbackForDedup={feedbackItems}
                     />
                     {feedbackItems.length > 0 ? (
@@ -1012,11 +1074,16 @@ function VideoRevisionPanel({
                     ) : null}
                   </CardContent>
                 </Card>
-              ) : null} */}
+              ) : null}
 
               {asset ? (
                 needsVideoResubmit ? (
                   <div className="space-y-4">
+                    {needsVideoResubmit && !videoResubmitReady ? (
+                      <ul className="list-inside list-disc text-sm text-amber-900 dark:text-amber-200">
+                        <li>Choose a replacement video file.</li>
+                      </ul>
+                    ) : null}
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-start">
                       <div className="flex min-w-0 flex-col gap-2">
                         <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
@@ -1063,8 +1130,17 @@ function VideoRevisionPanel({
                         <Button
                           type="button"
                           className="w-full shrink-0 sm:w-auto"
-                          onClick={() => void handleResubmitVideoFile(video.id)}
-                          disabled={busyVideoId === video.id || !token}
+                          onClick={() =>
+                            void handleResubmitVideoFile(
+                              video.id,
+                              needsVideoResubmit
+                            )
+                          }
+                          disabled={
+                            busyVideoId === video.id ||
+                            !token ||
+                            !videoResubmitReady
+                          }
                         >
                           {busyVideoId === video.id ? (
                             <Loader2 className="mr-2 size-4 animate-spin" />
@@ -1097,10 +1173,6 @@ function VideoRevisionPanel({
   )
 }
 
-function agencyThumbnailNeedsReplacement(t: PackageThumbnailRecord): boolean {
-  return t.status === "REJECTED"
-}
-
 function MetadataResubmitFields({
   video,
   pkg,
@@ -1108,6 +1180,7 @@ function MetadataResubmitFields({
   label,
   asset,
   thumbs,
+  metadataValidationIssues,
   onUpdated,
   specialtyOptions,
 }: {
@@ -1117,6 +1190,8 @@ function MetadataResubmitFields({
   label: string
   asset: PackageAsset
   thumbs: PackageThumbnailRecord[]
+  /** Latest metadata-track rejection checklist (`hasIssue` rows), like language packages. */
+  metadataValidationIssues: PackageItemFeedbackEntry[]
   onUpdated: (p: FinalPackage) => void
   specialtyOptions: PackageSpecialtyOption[]
 }) {
@@ -1132,6 +1207,55 @@ function MetadataResubmitFields({
   >({})
   const [busy, setBusy] = useState(false)
   const [deletingThumbId, setDeletingThumbId] = useState<string | null>(null)
+
+  const requiredThumbIds = useMemo(
+    () => packageMetadataResubmitRequiredThumbnailIds(video, thumbs),
+    [video, thumbs]
+  )
+
+  const titleFixRequired = metadataValidationIssues.some(
+    (i) => i.field === "TITLE" && i.hasIssue
+  )
+  const descriptionFixRequired = metadataValidationIssues.some(
+    (i) => i.field === "DESCRIPTION" && i.hasIssue
+  )
+  const tagsFixRequired = metadataValidationIssues.some(
+    (i) => i.field === "TAGS" && i.hasIssue
+  )
+
+  const titleChanged = title.trim() !== baselineTitleFromAsset(asset)
+  const descriptionChanged =
+    description.trim() !== baselineDescriptionFromAsset(asset)
+  const tagsChanged =
+    tagsFingerprintFromInput(tagsInput) !==
+    tagsFingerprintFromArray(asset.tags ?? [])
+
+  const titleFixOk = !titleFixRequired || titleChanged
+  const descriptionFixOk = !descriptionFixRequired || descriptionChanged
+  const tagsFixOk = !tagsFixRequired || tagsChanged
+
+  const thumbsFixOk = useMemo(() => {
+    if (requiredThumbIds.size === 0) return true
+    for (const id of requiredThumbIds) {
+      if (!replacementFiles[id]) return false
+    }
+    return true
+  }, [requiredThumbIds, replacementFiles])
+
+  const metadataResubmitReady = useMemo(() => {
+    if (!title.trim() || !description.trim()) return false
+    if (!titleFixOk || !descriptionFixOk || !tagsFixOk) return false
+    if (!thumbsFixOk) return false
+    return true
+  }, [
+    title,
+    description,
+    titleFixOk,
+    descriptionFixOk,
+    tagsFixOk,
+    thumbsFixOk,
+    metadataValidationIssues,
+  ])
 
   useEffect(() => {
     setTitle(asset.title?.trim() ?? "")
@@ -1168,32 +1292,38 @@ function MetadataResubmitFields({
     }
   }
 
-  const approvedCount = thumbs.filter((t) => t.status === "APPROVED").length
-  const rejectedCount = thumbs.filter((t) => t.status === "REJECTED").length
-  const pendingCount = thumbs.filter((t) => t.status === "PENDING").length
+  const slotsNeedingUpload = requiredThumbIds.size
 
   async function handleResubmitMetadata() {
     if (!token) {
       toast.error("Sign in to resubmit")
       return
     }
-    if (!title.trim() || !description.trim()) {
-      toast.error("Title and description are required")
+    if (!metadataResubmitReady) {
+      const missing: string[] = []
+      if (!title.trim() || !description.trim()) {
+        missing.push("enter title and description")
+      } else {
+        if (!titleFixOk) missing.push("edit the title (reviewers flagged it)")
+        if (!descriptionFixOk)
+          missing.push("edit the description (reviewers flagged it)")
+        if (!tagsFixOk) missing.push("edit tags (reviewers flagged them)")
+        if (!thumbsFixOk) {
+          missing.push(
+            `upload a new image for each thumbnail slot that requires a replacement (${requiredThumbIds.size} slot${requiredThumbIds.size === 1 ? "" : "s"})`
+          )
+        }
+      }
+      toast.error(
+        missing.length
+          ? `Before resubmitting metadata: ${missing.join("; ")}.`
+          : "Fix the items above before resubmitting metadata."
+      )
       return
     }
     if (thumbs.length === 0) {
       toast.error("This version has no thumbnails — contact support.")
       return
-    }
-    for (const t of thumbs) {
-      if (!agencyThumbnailNeedsReplacement(t)) continue
-      const f = replacementFiles[t.id]
-      if (!f) {
-        toast.error(
-          `Upload a replacement image for the rejected thumbnail${t.fileName ? ` (${t.fileName})` : ""}.`
-        )
-        return
-      }
     }
     setBusy(true)
     try {
@@ -1204,7 +1334,7 @@ function MetadataResubmitFields({
         fileSize?: number
       }[] = []
       for (const t of thumbs) {
-        if (!agencyThumbnailNeedsReplacement(t)) {
+        if (!requiredThumbIds.has(t.id)) {
           thumbnails.push({
             fileUrl: t.fileUrl,
             fileName: t.fileName || "thumbnail",
@@ -1222,10 +1352,7 @@ function MetadataResubmitFields({
           fileSize: m.fileSize,
         })
       }
-      const tags = tagsInput
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean)
+      const tags = parseTagsFromCommaInput(tagsInput)
       const res = await resubmitPackageMetadata(token, video.id, {
         title: title.trim(),
         description: description.trim(),
@@ -1250,14 +1377,47 @@ function MetadataResubmitFields({
           Resubmit metadata — {label}
         </CardTitle>
         <CardDescription className="leading-relaxed">
-          Fix copy as needed. <strong>Approved</strong> (and any still{" "}
-          <strong>pending</strong>) thumbnails keep their current file — only{" "}
-          <strong>rejected</strong> images need a replacement upload (or remove
-          an extra rejected image when allowed). Your video file is unchanged;
-          Content/Brand reviews the metadata track again.
+          Edit every field reviewers flagged in the checklist (compare to the
+          snapshot above). Upload a new image only for thumbnail slots that
+          require a replacement. The video file is unchanged; Content/Brand
+          reviews the metadata track again.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6 border-t border-border/60 pt-6">
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          The <strong>Resubmit metadata</strong> button stays disabled until each
+          checklist item is addressed (changed copy where flagged, and new files
+          for required thumbnails).
+        </p>
+
+        {!metadataResubmitReady ? (
+          <ul className="list-inside list-disc space-y-1 text-sm text-amber-900 dark:text-amber-200">
+            {!title.trim() || !description.trim() ? (
+              <li>Enter title and description.</li>
+            ) : null}
+            {title.trim() && description.trim() ? (
+              <>
+                {titleFixRequired && !titleChanged ? (
+                  <li>Update the title — reviewers flagged it.</li>
+                ) : null}
+                {descriptionFixRequired && !descriptionChanged ? (
+                  <li>Update the description — reviewers flagged it.</li>
+                ) : null}
+                {tagsFixRequired && !tagsChanged ? (
+                  <li>Update tags — reviewers flagged them.</li>
+                ) : null}
+                {!thumbsFixOk ? (
+                  <li>
+                    Upload a new file for each thumbnail that requires a
+                    replacement ({requiredThumbIds.size} slot
+                    {requiredThumbIds.size === 1 ? "" : "s"}).
+                  </li>
+                ) : null}
+              </>
+            ) : null}
+          </ul>
+        ) : null}
+
         <section className="space-y-4 rounded-lg border border-border bg-background/80 p-4 shadow-sm dark:bg-background/40">
           <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             Title & description
@@ -1268,6 +1428,10 @@ function MetadataResubmitFields({
               id={`mt-title-${video.id}`}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              className={cn(
+                titleFixRequired && !titleChanged && "border-destructive"
+              )}
+              aria-invalid={titleFixRequired && !titleChanged}
             />
           </div>
           <div className="space-y-2">
@@ -1277,7 +1441,13 @@ function MetadataResubmitFields({
               rows={5}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="min-h-[120px] resize-y text-sm leading-relaxed"
+              className={cn(
+                "min-h-[120px] resize-y text-sm leading-relaxed",
+                descriptionFixRequired &&
+                  !descriptionChanged &&
+                  "border-destructive"
+              )}
+              aria-invalid={descriptionFixRequired && !descriptionChanged}
             />
           </div>
         </section>
@@ -1296,6 +1466,10 @@ function MetadataResubmitFields({
               placeholder="e.g. cardiology, awareness, campaign"
               value={tagsInput}
               onChange={(e) => setTagsInput(e.target.value)}
+              className={cn(
+                tagsFixRequired && !tagsChanged && "border-destructive"
+              )}
+              aria-invalid={tagsFixRequired && !tagsChanged}
             />
             <div className="space-y-1 pt-1">
               <p className="text-xs font-medium text-muted-foreground">
@@ -1333,7 +1507,7 @@ function MetadataResubmitFields({
                 id={`mt-specialty-${video.id}`}
                 value={specialty}
                 onChange={(e) => setSpecialty(e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] dark:bg-input/30"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
               >
                 <option value="">Select specialty…</option>
                 {specialtyOptions.map((s) => (
@@ -1352,40 +1526,26 @@ function MetadataResubmitFields({
             Thumbnails (same order as current version)
           </h3>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            {rejectedCount > 0 ? (
+            {slotsNeedingUpload > 0 ? (
               <>
-                {approvedCount > 0 ? (
-                  <>
-                    <span className="font-medium text-foreground">
-                      {approvedCount} approved
-                    </span>{" "}
-                    — reused as-is.{" "}
-                  </>
-                ) : null}
-                {pendingCount > 0 ? (
-                  <>
-                    <span className="font-medium text-foreground">
-                      {pendingCount} pending
-                    </span>{" "}
-                    — current file kept.{" "}
-                  </>
-                ) : null}
                 <span className="font-medium text-foreground">
-                  {rejectedCount} rejected
+                  {slotsNeedingUpload} thumbnail slot
+                  {slotsNeedingUpload === 1 ? "" : "s"}
                 </span>{" "}
-                — upload a new file for each. Order matches your current
-                version.
+                need a new upload (rejected rows and any thumbnail Content/Brand
+                flagged in the checklist). All other slots keep their current
+                file. Order matches your current version.
               </>
             ) : (
               <>
-                No rejected thumbnails — all current images are sent back
+                No thumbnail re-upload required — current images are sent back
                 unchanged with your updated copy.
               </>
             )}
           </p>
           <ul className="space-y-4">
             {thumbs.map((t, idx) => {
-              const needsFile = agencyThumbnailNeedsReplacement(t)
+              const needsFile = requiredThumbIds.has(t.id)
               const thumbUiStatus = displayThumbnailStatus(video, t.status)
               const file = replacementFiles[t.id] ?? null
               const previewKey = file
@@ -1398,7 +1558,12 @@ function MetadataResubmitFields({
               return (
                 <li
                   key={t.id}
-                  className="overflow-hidden rounded-xl border border-border bg-card shadow-sm"
+                  className={cn(
+                    "overflow-hidden rounded-xl border bg-card shadow-sm",
+                    needsFile && !file
+                      ? "border-destructive/60"
+                      : "border-border"
+                  )}
                 >
                   <div className="flex flex-col gap-3 p-4 sm:flex-row sm:gap-4">
                     <a
@@ -1462,13 +1627,18 @@ function MetadataResubmitFields({
                       {needsFile ? (
                         <div className="space-y-2 border-t border-border pt-3">
                           <Label htmlFor={`mt-repl-${video.id}-${t.id}`}>
-                            Replacement image (required for rejected)
+                            Replacement image (required)
                           </Label>
                           <Input
                             id={`mt-repl-${video.id}-${t.id}`}
                             type="file"
                             accept="image/*"
-                            className="cursor-pointer border-border bg-background"
+                            className={cn(
+                              "cursor-pointer bg-background",
+                              !file
+                                ? "border-destructive/60"
+                                : "border-border"
+                            )}
                             onChange={(e) => {
                               const f = e.target.files?.[0] ?? null
                               setReplacementFiles((prev) => ({
@@ -1506,7 +1676,7 @@ function MetadataResubmitFields({
           type="button"
           className="w-full sm:w-auto"
           onClick={() => void handleResubmitMetadata()}
-          disabled={busy || !token}
+          disabled={busy || !token || !metadataResubmitReady}
         >
           {busy ? (
             <Loader2 className="mr-2 size-4 animate-spin" />
@@ -1588,15 +1758,31 @@ function MetadataRevisionPanel({
         const va = getCurrentVideoAsset(video)
         const asset = va ? videoAssetToPackageAsset(va) : null
         const mts = video.metadataTrackStatus
+        const thumbs = va ? thumbnailsOnAsset(va) : []
+        const metadataIssues = getLatestPackageVideoRejectionIssueItems(
+          video,
+          "METADATA_TRACK"
+        )
+        const hasStructuredMetadataIssues = metadataIssues.length > 0
         const needsMetadataResubmit =
-          video.status === "MEDICAL_REVIEW" && mts === "REJECTED"
-        const latest = getLatestDisplayableRejectionForVideo(video)
-        const metaFeedback = getMetadataTrackFeedbackItems(video.reviews)
+          video.status === "MEDICAL_REVIEW" &&
+          mts === "REJECTED" &&
+          (!hasStructuredMetadataIssues ||
+            metadataIssues.some((i) => i.field !== "VIDEO") ||
+            thumbs.some((t) => t.status === "REJECTED"))
+        const latestMetaRejection =
+          getLatestRejectionForVideoByTrack(video, "METADATA_TRACK") ??
+          (mts === "REJECTED"
+            ? getLatestDisplayableRejectionForVideo(video)
+            : null)
+        const metaFeedbackDisplay =
+          metadataIssues.length > 0
+            ? metadataIssues
+            : getMetadataTrackFeedbackItems(video.reviews)
         const canWithdraw =
           role === "SUPER_ADMIN" &&
           video.status !== "WITHDRAWN" &&
           video.status !== "APPROVED"
-        const thumbs = va ? thumbnailsOnAsset(va) : []
         const thumbsHeadingId = `agency-meta-thumbs-${video.id}`
 
         return (
@@ -1674,8 +1860,18 @@ function MetadataRevisionPanel({
                 ) : null}
                 {needsMetadataResubmit ? (
                   <p className="text-foreground">
-                    Update copy below. Replace only thumbnails that Brand
-                    rejected; approved ones stay on the file already stored.
+                    Edit every field reviewers flagged in the checklist (compare
+                    to the snapshot below). Upload a new image for each thumbnail
+                    slot that requires a replacement.
+                  </p>
+                ) : null}
+                {video.status === "MEDICAL_REVIEW" &&
+                mts === "REJECTED" &&
+                !needsMetadataResubmit ? (
+                  <p className="text-foreground">
+                    This rejection only flags the video file in the checklist.
+                    Use the <strong>Videos</strong> tab to replace the clip; you
+                    do not need to resubmit metadata here.
                   </p>
                 ) : null}
                 {video.status === "WITHDRAWN" ? (
@@ -1683,7 +1879,8 @@ function MetadataRevisionPanel({
                 ) : null}
               </TrackStatusCallout>
 
-              {needsMetadataResubmit && latest ? (
+              {needsMetadataResubmit &&
+              (latestMetaRejection || metaFeedbackDisplay.length > 0) ? (
                 <Card className="border-destructive/40 bg-destructive/5 shadow-none">
                   <CardHeader className="space-y-1 pb-3">
                     <CardTitle className="text-lg font-semibold text-destructive">
@@ -1695,15 +1892,19 @@ function MetadataRevisionPanel({
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4 border-t border-border/60 pt-4">
-                    <RejectionContextBlock
-                      latestRejection={latest}
-                      showOverall={Boolean(latest.overallComments?.trim())}
-                      itemFeedbackForDedup={metaFeedback}
-                    />
-                    {metaFeedback.length > 0 ? (
+                    {latestMetaRejection ? (
+                      <RejectionContextBlock
+                        latestRejection={latestMetaRejection}
+                        showOverall={Boolean(
+                          latestMetaRejection.overallComments?.trim()
+                        )}
+                        itemFeedbackForDedup={metaFeedbackDisplay}
+                      />
+                    ) : null}
+                    {metaFeedbackDisplay.length > 0 ? (
                       <PackageItemFeedbackHumanizedList
                         pkg={pkg}
-                        items={metaFeedback}
+                        items={metaFeedbackDisplay}
                         className="border-t-0 pt-0"
                       />
                     ) : null}
@@ -1753,6 +1954,7 @@ function MetadataRevisionPanel({
                     label={label}
                     asset={asset}
                     thumbs={thumbs}
+                    metadataValidationIssues={metadataIssues}
                     onUpdated={onPackageUpdated}
                     specialtyOptions={specialtyOptions}
                   />

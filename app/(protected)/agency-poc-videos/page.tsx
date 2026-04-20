@@ -281,16 +281,27 @@ export default function AgencyPocVideosPage() {
         ? approvedVideos
         : rejectedVideos
 
-  /** Rejected-return cards (re-upload required) first; stable order within each group. */
-  const subTabVideosSorted = useMemo(
-    () =>
-      [...subTabVideos].sort((a, b) => {
-        const aResubmit = isAgencyRejectedReturn(a) ? 1 : 0
-        const bResubmit = isAgencyRejectedReturn(b) ? 1 : 0
-        return bResubmit - aResubmit
-      }),
-    [subTabVideos]
-  )
+  /**
+   * Phase 5 (First Cut): rows awaiting Agency upload (`AGENCY_UPLOAD_PENDING`) first,
+   * then rejected-return slots, then everything else. Phase 4: rejected-return first
+   * (unchanged).
+   */
+  const subTabVideosSorted = useMemo(() => {
+    const list = [...subTabVideos]
+    return list.sort((a, b) => {
+      if (phaseTab === "FIRST_CUT") {
+        const aPending = a.status === "AGENCY_UPLOAD_PENDING" ? 1 : 0
+        const bPending = b.status === "AGENCY_UPLOAD_PENDING" ? 1 : 0
+        if (bPending !== aPending) return bPending - aPending
+      }
+      const aResubmit = isAgencyRejectedReturn(a) ? 1 : 0
+      const bResubmit = isAgencyRejectedReturn(b) ? 1 : 0
+      if (bResubmit !== aResubmit) return bResubmit - aResubmit
+      return (
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      )
+    })
+  }, [subTabVideos, phaseTab])
 
   const needsUpload = (v: Video) => v.status === "AGENCY_UPLOAD_PENDING"
 

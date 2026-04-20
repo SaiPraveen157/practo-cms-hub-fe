@@ -8,6 +8,15 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useAuthStore } from "@/store"
 import { getPackageQueue } from "@/lib/packages-api"
+import {
+  isVideoLockedPhase3Done,
+  isVideoReadyToUploadFlu,
+  isVideoReviewInProgress,
+  mergeScriptQueueRows,
+  mergeVideoQueueRows,
+  scriptsForScriptQueueTab,
+  scriptsMatchingVideoFilter,
+} from "@/lib/agency-poc-queue-scripts"
 import { scriptNeedsAgencyFirstLineUpUpload } from "@/lib/agency-first-line-up"
 import { groupQueueVideosIntoPackages } from "@/lib/package-video-helpers"
 import { packageVisibleInAgencyPhase6Workflow } from "@/lib/video-phase-gates"
@@ -15,7 +24,7 @@ import { getScriptQueue, getScriptStats } from "@/lib/scripts-api"
 import { getVideoQueue } from "@/lib/videos-api"
 import type { Video } from "@/types/video"
 import { filterScriptsBySearch } from "@/lib/script-search"
-import type { Script, ScriptStatus, ScriptStatsResponse } from "@/types/script"
+import type { Script, ScriptStatsResponse } from "@/types/script"
 import { ScriptListSkeleton } from "@/components/loading/script-list-skeleton"
 import { ScriptListingCard } from "@/components/script-listing-card"
 import { ScriptListPagination } from "@/components/ui/pagination"
@@ -32,31 +41,26 @@ import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 10
 
-type TabKey = "all" | "locked"
-
-const STATUS_LABELS: Record<ScriptStatus, string> = {
-  DRAFT: "Draft",
-  CONTENT_BRAND_REVIEW: "Content/Brand Review",
-  AGENCY_PRODUCTION: "Agency Production",
-  MEDICAL_REVIEW: "Medical Review",
-  CONTENT_BRAND_APPROVAL: "Content/Brand Approval",
-  CONTENT_APPROVER_REVIEW: "Content Approver Review",
-  LOCKED: "Locked",
-}
+type TabKey =
+  | "script_queue"
+  | "review_in_progress"
+  | "ready_to_upload"
+  | "locked_phase3"
 
 export default function AgencyPocPage() {
   const router = useRouter()
   const token = useAuthStore((s) => s.token)
   const user = useAuthStore((s) => s.user)
-  const [scripts, setScripts] = useState<Script[]>([])
+  /** Merged GET /api/videos/queue rows — single source for tabs + cards. */
+  const [queueVideos, setQueueVideos] = useState<Video[]>([])
+  /** Merged GET /api/scripts/queue — script rows for Script queue tab (e.g. rejections). */
+  const [scriptQueueScripts, setScriptQueueScripts] = useState<Script[]>([])
   const [page, setPage] = useState(1)
-  const [total, setTotal] = useState(0)
-  const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [stats, setStats] = useState<ScriptStatsResponse | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
-  const [tab, setTab] = useState<TabKey>("all")
+  const [tab, setTab] = useState<TabKey>("script_queue")
   /** scriptId → package id from agency package queue (for locked script actions). */
   const [finalPackageIdByScriptId, setFinalPackageIdByScriptId] = useState<
     Map<string, string>
@@ -67,9 +71,31 @@ export default function AgencyPocPage() {
   const isAgencyPoc = user?.role === "AGENCY_POC"
 
   const tabFilteredScripts = useMemo(() => {
-    if (tab === "locked") return scripts.filter((s) => s.status === "LOCKED")
-    return scripts
-  }, [scripts, tab])
+    switch (tab) {
+      case "script_queue":
+        return scriptsForScriptQueueTab(queueVideos, scriptQueueScripts)
+      case "review_in_progress":
+      case "ready_to_upload":
+      case "locked_phase3":
+        if (queueVideos.length === 0) return []
+        break
+      default:
+        return []
+    }
+    switch (tab) {
+      case "review_in_progress":
+        return scriptsMatchingVideoFilter(
+          queueVideos,
+          isVideoReviewInProgress
+        )
+      case "ready_to_upload":
+        return scriptsMatchingVideoFilter(queueVideos, isVideoReadyToUploadFlu)
+      case "locked_phase3":
+        return scriptsMatchingVideoFilter(queueVideos, isVideoLockedPhase3Done)
+      default:
+        return []
+    }
+  }, [queueVideos, scriptQueueScripts, tab])
 
   const searchFilteredScripts = useMemo(
     () => filterScriptsBySearch(tabFilteredScripts, searchQuery),
@@ -94,42 +120,17 @@ export default function AgencyPocPage() {
         setError(null)
       }
     })
-    getScriptQueue(token)
-      .then((res) => {
-        if (!cancelled) {
-          const combined = [...(res.available ?? []), ...(res.myReviews ?? [])]
-          setScripts(combined)
-          setTotal(res.total ?? combined.length)
-          setTotalPages(
-            Math.max(1, Math.ceil((res.total ?? combined.length) / PAGE_SIZE))
-          )
-        }
-      })
-      .catch((err) => {
-        if (!cancelled)
-          setError(
-            err instanceof Error ? err.message : "Failed to load scripts"
-          )
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [token])
-
-  useEffect(() => {
-    if (!token) return
-    let cancelled = false
-    Promise.all([getPackageQueue(token), getVideoQueue(token)])
-      .then(([packageRes, videoRes]) => {
+    Promise.all([
+      getVideoQueue(token),
+      getPackageQueue(token),
+      getScriptQueue(token),
+    ])
+      .then(([videoRes, packageRes, scriptRes]) => {
         if (cancelled) return
-        const mergedVideos = [
-          ...(videoRes.available ?? []),
-          ...(videoRes.myReviews ?? []),
-        ]
+        const mergedVideos = mergeVideoQueueRows(videoRes)
+        setQueueVideos(mergedVideos)
         setVideos(mergedVideos)
+        setScriptQueueScripts(mergeScriptQueueRows(scriptRes))
         const m = new Map<string, string>()
         const packages = groupQueueVideosIntoPackages(packageRes.videos ?? [])
         for (const p of packages) {
@@ -143,11 +144,19 @@ export default function AgencyPocPage() {
         }
         setFinalPackageIdByScriptId(m)
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) {
+          setError(
+            err instanceof Error ? err.message : "Failed to load video queue"
+          )
+          setQueueVideos([])
           setVideos([])
+          setScriptQueueScripts([])
           setFinalPackageIdByScriptId(new Map())
         }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
       })
     return () => {
       cancelled = true
@@ -215,14 +224,22 @@ export default function AgencyPocPage() {
 
         <div className="border-b border-border">
           <nav
-            className="flex gap-1"
+            className="flex flex-wrap gap-1"
             role="tablist"
             aria-label="Script list tabs"
           >
             {(
               [
-                { key: "all" as TabKey, label: "All" },
-                { key: "locked" as TabKey, label: "Locked" },
+                { key: "script_queue" as TabKey, label: "Script queue" },
+                {
+                  key: "review_in_progress" as TabKey,
+                  label: "Script review in progress",
+                },
+                { key: "ready_to_upload" as TabKey, label: "Ready to upload" },
+                {
+                  key: "locked_phase3" as TabKey,
+                  label: "Locked scripts",
+                },
               ] as const
             ).map(({ key, label }) => (
               <button
@@ -235,7 +252,7 @@ export default function AgencyPocPage() {
                   setPage(1)
                 }}
                 className={cn(
-                  "border-b-2 px-4 py-3 text-sm font-medium transition-colors",
+                  "border-b-2 px-3 py-3 text-sm font-medium transition-colors",
                   tab === key
                     ? "border-primary text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"
@@ -257,13 +274,14 @@ export default function AgencyPocPage() {
 
         {loading ? (
           <ScriptListSkeleton />
-        ) : scripts.length === 0 ? (
+        ) : queueVideos.length === 0 && scriptQueueScripts.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
               <FileText className="size-12 text-muted-foreground" />
-              <p className="mt-4 font-medium">No scripts in production</p>
+              <p className="mt-4 font-medium">Nothing in the queues</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Scripts approved by Content/Brand will appear here.
+                When scripts are in production, video and script queue rows appear
+                here.
               </p>
             </CardContent>
           </Card>
@@ -272,12 +290,24 @@ export default function AgencyPocPage() {
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
               <FileText className="size-12 text-muted-foreground" />
               <p className="mt-4 font-medium">
-                {tab === "locked" ? "No locked scripts" : "No scripts"}
+                {tab === "script_queue"
+                  ? "Nothing in your script queue"
+                  : tab === "review_in_progress"
+                    ? "Nothing in Medical or Content/Brand review"
+                    : tab === "ready_to_upload"
+                      ? "No locked scripts ready for First Line Up upload"
+                      : "No First Cut rows approved yet"}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {tab === "locked"
-                  ? "Locked scripts enter the video phase. Upload First Line Up from Videos."
-                  : "Scripts approved by Content/Brand will appear here."}
+                {tab === "script_queue"
+                  ? "Includes first-time and resubmit video uploads (except First Line Up on a locked script — use Ready to upload), plus scripts back at Agency with open rejection feedback."
+                  : tab === "review_in_progress"
+                    ? "Videos with status Medical Review or Content/Brand Review appear here. Rows with status Approved are not in this tab."
+                    : tab === "ready_to_upload"
+                      ? "Locked scripts with a First Line Up slot waiting for upload are listed here."
+                      : tab === "locked_phase3"
+                        ? "First Cut rows with status Approved (phase 3 complete for that deliverable) appear here."
+                        : "Try another tab or clear search."}
               </p>
             </CardContent>
           </Card>

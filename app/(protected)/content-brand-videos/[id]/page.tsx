@@ -84,7 +84,7 @@ export default function ContentBrandVideoDetailPage() {
   const token = useAuthStore((s) => s.token)
   const user = useAuthStore((s) => s.user)
   const [video, setVideo] = useState<Video | null>(null)
-  /** Timestamp thread — Phase 5 (First Cut) only; not used for Phase 4. */
+  /** Timestamp thread — Phase 4 (First Line Up) and Phase 5 (First Cut), same as Medical Affairs video detail. */
   const [comments, setComments] = useState<VideoComment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -134,7 +134,10 @@ export default function ContentBrandVideoDetailPage() {
   }, [token, id])
 
   useEffect(() => {
-    if (!video || video.phase !== "FIRST_CUT") {
+    if (
+      !video ||
+      (video.phase !== "FIRST_CUT" && video.phase !== "FIRST_LINE_UP")
+    ) {
       setComments([])
       return
     }
@@ -143,7 +146,8 @@ export default function ContentBrandVideoDetailPage() {
 
   const versionScopedComments = useMemo(
     () =>
-      video && video.phase === "FIRST_CUT"
+      video &&
+      (video.phase === "FIRST_CUT" || video.phase === "FIRST_LINE_UP")
         ? filterVideoCommentsForAssetVersion(comments, video.version)
         : [],
     [comments, video?.version, video?.phase]
@@ -151,14 +155,14 @@ export default function ContentBrandVideoDetailPage() {
 
   const threadBlocksApprove =
     video != null &&
-    video.phase === "FIRST_CUT" &&
+    (video.phase === "FIRST_CUT" || video.phase === "FIRST_LINE_UP") &&
     videoThreadBlocksApprove(comments, video.version)
 
   async function handleApprove() {
     if (!token || !id) return
     if (
       video &&
-      video.phase === "FIRST_CUT" &&
+      (video.phase === "FIRST_CUT" || video.phase === "FIRST_LINE_UP") &&
       videoThreadBlocksApprove(comments, video.version)
     ) {
       toast.error("Cannot approve yet", {
@@ -206,7 +210,11 @@ export default function ContentBrandVideoDetailPage() {
       const res = await rejectVideo(token, id, { comments: c })
       setRejectDialogOpen(false)
       setRejectComments("")
-      if (phaseAtReject === "FIRST_CUT" && res.newVersion) {
+      if (phaseAtReject === "FIRST_LINE_UP" && res.newVersion) {
+        toast.warning("First Line Up — sent back to Agency", {
+          description: `Version v${res.newVersion.version} awaits Agency re-upload of the rough cut, then Medical Affairs review before you see it again. TAT 24h per stage.`,
+        })
+      } else if (phaseAtReject === "FIRST_CUT" && res.newVersion) {
         toast.warning("First Cut — sent back to Agency", {
           description: `Version v${res.newVersion.version} awaits Agency upload. Then Medical reviews, then you again. TAT 24h per stage.`,
         })
@@ -251,7 +259,10 @@ export default function ContentBrandVideoDetailPage() {
   const fileCategory = video.fileCategory ?? "other"
   const hasFile = !!video.fileUrl
   const canApprove = video.status === "CONTENT_BRAND_REVIEW"
-  const canRejectFirstCut = canApprove && video.phase === "FIRST_CUT"
+  /** Same POST /api/videos/:id/reject as Medical — Brand can request changes in Phase 4 or 5. */
+  const canRejectContentBrand =
+    canApprove &&
+    (video.phase === "FIRST_LINE_UP" || video.phase === "FIRST_CUT")
   const isFirstLineUp = video.phase === "FIRST_LINE_UP"
 
   return (
@@ -304,10 +315,10 @@ export default function ContentBrandVideoDetailPage() {
             <CardDescription>
               {isFirstLineUp
                 ? hasFile
-                  ? `Phase 4 — First Line Up (rough cut). ${video.fileName ?? "File"} (${video.fileType ?? ""})`
+                  ? `Phase 4 — First Line Up (rough cut). ${video.fileName ?? "File"} (${video.fileType ?? ""}). Use the scrubber to add timestamp comments during Content/Brand review.`
                   : "Phase 4 — Awaiting First Line Up from Agency."
                 : hasFile
-                  ? `Phase 5 — First Cut (full draft). ${video.fileName ?? "File"} (${video.fileType ?? ""})`
+                  ? `Phase 5 — First Cut (full draft). ${video.fileName ?? "File"} (${video.fileType ?? ""}). Use the scrubber to add timestamp comments during Content/Brand review.`
                   : "Phase 5 — Awaiting First Cut from Agency."}
             </CardDescription>
           </CardHeader>
@@ -317,30 +328,22 @@ export default function ContentBrandVideoDetailPage() {
                 No file uploaded yet
               </p>
             ) : fileCategory === "video" ? (
-              isFirstLineUp ? (
-                <VideoPlayerTimeline
-                  src={video.fileUrl!}
-                  mediaKey={video.id}
-                  comments={[]}
-                  showCommentsUi={false}
-                />
-              ) : (
-                <VideoPlayerTimeline
-                  src={video.fileUrl!}
-                  mediaKey={video.id}
-                  comments={versionScopedComments}
-                  onAddComment={async ({ content, timestampSeconds }) => {
-                    if (!token || !id) return
-                    await addVideoComment(token, id, {
-                      content,
-                      timestampSeconds,
-                      assetVersion: video.version,
-                    })
-                    await fetchComments()
-                    toast.success("Comment added")
-                  }}
-                />
-              )
+              <VideoPlayerTimeline
+                src={video.fileUrl!}
+                mediaKey={video.id}
+                comments={versionScopedComments}
+                commentFormDisabled={!canApprove}
+                onAddComment={async ({ content, timestampSeconds }) => {
+                  if (!token || !id || !canApprove) return
+                  await addVideoComment(token, id, {
+                    content,
+                    timestampSeconds,
+                    assetVersion: video.version,
+                  })
+                  await fetchComments()
+                  toast.success("Comment added")
+                }}
+              />
             ) : fileCategory === "image" ? (
               <img
                 src={video.fileUrl!}
@@ -410,9 +413,7 @@ export default function ContentBrandVideoDetailPage() {
           </Card>
         )}
 
-        {canApprove &&
-        video.phase === "FIRST_CUT" &&
-        threadBlocksApprove ? (
+        {canApprove && threadBlocksApprove ? (
           <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
             <p className="font-medium">Approve disabled</p>
             <p className="mt-1 text-muted-foreground dark:text-amber-100/90">
@@ -423,20 +424,22 @@ export default function ContentBrandVideoDetailPage() {
 
         {canApprove && (
           <div className="flex flex-wrap gap-2 border-t pt-6">
-            {canRejectFirstCut && (
+            {canRejectContentBrand && (
               <Button
                 variant="destructive"
                 className="gap-1.5"
                 onClick={() => setRejectDialogOpen(true)}
               >
                 <XCircle className="size-4" />
-                Request changes
+                {isFirstLineUp
+                  ? "Request changes (First Line Up)"
+                  : "Request changes (First Cut)"}
               </Button>
             )}
             <Button
               className="gap-1.5 bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
               onClick={() => setApproveDialogOpen(true)}
-              disabled={video.phase === "FIRST_CUT" ? threadBlocksApprove : false}
+              disabled={threadBlocksApprove}
             >
               <CheckCircle className="size-4" />
               {isFirstLineUp ? "Approve First Line Up" : "Approve First Cut"}
@@ -455,11 +458,11 @@ export default function ContentBrandVideoDetailPage() {
             </DialogTitle>
             <DialogDescription>
               {isFirstLineUp
-                ? "Approves the rough cut. Agency can then upload First Cut (Phase 5). Comments optional."
-                : "Final brand approval — completes the video for this script. Comments optional."}
+                ? "Approves the rough cut. Agency can then upload First Cut (Phase 5). Resolve open timestamp threads before approving. Overall comments optional."
+                : "Final brand approval — completes the video for this script. Resolve open timestamp threads before approving. Overall comments optional."}
             </DialogDescription>
           </DialogHeader>
-          {video.phase === "FIRST_CUT" && threadBlocksApprove ? (
+          {threadBlocksApprove ? (
             <p className="text-sm text-muted-foreground">
               {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
             </p>
@@ -489,10 +492,7 @@ export default function ContentBrandVideoDetailPage() {
             </Button>
             <Button
               onClick={handleApprove}
-              disabled={
-                approving ||
-                (video.phase === "FIRST_CUT" && threadBlocksApprove)
-              }
+              disabled={approving || threadBlocksApprove}
               className="bg-green-600 text-white hover:bg-green-700"
             >
               {approving && <Loader2 className="mr-2 size-4 animate-spin" />}
@@ -505,11 +505,15 @@ export default function ContentBrandVideoDetailPage() {
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
         <DialogContent className="gap-6 p-6 sm:max-w-lg sm:p-8" showCloseButton>
           <DialogHeader className="gap-3 space-y-1">
-            <DialogTitle>Request changes (First Cut)</DialogTitle>
+            <DialogTitle>
+              {isFirstLineUp
+                ? "Request changes (First Line Up)"
+                : "Request changes (First Cut)"}
+            </DialogTitle>
             <DialogDescription>
-              Sends the video back to Agency. After re-upload, Medical Affairs
-              reviews again, then Content/Brand. Feedback is required. TAT 24
-              hours.
+              {isFirstLineUp
+                ? "Sends the rough cut back to Agency for re-upload (same reject flow as Medical Affairs on video cuts). After re-upload, Medical Affairs reviews again before you see the next version. Feedback is required. TAT 24 hours per stage."
+                : "Sends the video back to Agency. After re-upload, Medical Affairs reviews again, then Content/Brand. Feedback is required. TAT 24 hours."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -518,7 +522,11 @@ export default function ContentBrandVideoDetailPage() {
               id="reject-comments"
               value={rejectComments}
               onChange={(e) => setRejectComments(e.target.value)}
-              placeholder="e.g. Adjust end card branding and re-upload."
+              placeholder={
+                isFirstLineUp
+                  ? "e.g. Rough cut pacing and supers need revision before First Cut."
+                  : "e.g. Adjust end card branding and re-upload."
+              }
               rows={4}
               className="resize-y"
             />

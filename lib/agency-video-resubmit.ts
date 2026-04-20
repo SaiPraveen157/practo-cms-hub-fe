@@ -1,6 +1,13 @@
 import type { Video } from "@/types/video"
 import { getVideoQueue } from "@/lib/videos-api"
 
+function normalizeVideoStatusLoose(v: Video): string {
+  return String(v.status ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/-/g, "_")
+}
+
 /** True when this row is tied to a prior rejection — version may still be 1 if API uses previousVideoId instead. */
 export function isVideoResubmitFlow(video: Video): boolean {
   return (
@@ -18,7 +25,8 @@ export function isVideoResubmitFlow(video: Video): boolean {
  */
 export function isAgencyRejectedReturn(video: Video): boolean {
   return (
-    video.status === "AGENCY_UPLOAD_PENDING" && isVideoResubmitFlow(video)
+    normalizeVideoStatusLoose(video) === "AGENCY_UPLOAD_PENDING" &&
+    isVideoResubmitFlow(video)
   )
 }
 

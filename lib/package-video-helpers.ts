@@ -2,12 +2,73 @@ import type {
   FinalPackage,
   PackageAsset,
   PackageItemFeedbackEntry,
+  PackageItemFeedbackField,
   PackageStatus,
   PackageThumbnailRecord,
   PackageVideo,
   PackageVideoAsset,
   PackageVideoStatus,
 } from "@/types/package"
+
+function normalizePackageItemFeedbackField(
+  raw: string | undefined
+): PackageItemFeedbackField {
+  const key = (raw ?? "").trim().toLowerCase()
+  switch (key) {
+    case "video":
+      return "VIDEO"
+    case "title":
+      return "TITLE"
+    case "description":
+      return "DESCRIPTION"
+    case "tags":
+      return "TAGS"
+    case "thumbnail":
+      return "THUMBNAIL"
+    default: {
+      const u = (raw ?? "").trim().toUpperCase()
+      if (
+        u === "VIDEO" ||
+        u === "TITLE" ||
+        u === "DESCRIPTION" ||
+        u === "TAGS" ||
+        u === "THUMBNAIL"
+      ) {
+        return u as PackageItemFeedbackField
+      }
+      return "TITLE"
+    }
+  }
+}
+
+/**
+ * Line items from the most recent rejection on a given track (`BOTH` matches).
+ * Matches agency language package behavior: `hasIssue` only (no comment filter).
+ */
+export function getLatestPackageVideoRejectionIssueItems(
+  video: PackageVideo,
+  track: "METADATA_TRACK" | "VIDEO_TRACK"
+): PackageItemFeedbackEntry[] {
+  const matches = (tr: string | undefined) => {
+    if (!tr) return false
+    if (tr === "BOTH") return true
+    return tr === track
+  }
+  const rejects = (video.reviews ?? [])
+    .filter((r) => r.decision === "REJECTED" && matches(r.trackReviewed))
+    .sort(
+      (a, b) =>
+        new Date(b.reviewedAt).getTime() - new Date(a.reviewedAt).getTime()
+    )
+  const r = rejects[0]
+  if (!r) return []
+  return (r.itemFeedback ?? [])
+    .filter((f) => f.hasIssue)
+    .map((f) => ({
+      ...f,
+      field: normalizePackageItemFeedbackField(f.field as string),
+    }))
+}
 
 export function getCurrentVideoAsset(
   video: PackageVideo
@@ -251,6 +312,31 @@ export function getMetadataTrackFeedbackItems(
     )
     .flatMap((r) => r.itemFeedback ?? [])
     .filter((f) => f.hasIssue && (f.comment?.trim() ?? "") !== "")
+}
+
+/**
+ * Thumbnail slots that must receive a new file on metadata resubmit.
+ * Same rules as agency language packages: per-row `REJECTED` plus checklist
+ * `THUMBNAIL` rows that include `thumbnailId` (latest metadata rejection only).
+ */
+export function packageMetadataResubmitRequiredThumbnailIds(
+  video: PackageVideo,
+  thumbs: PackageThumbnailRecord[]
+): Set<string> {
+  const ids = new Set<string>()
+  for (const t of thumbs) {
+    if (t.status === "REJECTED") ids.add(t.id)
+  }
+  const items = getLatestPackageVideoRejectionIssueItems(
+    video,
+    "METADATA_TRACK"
+  )
+  for (const i of items) {
+    if (i.field === "THUMBNAIL" && i.hasIssue && i.thumbnailId) {
+      ids.add(i.thumbnailId)
+    }
+  }
+  return ids
 }
 
 /** Row label when package has no single workflow status. */

@@ -21,14 +21,25 @@ import type { UserRole } from "@/types/auth"
 import {
   approveLanguageVideo,
   getLanguagePackage,
+  getLanguageVideoComments,
+  rejectLanguageVideo,
 } from "@/lib/language-packages-api"
 import {
   getCurrentLanguageVideoAsset,
   mergeLanguageVideoIntoPackage,
   languageVideosSorted,
 } from "@/lib/language-package-video-helpers"
-import type { LanguagePackage } from "@/types/language-package"
-import { VideoPlayerTimeline } from "@/components/VideoPlayerTimeline"
+import type {
+  LanguageItemFeedbackEntry,
+  LanguagePackage,
+  LanguageVideo,
+} from "@/types/language-package"
+import { LanguageVideoPlayerWithThread } from "@/components/language-packages/language-video-player-with-thread"
+import {
+  emptyLangRejectDraft,
+  RejectLanguageVideoDialogBody,
+  type LangRejectDraft,
+} from "@/components/language-packages/reject-language-video-dialog-body"
 import { TagPillList } from "@/components/packages/tag-pill-list"
 import {
   formatLanguageLabel,
@@ -37,7 +48,14 @@ import {
   LANGUAGE_VIDEO_STATUS_LABELS,
 } from "@/lib/language-package-ui"
 import { formatPackageDate } from "@/lib/package-ui"
-import { ArrowLeft, ImageIcon, Loader2 } from "lucide-react"
+import {
+  filterVideoCommentsForAssetVersion,
+  VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+  videoThreadBlocksApprove,
+} from "@/lib/video-comment"
+import { useLanguageVideoThreadBlockMap } from "@/hooks/use-language-video-thread-block-map"
+import type { VideoComment } from "@/types/video"
+import { ArrowLeft, CheckCircle, ImageIcon, Loader2, XCircle } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -59,6 +77,20 @@ export default function ContentApproverLanguagePackageDetailPage() {
   const [approveOpen, setApproveOpen] = useState(false)
   const [approveComment, setApproveComment] = useState("")
   const [busy, setBusy] = useState(false)
+
+  const [rejectTargetVideo, setRejectTargetVideo] = useState<LanguageVideo | null>(
+    null
+  )
+  const [rejectDraft, setRejectDraft] = useState<LangRejectDraft>(() =>
+    emptyLangRejectDraft(undefined)
+  )
+  const [rejectTimelineComments, setRejectTimelineComments] = useState<
+    VideoComment[]
+  >([])
+  const [rejectTimelineLoading, setRejectTimelineLoading] = useState(false)
+  const [rejectBusy, setRejectBusy] = useState(false)
+  /** Per-video inline approve (header buttons). */
+  const [approvingVideoId, setApprovingVideoId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (!token || !id) return
@@ -111,10 +143,213 @@ export default function ContentApproverLanguagePackageDetailPage() {
     [sorted]
   )
 
+  const { threadBlockByVideoId, recheckThreadBlocks } =
+    useLanguageVideoThreadBlockMap(token, awaitingApproverVideos)
+
+  const anyAwaitingThreadBlocked = useMemo(
+    () => awaitingApproverVideos.some((v) => threadBlockByVideoId[v.id]),
+    [awaitingApproverVideos, threadBlockByVideoId]
+  )
+
+  const rejectAsset = useMemo(
+    () =>
+      rejectTargetVideo
+        ? getCurrentLanguageVideoAsset(rejectTargetVideo)
+        : null,
+    [rejectTargetVideo]
+  )
+
+  useEffect(() => {
+    if (!rejectTargetVideo || !token) return
+    let cancelled = false
+    setRejectTimelineLoading(true)
+    void getLanguageVideoComments(token, rejectTargetVideo.id)
+      .then((list) => {
+        if (cancelled) return
+        const scoped = filterVideoCommentsForAssetVersion(
+          list,
+          rejectTargetVideo.currentVersion
+        )
+        const sortedComments = [...scoped].sort(
+          (a, b) => (a.timestampSeconds ?? 0) - (b.timestampSeconds ?? 0)
+        )
+        setRejectTimelineComments(sortedComments)
+      })
+      .catch(() => {
+        if (!cancelled) setRejectTimelineComments([])
+      })
+      .finally(() => {
+        if (!cancelled) setRejectTimelineLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [rejectTargetVideo, token])
+
+  function openRejectDialog(video: LanguageVideo) {
+    if (video.status !== "AWAITING_APPROVER") return
+    const a = getCurrentLanguageVideoAsset(video)
+    if (!a) return
+    setRejectTargetVideo(video)
+    setRejectDraft(emptyLangRejectDraft(a))
+  }
+
+  async function submitApproverLangReject() {
+    if (!token || !rejectTargetVideo) return
+    const asset = getCurrentLanguageVideoAsset(rejectTargetVideo)
+    if (!asset?.id) return
+
+    const d = rejectDraft
+    const itemFeedback: LanguageItemFeedbackEntry[] = []
+
+    if (d.video.flag) {
+      if (!d.video.comment.trim()) {
+        toast.error("Add a comment for the video file.")
+        return
+      }
+      itemFeedback.push({
+        videoAssetId: asset.id,
+        field: "video",
+        hasIssue: true,
+        comment: d.video.comment.trim(),
+      })
+    }
+
+    const pushField = (
+      field: "title" | "description" | "tags",
+      state: { flag: boolean; comment: string }
+    ) => {
+      if (!state.flag) return
+      if (!state.comment.trim()) {
+        throw new Error(
+          field === "title"
+            ? "Add a comment for the title."
+            : field === "description"
+              ? "Add a comment for the description."
+              : "Add a comment for the tags."
+        )
+      }
+      itemFeedback.push({
+        videoAssetId: asset.id,
+        field,
+        hasIssue: true,
+        comment: state.comment.trim(),
+      })
+    }
+
+    try {
+      pushField("title", d.title)
+      pushField("description", d.description)
+      pushField("tags", d.tags)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Invalid feedback")
+      return
+    }
+
+    const thumbList = asset.thumbnails ?? []
+    for (const t of thumbList) {
+      const row = d.thumbs[t.id]
+      if (row?.reject && !row.comment.trim()) {
+        toast.error(
+          `Add a rejection comment for thumbnail${t.fileName ? ` “${t.fileName}”` : ""}.`
+        )
+        return
+      }
+      if (row?.reject) {
+        itemFeedback.push({
+          videoAssetId: asset.id,
+          thumbnailId: t.id,
+          field: "thumbnail",
+          hasIssue: true,
+          comment: row.comment.trim(),
+        })
+      }
+    }
+
+    if (itemFeedback.length === 0) {
+      const timelineForVersion = filterVideoCommentsForAssetVersion(
+        await getLanguageVideoComments(token, rejectTargetVideo.id),
+        rejectTargetVideo.currentVersion
+      )
+      const summary = d.overallComments.trim()
+      const videoOnlyComment =
+        summary ||
+        (timelineForVersion.length > 0
+          ? "Video feedback — see timestamp comments on the video."
+          : "")
+      if (!videoOnlyComment) {
+        toast.error(
+          "Add timestamp comments on the video, write an overall summary, or flag video, title, description, tags, or thumbnails — each flagged item needs a comment."
+        )
+        return
+      }
+      itemFeedback.push({
+        videoAssetId: asset.id,
+        field: "video",
+        hasIssue: true,
+        comment: videoOnlyComment,
+      })
+    }
+
+    const overall =
+      d.overallComments.trim() ||
+      "Language video rejected — see itemized feedback below."
+
+    setRejectBusy(true)
+    try {
+      const res = await rejectLanguageVideo(token, rejectTargetVideo.id, {
+        overallComments: overall,
+        itemFeedback,
+      })
+      setPkg((p) => (p ? mergeLanguageVideoIntoPackage(p, res.data) : p))
+      toast.warning(res.message ?? "Video rejected — sent back for review")
+      setRejectTargetVideo(null)
+      setRejectDraft(emptyLangRejectDraft(undefined))
+      await load()
+      void recheckThreadBlocks()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Reject failed")
+    } finally {
+      setRejectBusy(false)
+    }
+  }
+
+  async function approveSingleLanguageVideo(video: LanguageVideo) {
+    if (!token || video.status !== "AWAITING_APPROVER") return
+    setApprovingVideoId(video.id)
+    try {
+      const threadList = await getLanguageVideoComments(token, video.id)
+      if (videoThreadBlocksApprove(threadList, video.currentVersion)) {
+        toast.error("Cannot approve yet", {
+          description: VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+        })
+        return
+      }
+      const res = await approveLanguageVideo(token, video.id, {})
+      setPkg((p) => (p ? mergeLanguageVideoIntoPackage(p, res.data) : p))
+      toast.success(res.message ?? "Language video approved")
+      await load()
+      void recheckThreadBlocks()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Approve failed")
+    } finally {
+      setApprovingVideoId(null)
+    }
+  }
+
   async function finalApprove() {
     if (!token) return
     const targets = sorted.filter((v) => v.status === "AWAITING_APPROVER")
     if (targets.length === 0) return
+    for (const v of targets) {
+      const threadList = await getLanguageVideoComments(token, v.id)
+      if (videoThreadBlocksApprove(threadList, v.currentVersion)) {
+        toast.error("Cannot approve yet", {
+          description: VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
+        })
+        return
+      }
+    }
     setBusy(true)
     const overallComments = approveComment.trim() || undefined
     try {
@@ -189,7 +424,9 @@ export default function ContentApproverLanguagePackageDetailPage() {
               {sorted.length > 0 ? (
                 <p className="mt-2 text-sm text-muted-foreground">
                   {sorted.length} video{sorted.length === 1 ? "" : "s"} in this
-                  package — scroll to review each.
+                  package — scroll to review each. Add timestamp comments on the
+                  player when a video awaits final approval; approve the package
+                  or reject individual videos with structured feedback.
                 </p>
               ) : null}
             </div>
@@ -203,14 +440,15 @@ export default function ContentApproverLanguagePackageDetailPage() {
                 {sorted.map((video, index) => {
                   const va = getCurrentLanguageVideoAsset(video)
                   if (!va) return null
+                  const videoThreadBlocked = threadBlockByVideoId[video.id]
                   return (
                     <Card
                       key={video.id}
                       id={`lang-video-${video.id}`}
                       className="scroll-mt-24 shadow-sm"
                     >
-                      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 border-b bg-muted/20 py-4">
-                        <div>
+                      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 border-b bg-muted/20 py-4">
+                        <div className="min-w-0 flex-1">
                           <p className="text-xs font-medium text-muted-foreground">
                             Video {index + 1} of {sorted.length}
                           </p>
@@ -229,13 +467,59 @@ export default function ContentApproverLanguagePackageDetailPage() {
                             {va.title?.trim() || va.fileName}
                           </CardTitle>
                         </div>
+                        {video.status === "AWAITING_APPROVER" ? (
+                          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                            <Button
+                              type="button"
+                              disabled={
+                                approvingVideoId === video.id ||
+                                videoThreadBlocked
+                              }
+                              className="gap-1.5 bg-green-600 text-white hover:bg-green-700"
+                              onClick={() => void approveSingleLanguageVideo(video)}
+                            >
+                              {approvingVideoId === video.id ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <CheckCircle className="size-4" />
+                              )}
+                              Approve video
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={approvingVideoId === video.id}
+                              className="gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10"
+                              onClick={() => openRejectDialog(video)}
+                            >
+                              <XCircle className="size-4" />
+                              Reject video
+                            </Button>
+                          </div>
+                        ) : null}
                       </CardHeader>
                       <CardContent className="space-y-4 pt-6">
                         {video.status === "AWAITING_APPROVER" ? (
-                          <p className="text-sm text-muted-foreground">
-                            Final sign-off — approve when this localized
-                            deliverable is ready for publication.
-                          </p>
+                          <>
+                            <p className="text-sm text-muted-foreground">
+                              Final sign-off — add timestamp comments on the video
+                              if needed, then use{" "}
+                              <span className="font-medium text-foreground">
+                                Approve video
+                              </span>{" "}
+                              or{" "}
+                              <span className="font-medium text-foreground">
+                                Reject video
+                              </span>{" "}
+                              above. To approve every ready video at once, use
+                              package final approval below.
+                            </p>
+                            {videoThreadBlocked ? (
+                              <p className="text-sm text-amber-700 dark:text-amber-400">
+                                {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+                              </p>
+                            ) : null}
+                          </>
                         ) : (
                           <p className="text-sm text-muted-foreground">
                             This video is not awaiting final approval (
@@ -245,12 +529,14 @@ export default function ContentApproverLanguagePackageDetailPage() {
 
                         {va.fileUrl ? (
                           <div className={languageDetailShellClass()}>
-                            <VideoPlayerTimeline
-                              src={va.fileUrl}
+                            <LanguageVideoPlayerWithThread
+                              languageVideo={video}
+                              fileUrl={va.fileUrl}
                               mediaKey={va.id}
-                              comments={[]}
-                              showCommentsUi={false}
                               videoClassName={VIDEO_CLASS}
+                              onCommentsUpdated={() => {
+                                void recheckThreadBlocks()
+                              }}
                             />
                           </div>
                         ) : null}
@@ -325,7 +611,8 @@ export default function ContentApproverLanguagePackageDetailPage() {
                   </CardTitle>
                   <p className="text-sm font-normal text-muted-foreground">
                     One action finalizes every video that is ready for your
-                    sign-off. The API approves each video in sequence.
+                    sign-off. Open timestamp threads on each video must be
+                    cleared before you can approve.
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-4 pt-6">
@@ -341,9 +628,15 @@ export default function ContentApproverLanguagePackageDetailPage() {
                         {awaitingApproverVideos.length === 1 ? "" : "s"} ready
                         for final approval.
                       </p>
+                      {anyAwaitingThreadBlocked ? (
+                        <p className="text-sm text-amber-700 dark:text-amber-400">
+                          {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+                        </p>
+                      ) : null}
                       <Button
                         type="button"
                         onClick={() => setApproveOpen(true)}
+                        disabled={anyAwaitingThreadBlocked}
                         className="bg-green-600 text-white hover:bg-green-700"
                       >
                         Final approve package
@@ -382,6 +675,11 @@ export default function ContentApproverLanguagePackageDetailPage() {
               comments are applied to each approval request.
             </DialogDescription>
           </DialogHeader>
+          {anyAwaitingThreadBlocked ? (
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              {VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION}
+            </p>
+          ) : null}
           <div className="space-y-2">
             <Label htmlFor="fc">Comments (optional)</Label>
             <Textarea
@@ -395,7 +693,10 @@ export default function ContentApproverLanguagePackageDetailPage() {
             <Button variant="outline" onClick={() => setApproveOpen(false)}>
               Cancel
             </Button>
-            <Button disabled={busy} onClick={() => void finalApprove()}>
+            <Button
+              disabled={busy || anyAwaitingThreadBlocked}
+              onClick={() => void finalApprove()}
+            >
               {busy ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
@@ -403,6 +704,45 @@ export default function ContentApproverLanguagePackageDetailPage() {
               )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={rejectTargetVideo != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRejectTargetVideo(null)
+            setRejectDraft(emptyLangRejectDraft(undefined))
+            setRejectTimelineComments([])
+          }
+        }}
+      >
+        <DialogContent
+          showCloseButton
+          className="flex max-h-[min(90vh,44rem)] w-[calc(100vw-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+        >
+          {rejectTargetVideo && rejectAsset ? (
+            <RejectLanguageVideoDialogBody
+              variant="approver"
+              asset={rejectAsset}
+              videoLabel={
+                rejectAsset.title?.trim() ||
+                rejectAsset.fileName ||
+                `Video ${rejectTargetVideo.id.slice(0, 8)}`
+              }
+              draft={rejectDraft}
+              setDraft={setRejectDraft}
+              timelineComments={rejectTimelineComments}
+              timelineLoading={rejectTimelineLoading}
+              onCancel={() => {
+                setRejectTargetVideo(null)
+                setRejectDraft(emptyLangRejectDraft(undefined))
+                setRejectTimelineComments([])
+              }}
+              onSubmit={() => void submitApproverLangReject()}
+              isPending={rejectBusy}
+            />
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>

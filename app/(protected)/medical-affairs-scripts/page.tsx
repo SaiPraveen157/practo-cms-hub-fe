@@ -27,7 +27,15 @@ import { ScriptListSkeleton } from "@/components/loading/script-list-skeleton"
 import { ScriptListingCard } from "@/components/script-listing-card"
 import { ScriptListPagination } from "@/components/ui/pagination"
 import { ScriptStatsCards } from "@/components/script-stats-cards"
-import { ArrowRight, FileText, Filter, PlusCircle, Search } from "lucide-react"
+import {
+  ArrowRight,
+  CheckCircle,
+  FileText,
+  Filter,
+  PlusCircle,
+  Search,
+  XCircle,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 10
@@ -394,6 +402,37 @@ export default function MedicalAffairsScriptsPage() {
                         <ArrowRight className="size-4 shrink-0" />
                       </Link>
                     </Button>
+                  ) : script.status === "MEDICAL_REVIEW" ? (
+                    <>
+                      <Button
+                        asChild
+                        size="sm"
+                        variant="outline"
+                        className="text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-500/30 dark:text-red-500 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Link
+                          href={`/medical-affairs-scripts/${script.id}?action=reject`}
+                        >
+                          <XCircle className="mr-1.5 size-4 shrink-0" />
+                          Changes needed
+                        </Link>
+                      </Button>
+                      <Button
+                        asChild
+                        size="sm"
+                        variant="outline"
+                        className="text-green-600 hover:bg-green-50 hover:text-green-700 focus-visible:ring-green-500/30 dark:text-green-500 dark:hover:bg-green-950/50 dark:hover:text-green-400"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Link
+                          href={`/medical-affairs-scripts/${script.id}?action=approve`}
+                        >
+                          <CheckCircle className="mr-1.5 size-4 shrink-0" />
+                          Approve
+                        </Link>
+                      </Button>
+                    </>
                   ) : null
                 }
               />
