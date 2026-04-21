@@ -21,8 +21,8 @@ export interface ScriptListingCardProps {
   detailHref: string
   authorSubtitle?: string
   onCardClick?: () => void
-  /** Action buttons (e.g. Preview, Approve, Reject) — use onClick stopPropagation on buttons */
-  actions: React.ReactNode
+  /** Extra action buttons beside Preview — omit when read-only (e.g. informational list). */
+  actions?: React.ReactNode
 }
 
 export function ScriptListingCard({
@@ -38,18 +38,28 @@ export function ScriptListingCard({
   const authorName = getAuthorDisplayName(script.createdBy)
   const initials = getAuthorInitials(script.createdBy)
 
+  const cardInteractive = Boolean(onCardClick)
+
   return (
     <Card
-      className="flex cursor-pointer flex-col overflow-hidden rounded-xl bg-card shadow-sm ring-1 ring-border/50 transition-shadow hover:shadow-md"
+      className={cn(
+        "flex flex-col overflow-hidden rounded-xl bg-card shadow-sm ring-1 ring-border/50 transition-shadow",
+        cardInteractive &&
+          "cursor-pointer hover:shadow-md"
+      )}
       onClick={onCardClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault()
-          onCardClick?.()
-        }
-      }}
+      role={cardInteractive ? "button" : undefined}
+      tabIndex={cardInteractive ? 0 : undefined}
+      onKeyDown={
+        cardInteractive
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                onCardClick?.()
+              }
+            }
+          : undefined
+      }
     >
       <CardContent className="flex flex-1 flex-col gap-4 p-5">
         <div className="flex flex-wrap items-center gap-2">
