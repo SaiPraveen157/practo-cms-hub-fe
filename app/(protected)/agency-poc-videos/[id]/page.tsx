@@ -15,6 +15,8 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { useAuthStore } from "@/store"
 import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
+import { VideoVersionHistoryToolbar } from "@/components/video-version-history-toolbar"
+import { useVideoTimestampVersionView } from "@/hooks/use-video-timestamp-version-view"
 import {
   coerceVideoFileCategory,
   getUploadUrl,
@@ -311,6 +313,46 @@ export default function AgencyPocVideoDetailPage() {
     })
   }, [comments])
 
+  const agencyVersionHistoryEnabled = Boolean(
+    video?.fileUrl &&
+      (video.phase === "FIRST_LINE_UP" || video.phase === "FIRST_CUT") &&
+      (video.fileCategory === "video" ||
+        (video.fileType ?? "").startsWith("video/"))
+  )
+
+  const versionHistory = useVideoTimestampVersionView({
+    token,
+    currentVideoId: id,
+    liveVideoVersion: video?.version ?? 1,
+    enabled: agencyVersionHistoryEnabled,
+    refreshKey: `${id}-${video?.version ?? 0}`,
+  })
+
+  const agencyMainTimelineComments = useMemo(() => {
+    if (
+      versionHistory.isViewingArchived &&
+      versionHistory.archivedDetail?.comments
+    ) {
+      return versionHistory.archivedDetail.comments
+    }
+    return displayComments
+  }, [
+    versionHistory.isViewingArchived,
+    versionHistory.archivedDetail,
+    displayComments,
+  ])
+
+  const agencyMainTimelineSrc =
+    versionHistory.isViewingArchived &&
+    versionHistory.archivedDetail?.fileUrl
+      ? versionHistory.archivedDetail.fileUrl
+      : (video?.fileUrl ?? null)
+
+  const agencyMainTimelineMediaKey =
+    versionHistory.isViewingArchived && versionHistory.archivedDetail
+      ? `${versionHistory.archivedDetail.id}-v${versionHistory.archivedDetail.version}`
+      : (video?.id ?? id)
+
   const priorTimelineComments = useMemo(() => {
     if (!priorVideo) return []
     return filterVideoCommentsForAssetVersion(
@@ -551,14 +593,16 @@ export default function AgencyPocVideoDetailPage() {
           </Card>
         ) : null} */}
 
-        {priorLoading && (video.version > 1 || video.previousVideoId) ? (
+        {priorLoading &&
+        (video.version > 1 || video.previousVideoId) &&
+        !versionHistory.showToolbar ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
             Loading previous version…
           </p>
         ) : null}
 
-        {priorVideo ? (
+        {priorVideo && !versionHistory.showToolbar ? (
           <Card>
             <CardHeader>
               <CardTitle>Previous version (v{priorVideo.version})</CardTitle>
@@ -604,7 +648,9 @@ export default function AgencyPocVideoDetailPage() {
               )}
             </CardContent>
           </Card>
-        ) : !priorLoading && (video.version > 1 || video.previousVideoId) ? (
+        ) : !priorLoading &&
+          (video.version > 1 || video.previousVideoId) &&
+          !versionHistory.showToolbar ? (
           <Card className="border-dashed">
             <CardHeader>
               <CardTitle className="text-base">Previous version</CardTitle>
@@ -761,12 +807,46 @@ export default function AgencyPocVideoDetailPage() {
                     : "No file uploaded yet."}
               </p>
             ) : fileCategory === "video" ? (
-              <VideoPlayerTimeline
-                src={video.fileUrl!}
-                mediaKey={video.id}
-                comments={displayComments}
-                commentFormDisabled
-              />
+              <div className="space-y-4">
+                {versionHistory.listError ? (
+                  <p className="text-xs text-muted-foreground">
+                    {versionHistory.listError}
+                  </p>
+                ) : null}
+                {versionHistory.detailError ? (
+                  <p className="text-xs text-destructive">
+                    {versionHistory.detailError}
+                  </p>
+                ) : null}
+                <VideoVersionHistoryToolbar
+                  showToolbar={versionHistory.showToolbar}
+                  listLoading={versionHistory.listLoading}
+                  selectValue={versionHistory.selectValue}
+                  onSelectValueChange={versionHistory.onSelectValueChange}
+                  versionOptions={versionHistory.versionOptions}
+                  isViewingArchived={versionHistory.isViewingArchived}
+                  detailLoading={versionHistory.detailLoading}
+                  id="agency-poc-video-version"
+                />
+                {agencyMainTimelineSrc ? (
+                  <VideoPlayerTimeline
+                    src={agencyMainTimelineSrc}
+                    mediaKey={agencyMainTimelineMediaKey}
+                    comments={agencyMainTimelineComments}
+                    commentFormDisabled
+                  />
+                ) : versionHistory.isViewingArchived &&
+                  versionHistory.detailLoading ? (
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" />
+                    Loading file for this version…
+                  </p>
+                ) : versionHistory.isViewingArchived ? (
+                  <p className="text-sm text-muted-foreground">
+                    No video file for this version.
+                  </p>
+                ) : null}
+              </div>
             ) : fileCategory === "image" ? (
               <Image
                 src={video.fileUrl!}

@@ -6,6 +6,7 @@
 import { apiRequest } from "@/lib/api"
 import { assertDeliverableVideoFileIfVideo } from "@/lib/video-file-validation"
 import {
+  ensureVideoCommentAssetVersion,
   filterVideoCommentsWithTimestamp,
   normalizeVideoComment,
 } from "@/lib/video-comment"
@@ -21,6 +22,9 @@ import type {
   ApproveRejectBody,
   RejectVideoResponse,
   VideoComment,
+  VideoVersionDetailView,
+  VideoVersionListEntry,
+  VideoVersionsListResponse,
 } from "@/types/video"
 
 const VIDEO_STATUSES: VideoStatus[] = [
@@ -67,6 +71,219 @@ function extractCommentsArrayFromResponse(
     if (Array.isArray(inner)) return inner
   }
   return []
+}
+
+/** API may nest payload under `data`. */
+function unwrapDataRecord(raw: Record<string, unknown>): Record<string, unknown> {
+  const d = raw.data
+  if (d != null && typeof d === "object" && !Array.isArray(d)) {
+    return d as Record<string, unknown>
+  }
+  return raw
+}
+
+function numOrUndef(v: unknown): number | undefined {
+  if (v == null || v === "") return undefined
+  const n = typeof v === "number" ? v : Number(v)
+  return Number.isFinite(n) ? Math.trunc(n) : undefined
+}
+
+function parseVideoVersionListEntry(
+  item: Record<string, unknown>
+): VideoVersionListEntry | null {
+  const v = numOrUndef(item.version ?? item.videoVersion ?? item.video_version)
+  if (v == null || v < 1) return null
+  const vid = String(
+    item.videoId ?? item.video_id ?? item.id ?? ""
+  ).trim()
+  const cc = numOrUndef(item.commentCount ?? item.comment_count)
+  return {
+    version: v,
+    videoId: vid,
+    status: typeof item.status === "string" ? item.status : undefined,
+    fileName:
+      item.fileName != null || item.file_name != null
+        ? String(item.fileName ?? item.file_name)
+        : undefined,
+    createdAt:
+      typeof item.createdAt === "string"
+        ? item.createdAt
+        : typeof item.created_at === "string"
+          ? item.created_at
+          : undefined,
+    updatedAt:
+      typeof item.updatedAt === "string"
+        ? item.updatedAt
+        : typeof item.updated_at === "string"
+          ? item.updated_at
+          : undefined,
+    uploadedAt:
+      typeof item.uploadedAt === "string"
+        ? item.uploadedAt
+        : typeof item.uploaded_at === "string"
+          ? item.uploaded_at
+          : undefined,
+    commentCount: cc,
+    wasRejected: Boolean(item.wasRejected ?? item.was_rejected),
+    rejectionReason:
+      item.rejectionReason != null || item.rejection_reason != null
+        ? String(item.rejectionReason ?? item.rejection_reason)
+        : null,
+    rejection:
+      item.rejection != null && typeof item.rejection === "object"
+        ? (item.rejection as Record<string, unknown>)
+        : null,
+  }
+}
+
+/**
+ * GET /api/videos/:videoId/versions — version dropdown (current row id from route).
+ */
+export async function getVideoVersionsList(
+  token: string | null,
+  videoId: string
+): Promise<VideoVersionsListResponse> {
+  checkToken(token)
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/api/videos/${videoId}/versions`,
+    { token }
+  )
+  const body = unwrapDataRecord(raw)
+  const versionsRaw = body.versions
+  const versions: VideoVersionListEntry[] = []
+  if (Array.isArray(versionsRaw)) {
+    for (const el of versionsRaw) {
+      if (!el || typeof el !== "object") continue
+      const row = parseVideoVersionListEntry(el as Record<string, unknown>)
+      if (row) {
+        versions.push({
+          ...row,
+          videoId: row.videoId.trim() ? row.videoId : videoId,
+        })
+      }
+    }
+  }
+  versions.sort((a, b) => b.version - a.version)
+  const cv = numOrUndef(body.currentVersion ?? body.current_version)
+  const tv = numOrUndef(body.totalVersions ?? body.total_versions)
+  return {
+    success: Boolean(raw.success ?? body.success),
+    scriptId: typeof body.scriptId === "string" ? body.scriptId : undefined,
+    scriptTitle:
+      typeof body.scriptTitle === "string"
+        ? body.scriptTitle
+        : typeof body.script_title === "string"
+          ? body.script_title
+          : undefined,
+    phase: typeof body.phase === "string" ? body.phase : undefined,
+    currentVersion: cv,
+    totalVersions: tv,
+    versions,
+  }
+}
+
+function parseVersionDetailFileFields(body: Record<string, unknown>): {
+  fileUrl: string | null
+  fileName: string | null
+  fileType: string | null
+  fileSize: number | null
+} {
+  const file = body.file
+  if (file != null && typeof file === "object") {
+    const f = file as Record<string, unknown>
+    const url = f.fileUrl ?? f.file_url
+    return {
+      fileUrl: typeof url === "string" && url ? url : null,
+      fileName:
+        f.fileName != null || f.file_name != null
+          ? String(f.fileName ?? f.file_name)
+          : null,
+      fileType:
+        f.fileType != null || f.file_type != null
+          ? String(f.fileType ?? f.file_type)
+          : null,
+      fileSize: numOrUndef(f.fileSize ?? f.file_size) ?? null,
+    }
+  }
+  const url = body.fileUrl ?? body.file_url
+  return {
+    fileUrl: typeof url === "string" && url ? url : null,
+    fileName:
+      body.fileName != null || body.file_name != null
+        ? String(body.fileName ?? body.file_name)
+        : null,
+    fileType:
+      body.fileType != null || body.file_type != null
+        ? String(body.fileType ?? body.file_type)
+        : null,
+    fileSize: numOrUndef(body.fileSize ?? body.file_size) ?? null,
+  }
+}
+
+/**
+ * GET /api/videos/:videoId/versions/:version — full file + comments for one version (read-only history).
+ * `:videoId` is the **current** row id from the route; backend resolves the chain.
+ */
+export async function getVideoVersionDetail(
+  token: string | null,
+  videoId: string,
+  version: number
+): Promise<VideoVersionDetailView> {
+  checkToken(token)
+  if (!Number.isFinite(version) || version < 1) {
+    throw new Error("version must be a positive integer")
+  }
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/api/videos/${videoId}/versions/${Math.trunc(version)}`,
+    { token }
+  )
+  const body = unwrapDataRecord(raw)
+  const id = String(
+    body.id ?? body.videoId ?? body.video_id ?? ""
+  ).trim()
+  const ver = numOrUndef(body.version) ?? Math.trunc(version)
+  const { fileUrl, fileName, fileType, fileSize } =
+    parseVersionDetailFileFields(body)
+  const list = extractCommentsArrayFromResponse(body)
+  const comments: VideoComment[] = filterVideoCommentsWithTimestamp(
+    list.map((c) =>
+      ensureVideoCommentAssetVersion(
+        normalizeVideoComment(c as Record<string, unknown>),
+        ver
+      )
+    )
+  )
+  return {
+    id: id || String(videoId),
+    version: ver,
+    isCurrentVersion: Boolean(body.isCurrentVersion ?? body.is_current_version),
+    scriptId: typeof body.scriptId === "string" ? body.scriptId : undefined,
+    scriptTitle:
+      typeof body.scriptTitle === "string"
+        ? body.scriptTitle
+        : typeof body.script_title === "string"
+          ? body.script_title
+          : undefined,
+    phase: typeof body.phase === "string" ? body.phase : undefined,
+    status: typeof body.status === "string" ? body.status : undefined,
+    fileUrl,
+    fileName,
+    fileType,
+    fileSize,
+    createdAt:
+      typeof body.createdAt === "string"
+        ? body.createdAt
+        : typeof body.created_at === "string"
+          ? body.created_at
+          : undefined,
+    updatedAt:
+      typeof body.updatedAt === "string"
+        ? body.updatedAt
+        : typeof body.updated_at === "string"
+          ? body.updated_at
+          : undefined,
+    comments,
+  }
 }
 
 /**

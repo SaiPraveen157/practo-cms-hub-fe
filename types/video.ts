@@ -145,6 +145,52 @@ export interface RejectVideoResponse {
   newVersion?: Video
 }
 
+/** Row from GET /api/videos/:id/versions (lightweight list for dropdown). */
+export interface VideoVersionListEntry {
+  version: number
+  /** Row id for this version (may differ from the “current” route id). */
+  videoId: string
+  status?: string
+  fileName?: string | null
+  createdAt?: string
+  updatedAt?: string
+  uploadedAt?: string
+  commentCount?: number
+  wasRejected?: boolean
+  rejectionReason?: string | null
+  rejection?: Record<string, unknown> | null
+}
+
+/** GET /api/videos/:videoId/versions */
+export interface VideoVersionsListResponse {
+  success?: boolean
+  scriptId?: string
+  scriptTitle?: string
+  phase?: string
+  currentVersion?: number
+  totalVersions?: number
+  versions: VideoVersionListEntry[]
+}
+
+/** Normalized GET /api/videos/:videoId/versions/:version — for archived read-only playback. */
+export interface VideoVersionDetailView {
+  id: string
+  version: number
+  isCurrentVersion?: boolean
+  scriptId?: string
+  scriptTitle?: string
+  phase?: string
+  status?: string
+  fileUrl: string | null
+  fileName?: string | null
+  fileType?: string | null
+  fileSize?: number | null
+  createdAt?: string
+  updatedAt?: string
+  /** Timestamp-only thread for this file version. */
+  comments: VideoComment[]
+}
+
 export interface VideoComment {
   id: string
   content: string

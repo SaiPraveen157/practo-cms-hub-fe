@@ -11,16 +11,21 @@ import { getPackageQueue } from "@/lib/packages-api"
 import {
   isVideoLockedPhase3Done,
   isVideoReadyToUploadFlu,
-  isVideoReviewInProgress,
   mergeScriptQueueRows,
+  mergeUniqueScriptsById,
   mergeVideoQueueRows,
+  SCRIPT_REVIEW_WITH_OTHER_TEAMS_STATUSES,
   scriptsForScriptQueueTab,
   scriptsMatchingVideoFilter,
 } from "@/lib/agency-poc-queue-scripts"
 import { scriptNeedsAgencyFirstLineUpUpload } from "@/lib/agency-first-line-up"
 import { groupQueueVideosIntoPackages } from "@/lib/package-video-helpers"
 import { packageVisibleInAgencyPhase6Workflow } from "@/lib/video-phase-gates"
-import { getScriptQueue, getScriptStats } from "@/lib/scripts-api"
+import {
+  getScriptQueue,
+  getScriptStats,
+  listScripts,
+} from "@/lib/scripts-api"
 import { getVideoQueue } from "@/lib/videos-api"
 import type { Video } from "@/types/video"
 import { filterScriptsBySearch } from "@/lib/script-search"
@@ -53,7 +58,7 @@ export default function AgencyPocPage() {
   const user = useAuthStore((s) => s.user)
   /** Merged GET /api/videos/queue rows — single source for tabs + cards. */
   const [queueVideos, setQueueVideos] = useState<Video[]>([])
-  /** Merged GET /api/scripts/queue — script rows for Script queue tab (e.g. rejections). */
+  /** Merged GET /api/scripts/queue — script rows for Script queue tab (AGENCY_PRODUCTION, etc.). */
   const [scriptQueueScripts, setScriptQueueScripts] = useState<Script[]>([])
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
@@ -67,6 +72,9 @@ export default function AgencyPocPage() {
   >(() => new Map())
   /** Video queue rows — FLU upload visibility uses `script.fluStatus` when present; videos are fallback only. */
   const [videos, setVideos] = useState<Video[]>([])
+  /** Scripts in text review with Medical / Content/Brand / Approver (GET /api/scripts by status). */
+  const [scriptsInReviewWithOtherTeams, setScriptsInReviewWithOtherTeams] =
+    useState<Script[]>([])
 
   const isAgencyPoc = user?.role === "AGENCY_POC"
 
@@ -75,6 +83,7 @@ export default function AgencyPocPage() {
       case "script_queue":
         return scriptsForScriptQueueTab(queueVideos, scriptQueueScripts)
       case "review_in_progress":
+        return scriptsInReviewWithOtherTeams
       case "ready_to_upload":
       case "locked_phase3":
         if (queueVideos.length === 0) return []
@@ -83,11 +92,6 @@ export default function AgencyPocPage() {
         return []
     }
     switch (tab) {
-      case "review_in_progress":
-        return scriptsMatchingVideoFilter(
-          queueVideos,
-          isVideoReviewInProgress
-        )
       case "ready_to_upload":
         return scriptsMatchingVideoFilter(queueVideos, isVideoReadyToUploadFlu)
       case "locked_phase3":
@@ -95,7 +99,7 @@ export default function AgencyPocPage() {
       default:
         return []
     }
-  }, [queueVideos, scriptQueueScripts, tab])
+  }, [queueVideos, scriptQueueScripts, tab, scriptsInReviewWithOtherTeams])
 
   const searchFilteredScripts = useMemo(
     () => filterScriptsBySearch(tabFilteredScripts, searchQuery),
@@ -124,13 +128,28 @@ export default function AgencyPocPage() {
       getVideoQueue(token),
       getPackageQueue(token),
       getScriptQueue(token),
+      ...SCRIPT_REVIEW_WITH_OTHER_TEAMS_STATUSES.map((status) =>
+        listScripts(token, { status, page: 1, limit: 100 }).catch(() => ({
+          success: true as const,
+          scripts: [] as Script[],
+          total: 0,
+          page: 1,
+          limit: 100,
+          totalPages: 0,
+        }))
+      ),
     ])
-      .then(([videoRes, packageRes, scriptRes]) => {
+      .then(([videoRes, packageRes, scriptRes, ...reviewListRes]) => {
         if (cancelled) return
         const mergedVideos = mergeVideoQueueRows(videoRes)
         setQueueVideos(mergedVideos)
         setVideos(mergedVideos)
         setScriptQueueScripts(mergeScriptQueueRows(scriptRes))
+        setScriptsInReviewWithOtherTeams(
+          mergeUniqueScriptsById(
+            reviewListRes.flatMap((r) => r.scripts ?? [])
+          )
+        )
         const m = new Map<string, string>()
         const packages = groupQueueVideosIntoPackages(packageRes.videos ?? [])
         for (const p of packages) {
@@ -152,6 +171,7 @@ export default function AgencyPocPage() {
           setQueueVideos([])
           setVideos([])
           setScriptQueueScripts([])
+          setScriptsInReviewWithOtherTeams([])
           setFinalPackageIdByScriptId(new Map())
         }
       })
@@ -274,7 +294,9 @@ export default function AgencyPocPage() {
 
         {loading ? (
           <ScriptListSkeleton />
-        ) : queueVideos.length === 0 && scriptQueueScripts.length === 0 ? (
+        ) : queueVideos.length === 0 &&
+          scriptQueueScripts.length === 0 &&
+          scriptsInReviewWithOtherTeams.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
               <FileText className="size-12 text-muted-foreground" />
@@ -293,16 +315,16 @@ export default function AgencyPocPage() {
                 {tab === "script_queue"
                   ? "Nothing in your script queue"
                   : tab === "review_in_progress"
-                    ? "Nothing in Medical or Content/Brand review"
+                    ? "No scripts in review with other teams"
                     : tab === "ready_to_upload"
                       ? "No locked scripts ready for First Line Up upload"
                       : "No First Cut rows approved yet"}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 {tab === "script_queue"
-                  ? "Includes first-time and resubmit video uploads (except First Line Up on a locked script — use Ready to upload), plus scripts back at Agency with open rejection feedback."
+                  ? "Includes scripts at Agency production (new or after rejection), plus first-time and resubmit video uploads (except First Line Up on a locked script — use Ready to upload)."
                   : tab === "review_in_progress"
-                    ? "Videos with status Medical Review or Content/Brand Review appear here. Rows with status Approved are not in this tab."
+                    ? "Scripts waiting on Medical Affairs, Content/Brand, or Content Approver (text review) appear here. Video cuts in review are listed under Video production."
                     : tab === "ready_to_upload"
                       ? "Locked scripts with a First Line Up slot waiting for upload are listed here."
                       : tab === "locked_phase3"
@@ -345,9 +367,13 @@ export default function AgencyPocPage() {
                   script={script}
                   detailHref={`/agency-poc/${script.id}`}
                   authorSubtitle="Agency POC"
-                  onCardClick={() => router.push(`/agency-poc/${script.id}`)}
+                  onCardClick={
+                    tab === "review_in_progress"
+                      ? undefined
+                      : () => router.push(`/agency-poc/${script.id}`)
+                  }
                   actions={
-                    script.status === "LOCKED" ? (
+                    tab === "review_in_progress" ? null : script.status === "LOCKED" ? (
                       <div
                         className="flex flex-wrap gap-2"
                         onClick={(e) => e.stopPropagation()}

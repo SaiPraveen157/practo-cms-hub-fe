@@ -14,6 +14,8 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { useAuthStore } from "@/store"
 import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
+import { VideoVersionHistoryToolbar } from "@/components/video-version-history-toolbar"
+import { useVideoTimestampVersionView } from "@/hooks/use-video-timestamp-version-view"
 import { getVideo, getVideoComments, addVideoComment } from "@/lib/videos-api"
 import type {
   Video,
@@ -105,6 +107,46 @@ export default function ContentApproverVideoDetailPage() {
     [comments, video?.version]
   )
 
+  const versionHistoryEnabled = Boolean(
+    video?.fileUrl &&
+      (video.fileCategory === "video" ||
+        (video.fileType ?? "").startsWith("video/")) &&
+      (video.phase === "FIRST_CUT" || video.phase === "FIRST_LINE_UP")
+  )
+
+  const versionHistory = useVideoTimestampVersionView({
+    token,
+    currentVideoId: id,
+    liveVideoVersion: video?.version ?? 1,
+    enabled: versionHistoryEnabled,
+    refreshKey: `${id}-${video?.version ?? 0}`,
+  })
+
+  const timelinePlayerComments = useMemo(() => {
+    if (
+      versionHistory.isViewingArchived &&
+      versionHistory.archivedDetail?.comments
+    ) {
+      return versionHistory.archivedDetail.comments
+    }
+    return versionScopedComments
+  }, [
+    versionHistory.isViewingArchived,
+    versionHistory.archivedDetail,
+    versionScopedComments,
+  ])
+
+  const timelinePlayerSrc =
+    versionHistory.isViewingArchived &&
+    versionHistory.archivedDetail?.fileUrl
+      ? versionHistory.archivedDetail.fileUrl
+      : video?.fileUrl ?? null
+
+  const timelineMediaKey =
+    versionHistory.isViewingArchived && versionHistory.archivedDetail
+      ? `${versionHistory.archivedDetail.id}-v${versionHistory.archivedDetail.version}`
+      : (video?.id ?? id)
+
   if (!isContentApprover) {
     return (
       <div className="p-6 md:p-8">
@@ -185,21 +227,60 @@ export default function ContentApproverVideoDetailPage() {
                 No file uploaded yet
               </p>
             ) : fileCategory === "video" ? (
-              <VideoPlayerTimeline
-                src={video.fileUrl!}
-                mediaKey={video.id}
-                comments={versionScopedComments}
-                onAddComment={async ({ content, timestampSeconds }) => {
-                  if (!token || !id) return
-                  await addVideoComment(token, id, {
-                    content,
-                    timestampSeconds,
-                    assetVersion: video.version,
-                  })
-                  await fetchComments()
-                  toast.success("Comment added")
-                }}
-              />
+              <div className="space-y-4">
+                {versionHistory.listError ? (
+                  <p className="text-xs text-muted-foreground">
+                    {versionHistory.listError}
+                  </p>
+                ) : null}
+                {versionHistory.detailError ? (
+                  <p className="text-xs text-destructive">
+                    {versionHistory.detailError}
+                  </p>
+                ) : null}
+                <VideoVersionHistoryToolbar
+                  showToolbar={versionHistory.showToolbar}
+                  listLoading={versionHistory.listLoading}
+                  selectValue={versionHistory.selectValue}
+                  onSelectValueChange={versionHistory.onSelectValueChange}
+                  versionOptions={versionHistory.versionOptions}
+                  isViewingArchived={versionHistory.isViewingArchived}
+                  detailLoading={versionHistory.detailLoading}
+                  id="content-approver-video-version"
+                />
+                {timelinePlayerSrc ? (
+                  <VideoPlayerTimeline
+                    src={timelinePlayerSrc}
+                    mediaKey={timelineMediaKey}
+                    comments={timelinePlayerComments}
+                    commentFormDisabled={versionHistory.isViewingArchived}
+                    onAddComment={
+                      versionHistory.isViewingArchived
+                        ? undefined
+                        : async ({ content, timestampSeconds }) => {
+                            if (!token || !id || !video) return
+                            await addVideoComment(token, id, {
+                              content,
+                              timestampSeconds,
+                              assetVersion: video.version,
+                            })
+                            await fetchComments()
+                            toast.success("Comment added")
+                          }
+                    }
+                  />
+                ) : versionHistory.isViewingArchived &&
+                  versionHistory.detailLoading ? (
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" />
+                    Loading file for this version…
+                  </p>
+                ) : versionHistory.isViewingArchived ? (
+                  <p className="text-sm text-muted-foreground">
+                    No video file for this version.
+                  </p>
+                ) : null}
+              </div>
             ) : fileCategory === "image" ? (
               <img
                 src={video.fileUrl!}

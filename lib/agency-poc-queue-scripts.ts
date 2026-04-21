@@ -123,9 +123,11 @@ export function isVideoScriptQueueAgency(v: Video): boolean {
 }
 
 /**
- * Script queue tab: first-time video uploads pending agency action, plus scripts
- * back at Agency Production with `latestRejection` (e.g. Medical reject) even when
- * there is no video row yet.
+ * Script queue tab: scripts `GET /api/scripts/queue` returns for Agency at
+ * `AGENCY_PRODUCTION` (new handoff from Content/Brand or after rejection), plus
+ * script shells built from video rows that need agency upload (when not already
+ * covered by the script queue). Script-queue rows are merged last so they win
+ * over minimal objects derived from videos.
  */
 export function scriptsForScriptQueueTab(
   queueVideos: Video[],
@@ -135,14 +137,14 @@ export function scriptsForScriptQueueTab(
     queueVideos.length === 0
       ? []
       : scriptsMatchingVideoFilter(queueVideos, isVideoScriptQueueAgency)
-  const fromScripts = scriptQueueScripts.filter(
-    (s) => s.status === "AGENCY_PRODUCTION" && s.latestRejection != null
+  const fromScriptQueue = scriptQueueScripts.filter(
+    (s) => s.status === "AGENCY_PRODUCTION"
   )
   const byId = new Map<string, Script>()
   for (const s of fromVideos) {
     byId.set(s.id, s)
   }
-  for (const s of fromScripts) {
+  for (const s of fromScriptQueue) {
     byId.set(s.id, s)
   }
   return Array.from(byId.values()).sort(
@@ -151,10 +153,28 @@ export function scriptsForScriptQueueTab(
   )
 }
 
-/** Medical Affairs or Content/Brand is reviewing this row (not Agency). */
-export function isVideoReviewInProgress(v: Video): boolean {
-  const s = normalizeVideoStatusLoose(v)
-  return s === "MEDICAL_REVIEW" || s === "CONTENT_BRAND_REVIEW"
+/**
+ * Script workflow stages where the document is with Medical, Content/Brand, or
+ * Content Approver — not with Agency. Used for Agency POC "Script review in
+ * progress" (script queue for Agency only returns AGENCY_PRODUCTION + LOCKED).
+ */
+export const SCRIPT_REVIEW_WITH_OTHER_TEAMS_STATUSES: ScriptStatus[] = [
+  "MEDICAL_REVIEW",
+  "CONTENT_BRAND_REVIEW",
+  "CONTENT_BRAND_APPROVAL",
+  "CONTENT_APPROVER_REVIEW",
+]
+
+/** Dedupe by script id, newest first. */
+export function mergeUniqueScriptsById(scripts: Script[]): Script[] {
+  const byId = new Map<string, Script>()
+  for (const s of scripts) {
+    byId.set(s.id, s)
+  }
+  return Array.from(byId.values()).sort(
+    (a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  )
 }
 
 /** Locked script — ready to start Phase 4 (First Line Up upload). */

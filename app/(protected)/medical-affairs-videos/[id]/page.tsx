@@ -42,6 +42,8 @@ import { VideoTatBar, resolveVideoTat } from "@/components/video-tat-bar"
 import type { UserRole } from "@/types/auth"
 import { ArrowLeft, CheckCircle, Loader2, XCircle } from "lucide-react"
 import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
+import { VideoVersionHistoryToolbar } from "@/components/video-version-history-toolbar"
+import { useVideoTimestampVersionView } from "@/hooks/use-video-timestamp-version-view"
 import {
   VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
   filterVideoCommentsForAssetVersion,
@@ -154,12 +156,57 @@ export default function VideoDetailPage() {
     [comments, video?.version]
   )
 
+  const versionHistoryEnabled = Boolean(
+    video?.fileUrl &&
+      (video.fileCategory === "video" ||
+        (video.fileType ?? "").startsWith("video/"))
+  )
+
+  const versionHistory = useVideoTimestampVersionView({
+    token,
+    currentVideoId: id,
+    liveVideoVersion: video?.version ?? 1,
+    enabled: versionHistoryEnabled,
+    refreshKey: `${id}-${video?.version ?? 0}`,
+  })
+
+  const timelinePlayerComments = useMemo(() => {
+    if (
+      versionHistory.isViewingArchived &&
+      versionHistory.archivedDetail?.comments
+    ) {
+      return versionHistory.archivedDetail.comments
+    }
+    return versionScopedComments
+  }, [
+    versionHistory.isViewingArchived,
+    versionHistory.archivedDetail,
+    versionScopedComments,
+  ])
+
+  const timelinePlayerSrc =
+    versionHistory.isViewingArchived &&
+    versionHistory.archivedDetail?.fileUrl
+      ? versionHistory.archivedDetail.fileUrl
+      : video?.fileUrl ?? null
+
+  const timelineMediaKey =
+    versionHistory.isViewingArchived && versionHistory.archivedDetail
+      ? `${versionHistory.archivedDetail.id}-v${versionHistory.archivedDetail.version}`
+      : (video?.id ?? id)
+
   const threadBlocksApprove =
-    video != null && videoThreadBlocksApprove(comments, video.version)
+    video != null &&
+    !versionHistory.isViewingArchived &&
+    videoThreadBlocksApprove(comments, video.version)
 
   async function handleApprove() {
     if (!token || !id) return
-    if (video && videoThreadBlocksApprove(comments, video.version)) {
+    if (
+      video &&
+      !versionHistory.isViewingArchived &&
+      videoThreadBlocksApprove(comments, video.version)
+    ) {
       toast.error("Cannot approve yet", {
         description: VIDEO_THREAD_APPROVE_BLOCKED_DESCRIPTION,
       })
@@ -317,21 +364,60 @@ export default function VideoDetailPage() {
                 No file uploaded yet
               </p>
             ) : fileCategory === "video" ? (
-              <VideoPlayerTimeline
-                src={video.fileUrl!}
-                mediaKey={video.id}
-                comments={versionScopedComments}
-                onAddComment={async ({ content, timestampSeconds }) => {
-                  if (!token || !id) return
-                  await addVideoComment(token, id, {
-                    content,
-                    timestampSeconds,
-                    assetVersion: video.version,
-                  })
-                  await fetchComments()
-                  toast.success("Comment added")
-                }}
-              />
+              <div className="space-y-4">
+                {versionHistory.listError ? (
+                  <p className="text-xs text-muted-foreground">
+                    {versionHistory.listError}
+                  </p>
+                ) : null}
+                {versionHistory.detailError ? (
+                  <p className="text-xs text-destructive">
+                    {versionHistory.detailError}
+                  </p>
+                ) : null}
+                <VideoVersionHistoryToolbar
+                  showToolbar={versionHistory.showToolbar}
+                  listLoading={versionHistory.listLoading}
+                  selectValue={versionHistory.selectValue}
+                  onSelectValueChange={versionHistory.onSelectValueChange}
+                  versionOptions={versionHistory.versionOptions}
+                  isViewingArchived={versionHistory.isViewingArchived}
+                  detailLoading={versionHistory.detailLoading}
+                  id="medical-affairs-video-version"
+                />
+                {timelinePlayerSrc ? (
+                  <VideoPlayerTimeline
+                    src={timelinePlayerSrc}
+                    mediaKey={timelineMediaKey}
+                    comments={timelinePlayerComments}
+                    commentFormDisabled={versionHistory.isViewingArchived}
+                    onAddComment={
+                      versionHistory.isViewingArchived
+                        ? undefined
+                        : async ({ content, timestampSeconds }) => {
+                            if (!token || !id || !video) return
+                            await addVideoComment(token, id, {
+                              content,
+                              timestampSeconds,
+                              assetVersion: video.version,
+                            })
+                            await fetchComments()
+                            toast.success("Comment added")
+                          }
+                    }
+                  />
+                ) : versionHistory.isViewingArchived &&
+                  versionHistory.detailLoading ? (
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" />
+                    Loading file for this version…
+                  </p>
+                ) : versionHistory.isViewingArchived ? (
+                  <p className="text-sm text-muted-foreground">
+                    No video file for this version.
+                  </p>
+                ) : null}
+              </div>
             ) : fileCategory === "image" ? (
               <img
                 src={video.fileUrl!}
@@ -412,7 +498,7 @@ export default function VideoDetailPage() {
           </div>
         ) : null}
 
-        {(showApprove || showReject) && (
+        {(showApprove || showReject) && !versionHistory.isViewingArchived && (
           <div className="flex flex-wrap gap-2 border-t pt-6">
             {showApprove && (
               <Button
