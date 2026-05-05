@@ -191,6 +191,19 @@ export interface VideoVersionDetailView {
   comments: VideoComment[]
 }
 
+/** Injected into {@link useVideoTimestampVersionView} for Phase 6/7 package or language video endpoints. */
+export type VideoTimestampVersionApis = {
+  listVersions: (
+    token: string | null,
+    videoId: string
+  ) => Promise<VideoVersionsListResponse>
+  getVersionDetail: (
+    token: string | null,
+    videoId: string,
+    version: number
+  ) => Promise<VideoVersionDetailView>
+}
+
 export interface VideoComment {
   id: string
   content: string

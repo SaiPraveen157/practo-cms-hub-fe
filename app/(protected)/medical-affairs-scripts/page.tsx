@@ -22,7 +22,13 @@ import {
 import { useAuthStore } from "@/store"
 import { getScriptQueue, getMyReviews, getScriptStats } from "@/lib/scripts-api"
 import { filterScriptsBySearch } from "@/lib/script-search"
-import type { Script, ScriptStatus, ScriptStatsResponse } from "@/types/script"
+import { STATUS_DISPLAY_LABELS } from "@/lib/script-status-styles"
+import {
+  pendingStatusOptionsForPhase,
+  scriptInPhaseTab,
+  type PhaseTabKey,
+} from "@/lib/script-workflow-phase"
+import type { Script, ScriptStatsResponse, ScriptStatus } from "@/types/script"
 import { ScriptListSkeleton } from "@/components/loading/script-list-skeleton"
 import { ScriptListingCard } from "@/components/script-listing-card"
 import { ScriptListPagination } from "@/components/ui/pagination"
@@ -30,6 +36,7 @@ import { ScriptStatsCards } from "@/components/script-stats-cards"
 import {
   ArrowRight,
   CheckCircle,
+  Eye,
   FileText,
   Filter,
   PlusCircle,
@@ -39,28 +46,30 @@ import {
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 10
+/** Fetch enough my-reviews to filter by workflow phase client-side (server has no phase param). */
+const MY_REVIEWS_FETCH_LIMIT = 500
 
-const STATUS_LABELS: Record<ScriptStatus, string> = {
-  DRAFT: "DRAFT",
-  CONTENT_BRAND_REVIEW: "CONTENT BRAND REVIEW",
-  AGENCY_PRODUCTION: "AGENCY PRODUCTION",
-  MEDICAL_REVIEW: "MEDICAL REVIEW",
-  CONTENT_BRAND_APPROVAL: "CONTENT BRAND APPROVAL",
-  CONTENT_APPROVER_REVIEW: "CONTENT APPROVER REVIEW",
-  LOCKED: "LOCKED",
+type TabKey = "pending" | "approved" | "rejected"
+
+function dedupeScriptsById(scripts: Script[]): Script[] {
+  const seen = new Set<string>()
+  const out: Script[] = []
+  for (const s of scripts) {
+    if (seen.has(s.id)) continue
+    seen.add(s.id)
+    out.push(s)
+  }
+  return out
 }
-
-type TabKey = "all" | "approved" | "rejected"
 
 export default function MedicalAffairsScriptsPage() {
   const router = useRouter()
   const token = useAuthStore((s) => s.token)
   const user = useAuthStore((s) => s.user)
-  const [tab, setTab] = useState<TabKey>("all")
+  const [phaseTab, setPhaseTab] = useState<PhaseTabKey>("phase12")
+  const [tab, setTab] = useState<TabKey>("pending")
   const [scripts, setScripts] = useState<Script[]>([])
   const [page, setPage] = useState(1)
-  const [total, setTotal] = useState(0)
-  const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<ScriptStatus | "">("")
   const [sortBy, setSortBy] = useState<"name" | "dateCreated">("dateCreated")
@@ -87,7 +96,7 @@ export default function MedicalAffairsScriptsPage() {
   }, [scripts, sortBy])
 
   const filteredSortedScripts = useMemo(() => {
-    if (tab !== "all" || !statusFilter) return sortedScripts
+    if (tab !== "pending" || !statusFilter) return sortedScripts
     return sortedScripts.filter((s) => s.status === statusFilter)
   }, [tab, statusFilter, sortedScripts])
 
@@ -96,44 +105,35 @@ export default function MedicalAffairsScriptsPage() {
     [filteredSortedScripts, searchQuery]
   )
 
+  const paginationTotal = searchFilteredScripts.length
+  const paginationTotalPages = Math.max(
+    1,
+    Math.ceil(paginationTotal / PAGE_SIZE)
+  )
+
   const displayedScripts = useMemo(() => {
-    if (tab !== "all") return searchFilteredScripts
     const start = (page - 1) * PAGE_SIZE
     return searchFilteredScripts.slice(start, start + PAGE_SIZE)
-  }, [tab, page, searchFilteredScripts])
-
-  const queuePaginationTotal = searchFilteredScripts.length
-  const queueTotalPages = Math.max(
-    1,
-    Math.ceil(queuePaginationTotal / PAGE_SIZE)
-  )
-  const paginationTotal = tab === "all" ? queuePaginationTotal : total
-  const paginationTotalPages = tab === "all" ? queueTotalPages : totalPages
+  }, [page, searchFilteredScripts])
 
   const isMedicalAffairs = user?.role === "MEDICAL_AFFAIRS"
 
   useEffect(() => {
     if (!token) return
     let cancelled = false
-    queueMicrotask(() => {
-      if (!cancelled) {
-        setLoading(true)
-        setError(null)
-      }
-    })
-    if (tab === "all") {
+    setLoading(true)
+    setError(null)
+    setScripts([])
+    if (tab === "pending") {
       getScriptQueue(token)
         .then((res) => {
           if (!cancelled) {
-            const combined = [
+            const merged = dedupeScriptsById([
               ...(res.available ?? []),
               ...(res.myReviews ?? []),
-            ]
-            setScripts(combined)
-            setTotal(res.total ?? combined.length)
-            setTotalPages(
-              Math.max(1, Math.ceil((res.total ?? combined.length) / PAGE_SIZE))
-            )
+            ])
+            const inPhase = merged.filter((s) => scriptInPhaseTab(s, phaseTab))
+            setScripts(inPhase)
           }
         })
         .catch((err) => {
@@ -148,14 +148,13 @@ export default function MedicalAffairsScriptsPage() {
     } else {
       getMyReviews(token, {
         decision: tab === "approved" ? "APPROVED" : "REJECTED",
-        page,
-        limit: PAGE_SIZE,
+        page: 1,
+        limit: MY_REVIEWS_FETCH_LIMIT,
       })
         .then((res) => {
-          if (!cancelled && res.scripts) {
-            setScripts(res.scripts)
-            setTotal(res.total ?? 0)
-            setTotalPages(res.totalPages ?? 1)
+          if (!cancelled) {
+            const raw = res.scripts ?? []
+            setScripts(raw.filter((s) => scriptInPhaseTab(s, phaseTab)))
           }
         })
         .catch((err) => {
@@ -171,7 +170,7 @@ export default function MedicalAffairsScriptsPage() {
     return () => {
       cancelled = true
     }
-  }, [token, tab, statusFilter, page])
+  }, [token, tab, phaseTab])
 
   useEffect(() => {
     if (!token) return
@@ -179,6 +178,13 @@ export default function MedicalAffairsScriptsPage() {
       .then(setStats)
       .catch(() => setStats(null))
   }, [token])
+
+  useEffect(() => {
+    const allowed = pendingStatusOptionsForPhase(phaseTab)
+    if (statusFilter && !allowed.includes(statusFilter)) {
+      setStatusFilter("")
+    }
+  }, [phaseTab, statusFilter])
 
   if (!isMedicalAffairs) {
     return (
@@ -210,8 +216,9 @@ export default function MedicalAffairsScriptsPage() {
               Medical Affairs Scripts
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Create scripts and send them to Content/Brand for review. TAT 24
-              hours.
+              Use the phase tabs to split script creation and Content/Brand
+              review (phases 1–2) from agency production and Medical Review of
+              the agency draft (phase 3). TAT 24 hours per handoff.
             </p>
           </div>
           <Button
@@ -254,7 +261,7 @@ export default function MedicalAffairsScriptsPage() {
                 <SelectItem value="dateCreated">Date</SelectItem>
               </SelectContent>
             </Select>
-            {tab === "all" && (
+            {tab === "pending" && (
               <Select
                 value={statusFilter || "all"}
                 onValueChange={(v) => {
@@ -263,19 +270,21 @@ export default function MedicalAffairsScriptsPage() {
                 }}
               >
                 <SelectTrigger
-                  className="h-10 w-[140px]"
+                  className="h-10 min-w-[160px] sm:w-[180px]"
                   aria-label="Filter by status"
                 >
                   <Filter className="mr-1.5 size-4 shrink-0" />
                   <SelectValue>
-                    {statusFilter ? STATUS_LABELS[statusFilter] : "Filter"}
+                    {statusFilter
+                      ? STATUS_DISPLAY_LABELS[statusFilter]
+                      : "Filter"}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  {(Object.keys(STATUS_LABELS) as ScriptStatus[]).map((s) => (
+                  <SelectItem value="all">All in queue</SelectItem>
+                  {pendingStatusOptionsForPhase(phaseTab).map((s) => (
                     <SelectItem key={s} value={s}>
-                      {STATUS_LABELS[s]}
+                      {STATUS_DISPLAY_LABELS[s]}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -284,15 +293,61 @@ export default function MedicalAffairsScriptsPage() {
           </div>
         </div>
 
-        <div className="border-b border-border">
+        <div className="w-full border-b border-border">
           <nav
-            className="flex gap-1"
+            className="flex w-full items-stretch"
+            role="tablist"
+            aria-label="Workflow phase"
+          >
+            {(
+              [
+                {
+                  key: "phase12" as const,
+                  label: "Phases 1 & 2",
+                  description: "Script creation & Content/Brand",
+                },
+                {
+                  key: "phase3" as const,
+                  label: "Phase 3",
+                  description: "Agency script production",
+                },
+              ] as const
+            ).map(({ key, label, description }) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={phaseTab === key}
+                onClick={() => {
+                  setPhaseTab(key)
+                  setPage(1)
+                  setStatusFilter("")
+                }}
+                className={cn(
+                  "flex min-w-0 flex-1 flex-col items-center justify-center border-b-2 px-2 py-3 text-center transition-colors sm:px-4",
+                  phaseTab === key
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <span className="text-sm font-medium">{label}</span>
+                <span className="mt-0.5 hidden text-xs font-normal opacity-80 sm:block">
+                  {description}
+                </span>
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        <div className="w-full border-b border-border">
+          <nav
+            className="flex w-full items-stretch"
             role="tablist"
             aria-label="Script list tabs"
           >
             {(
               [
-                { key: "all" as TabKey, label: "All" },
+                { key: "pending" as TabKey, label: "Pending" },
                 { key: "approved" as TabKey, label: "Approved" },
                 { key: "rejected" as TabKey, label: "Rejected" },
               ] as const
@@ -305,9 +360,10 @@ export default function MedicalAffairsScriptsPage() {
                 onClick={() => {
                   setTab(key)
                   setPage(1)
+                  setStatusFilter("")
                 }}
                 className={cn(
-                  "border-b-2 px-4 py-3 text-sm font-medium transition-colors",
+                  "min-w-0 flex-1 border-b-2 px-2 py-2.5 text-center text-sm font-medium transition-colors sm:px-4",
                   tab === key
                     ? "border-primary text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"
@@ -334,19 +390,40 @@ export default function MedicalAffairsScriptsPage() {
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
               <FileText className="size-12 text-muted-foreground" />
               <p className="mt-4 font-medium">
-                {tab === "all" && "No scripts yet"}
-                {tab === "approved" && "No scripts you approved"}
-                {tab === "rejected" && "No scripts you rejected"}
+                {tab === "pending" &&
+                  (phaseTab === "phase12"
+                    ? "Nothing in phases 1–2 for you right now"
+                    : "Nothing in agency script production for you right now")}
+                {tab === "approved" &&
+                  (phaseTab === "phase12"
+                    ? "No approved scripts in phases 1–2 here"
+                    : "No approved scripts in phase 3 here")}
+                {tab === "rejected" &&
+                  (phaseTab === "phase12"
+                    ? "No rejected scripts in phases 1–2 here"
+                    : "No rejected scripts in phase 3 here")}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {tab === "all" &&
-                  "Create your first script to send to Content/Brand for review."}
+                {tab === "pending" &&
+                  phaseTab === "phase12" &&
+                  "Drafts and scripts with Content/Brand appear in this queue when your role has access."}
+                {tab === "pending" &&
+                  phaseTab === "phase3" &&
+                  "Agency production, Medical Review of the agency draft, and later approvals through lock appear here."}
                 {tab === "approved" &&
-                  "Scripts you approve in Medical Review will appear here."}
+                  phaseTab === "phase12" &&
+                  "Approvals tied to early workflow stages show here when the script is still in draft or Content/Brand review."}
+                {tab === "approved" &&
+                  phaseTab === "phase3" &&
+                  "Scripts you approved in Medical Review (agency draft) and later phase-3 stages appear here."}
                 {tab === "rejected" &&
-                  "Scripts you reject in Medical Review will appear here."}
+                  phaseTab === "phase12" &&
+                  "Rejections in phases 1–2 show here when applicable."}
+                {tab === "rejected" &&
+                  phaseTab === "phase3" &&
+                  "Scripts you rejected in Medical Review (agency round) appear here."}
               </p>
-              {tab === "all" && (
+              {tab === "pending" && phaseTab === "phase12" && (
                 <Button
                   asChild
                   className="mt-4 border-0 bg-gradient-to-r from-[#518dcd] to-[#7ac0ca] text-white hover:opacity-90"
@@ -433,7 +510,20 @@ export default function MedicalAffairsScriptsPage() {
                         </Link>
                       </Button>
                     </>
-                  ) : null
+                  ) : (
+                    <Button
+                      asChild
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Link href={`/medical-affairs-scripts/${script.id}`}>
+                        <Eye className="size-4 shrink-0" />
+                        Open script
+                      </Link>
+                    </Button>
+                  )
                 }
               />
             ))}

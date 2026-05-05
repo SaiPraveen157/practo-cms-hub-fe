@@ -14,7 +14,13 @@ import {
   normalizeVideoComment,
 } from "@/lib/video-comment"
 import { uploadFileToPresignedUrl } from "@/lib/videos-api"
-import type { VideoComment } from "@/types/video"
+import type {
+  VideoComment,
+  VideoTimestampVersionApis,
+  VideoVersionDetailView,
+  VideoVersionListEntry,
+  VideoVersionsListResponse,
+} from "@/types/video"
 import type {
   ApproveLanguageVideoBody,
   CreateLanguagePackageBody,
@@ -255,6 +261,232 @@ export async function getLanguagePackageVideoVersions(
     success: res.success,
     data: Array.isArray(raw) ? raw : [],
   }
+}
+
+function langNum(v: unknown): number | undefined {
+  if (v == null || v === "") return undefined
+  const n = typeof v === "number" ? v : Number(v)
+  return Number.isFinite(n) ? Math.trunc(n) : undefined
+}
+
+function langUnwrapRecord(raw: Record<string, unknown>): Record<string, unknown> {
+  const d = unwrapData<Record<string, unknown>>(raw)
+  if (d && typeof d === "object" && !Array.isArray(d)) return d
+  return raw
+}
+
+function extractLangVersionCommentsBody(body: Record<string, unknown>): unknown[] {
+  const top = body.comments
+  if (Array.isArray(top)) return top
+  return []
+}
+
+function pickLanguageVersionPrimaryVideo(
+  body: Record<string, unknown>
+): {
+  fileUrl: string | null
+  fileName: string | null
+  fileType: string | null
+  fileSize: number | null
+} {
+  const top = body.fileUrl ?? body.file_url
+  if (typeof top === "string" && top) {
+    return {
+      fileUrl: top,
+      fileName:
+        body.fileName != null || body.file_name != null
+          ? String(body.fileName ?? body.file_name)
+          : null,
+      fileType:
+        body.fileType != null || body.file_type != null
+          ? String(body.fileType ?? body.file_type)
+          : null,
+      fileSize: langNum(body.fileSize ?? body.file_size) ?? null,
+    }
+  }
+  const assets = body.assets
+  if (Array.isArray(assets)) {
+    for (const typ of ["LONG_FORM", "SHORT_FORM"] as const) {
+      for (const el of assets) {
+        if (!el || typeof el !== "object") continue
+        const o = el as Record<string, unknown>
+        if (String(o.type ?? "").toUpperCase() !== typ) continue
+        const u = o.fileUrl ?? o.file_url
+        if (typeof u === "string" && u) {
+          return {
+            fileUrl: u,
+            fileName:
+              o.fileName != null || o.file_name != null
+                ? String(o.fileName ?? o.file_name)
+                : null,
+            fileType:
+              o.fileType != null || o.file_type != null
+                ? String(o.fileType ?? o.file_type)
+                : null,
+            fileSize: langNum(o.fileSize ?? o.file_size) ?? null,
+          }
+        }
+      }
+    }
+    for (const el of assets) {
+      if (!el || typeof el !== "object") continue
+      const o = el as Record<string, unknown>
+      const ft = String(o.fileType ?? o.file_type ?? "")
+      const u = o.fileUrl ?? o.file_url
+      if (typeof u === "string" && u && ft.startsWith("video/")) {
+        return {
+          fileUrl: u,
+          fileName:
+            o.fileName != null || o.file_name != null
+              ? String(o.fileName ?? o.file_name)
+              : null,
+          fileType: ft || null,
+          fileSize: langNum(o.fileSize ?? o.file_size) ?? null,
+        }
+      }
+    }
+  }
+  return { fileUrl: null, fileName: null, fileType: null, fileSize: null }
+}
+
+/**
+ * GET /api/language-packages/videos/:videoId/versions — normalized for
+ * {@link useVideoTimestampVersionView}.
+ */
+export async function getLanguageVideoVersionsListNormalized(
+  token: string | null,
+  videoId: string
+): Promise<VideoVersionsListResponse> {
+  checkToken(token)
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/api/language-packages/videos/${videoId}/versions`,
+    { token }
+  )
+  let versionsRaw: unknown[] = []
+  let currentVersion = langNum(
+    raw.currentVersion ?? raw.current_version
+  )
+  let totalVersions = langNum(raw.totalVersions ?? raw.total_versions)
+  const dataField = raw.data
+  if (Array.isArray(dataField)) {
+    versionsRaw = dataField
+  } else if (dataField && typeof dataField === "object" && !Array.isArray(dataField)) {
+    const obj = dataField as Record<string, unknown>
+    currentVersion ??= langNum(obj.currentVersion ?? obj.current_version)
+    totalVersions ??= langNum(obj.totalVersions ?? obj.total_versions)
+    if (Array.isArray(obj.versions)) versionsRaw = obj.versions as unknown[]
+  } else {
+    const inner = langUnwrapRecord(raw)
+    currentVersion ??= langNum(inner.currentVersion ?? inner.current_version)
+    totalVersions ??= langNum(inner.totalVersions ?? inner.total_versions)
+    if (Array.isArray(inner.versions)) versionsRaw = inner.versions as unknown[]
+  }
+  if (currentVersion == null && versionsRaw.length > 0) {
+    const nums = versionsRaw
+      .map((el) =>
+        el && typeof el === "object"
+          ? langNum((el as Record<string, unknown>).version) ?? 0
+          : 0
+      )
+      .filter((n) => n >= 1)
+    if (nums.length > 0) currentVersion = Math.max(...nums)
+  }
+  const versions: VideoVersionListEntry[] = []
+  for (const el of versionsRaw) {
+    if (!el || typeof el !== "object") continue
+    const item = el as Record<string, unknown>
+    const v = langNum(item.version ?? item.videoVersion ?? item.video_version)
+    if (v == null || v < 1) continue
+    versions.push({
+      version: v,
+      videoId,
+      status: typeof item.status === "string" ? item.status : undefined,
+      commentCount: langNum(item.commentCount ?? item.comment_count),
+      wasRejected: Boolean(item.wasRejected ?? item.was_rejected),
+      rejectionReason:
+        item.rejectionReason != null || item.rejection_reason != null
+          ? String(item.rejectionReason ?? item.rejection_reason)
+          : null,
+      rejection:
+        item.rejection != null && typeof item.rejection === "object"
+          ? (item.rejection as Record<string, unknown>)
+          : null,
+    })
+  }
+  versions.sort((a, b) => b.version - a.version)
+  return {
+    success: Boolean(raw.success),
+    currentVersion: currentVersion ?? undefined,
+    totalVersions: totalVersions ?? undefined,
+    versions,
+  }
+}
+
+/** GET /api/language-packages/videos/:videoId/versions/:version */
+export async function getLanguageVideoVersionDetail(
+  token: string | null,
+  videoId: string,
+  version: number
+): Promise<VideoVersionDetailView> {
+  checkToken(token)
+  if (!Number.isFinite(version) || version < 1) {
+    throw new Error("version must be a positive integer")
+  }
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/api/language-packages/videos/${videoId}/versions/${Math.trunc(version)}`,
+    { token }
+  )
+  const body = langUnwrapRecord(raw)
+  const ver = langNum(body.version) ?? Math.trunc(version)
+  const id = String(
+    body.languageVideoId ?? body.language_video_id ?? videoId
+  ).trim()
+  const { fileUrl, fileName, fileType, fileSize } =
+    pickLanguageVersionPrimaryVideo(body)
+  const list = extractLangVersionCommentsBody(body)
+  const comments: VideoComment[] = filterVideoCommentsWithTimestamp(
+    list.map((c) =>
+      ensureVideoCommentAssetVersion(
+        normalizeVideoComment(c as Record<string, unknown>),
+        ver
+      )
+    )
+  )
+  return {
+    id: id || videoId,
+    version: ver,
+    isCurrentVersion: Boolean(body.isCurrentVersion ?? body.is_current_version),
+    status: typeof body.currentStatus === "string"
+      ? body.currentStatus
+      : typeof body.status === "string"
+        ? body.status
+        : undefined,
+    fileUrl,
+    fileName,
+    fileType,
+    fileSize,
+    createdAt:
+      typeof body.submittedAt === "string"
+        ? body.submittedAt
+        : typeof body.submitted_at === "string"
+          ? body.submitted_at
+          : typeof body.createdAt === "string"
+            ? body.createdAt
+            : undefined,
+    updatedAt:
+      typeof body.updatedAt === "string"
+        ? body.updatedAt
+        : typeof body.updated_at === "string"
+          ? body.updated_at
+          : undefined,
+    comments,
+  }
+}
+
+/** Phase 7 language package video — wire into {@link useVideoTimestampVersionView}. */
+export const languageVideoTimestampVersionApis: VideoTimestampVersionApis = {
+  listVersions: getLanguageVideoVersionsListNormalized,
+  getVersionDetail: getLanguageVideoVersionDetail,
 }
 
 export async function resubmitLanguageVideoFile(

@@ -5,7 +5,16 @@ import {
   getVideoVersionDetail,
   getVideoVersionsList,
 } from "@/lib/videos-api"
-import type { VideoVersionDetailView, VideoVersionListEntry } from "@/types/video"
+import type {
+  VideoTimestampVersionApis,
+  VideoVersionDetailView,
+  VideoVersionListEntry,
+} from "@/types/video"
+
+const defaultPhase45Apis: VideoTimestampVersionApis = {
+  listVersions: getVideoVersionsList,
+  getVersionDetail: getVideoVersionDetail,
+}
 
 export type UseVideoTimestampVersionViewOptions = {
   token: string | null
@@ -17,15 +26,21 @@ export type UseVideoTimestampVersionViewOptions = {
   enabled: boolean
   /** Bump when the current row or its version changes so selection resets to live. */
   refreshKey: string | number
+  /**
+   * Phase 6 (`packageVideoTimestampVersionApis`) or Phase 7
+   * (`languageVideoTimestampVersionApis`). Defaults to Phase 4–5 `/api/videos/...`.
+   */
+  apis?: VideoTimestampVersionApis
 }
 
 /**
- * Version dropdown for Phase 4–5 timestamp comments (same UX pattern as
- * {@link useScriptStickerVersionView}).
+ * File-version dropdown for video timestamp comments (same UX as script sticker versions).
  *
- * - GET /api/videos/:id/versions for the list
- * - GET /api/videos/:id/versions/:version when user picks an older version
- * - Live row uses parent-fetched comments; archived rows use detail.comments
+ * Default `apis`: Phase 4–5 `GET /api/videos/:id/versions` + `…/versions/:version`.
+ * Pass `packageVideoTimestampVersionApis` / `languageVideoTimestampVersionApis`
+ * from `@/lib/packages-api` and `@/lib/language-packages-api` for Phase 6 / 7.
+ *
+ * Live row: parent-fetched comments. Archived: `getVersionDetail().comments`.
  */
 export function useVideoTimestampVersionView({
   token,
@@ -33,6 +48,7 @@ export function useVideoTimestampVersionView({
   liveVideoVersion,
   enabled,
   refreshKey,
+  apis = defaultPhase45Apis,
 }: UseVideoTimestampVersionViewOptions) {
   const [rows, setRows] = useState<VideoVersionListEntry[]>([])
   const [listLoading, setListLoading] = useState(false)
@@ -50,7 +66,8 @@ export function useVideoTimestampVersionView({
     }
     setListLoading(true)
     setListError(null)
-    getVideoVersionsList(token, currentVideoId)
+    apis
+      .listVersions(token, currentVideoId)
       .then((res) => {
         setRows(res.versions ?? [])
         const cv =
@@ -76,7 +93,7 @@ export function useVideoTimestampVersionView({
         )
       })
       .finally(() => setListLoading(false))
-  }, [token, currentVideoId, enabled, liveVideoVersion])
+  }, [token, currentVideoId, enabled, liveVideoVersion, apis])
 
   useEffect(() => {
     loadList()
@@ -101,7 +118,8 @@ export function useVideoTimestampVersionView({
     let cancelled = false
     setDetailLoading(true)
     setDetailError(null)
-    getVideoVersionDetail(token, currentVideoId, selectedVersionNum)
+    apis
+      .getVersionDetail(token, currentVideoId, selectedVersionNum)
       .then((d) => {
         if (!cancelled) setDetail(d)
       })
@@ -118,7 +136,7 @@ export function useVideoTimestampVersionView({
     return () => {
       cancelled = true
     }
-  }, [token, currentVideoId, isViewingArchived, selectedVersionNum])
+  }, [token, currentVideoId, isViewingArchived, selectedVersionNum, apis])
 
   const versionOptions = useMemo(() => {
     const seen = new Set<number>()

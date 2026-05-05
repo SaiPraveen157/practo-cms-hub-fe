@@ -2,13 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import {
-  ClipboardList,
-  ExternalLink,
-  Loader2,
-  RefreshCw,
-  Search,
-} from "lucide-react"
+import { ClipboardList, Loader2, RefreshCw, Search } from "lucide-react"
 import { AdminPageShell } from "@/components/admin/admin-page-shell"
 import { AdminPageHeader } from "@/components/admin/admin-page-header"
 import { WorkflowStatusBadge } from "@/components/admin/workflow-status-badge"
@@ -24,7 +18,6 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { getAdminContent } from "@/lib/admin-api"
-import { getAdminContentHref } from "@/lib/admin-content-href"
 import { isAdminContentPendingReview } from "@/lib/pending-review-filter"
 import { useAuthStore } from "@/store"
 import type { AdminContentItem } from "@/types/admin"
@@ -255,14 +248,13 @@ export function ReviewQueueView() {
                       Updated
                     </TableHead>
                     <TableHead className="px-4 py-3.5 text-right text-xs font-medium text-muted-foreground">
-                      Open
+                      Detail
                     </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody className="[&_tr]:border-border/40">
                   {pageItems.map((row) => {
                     const detailHref = `/content-library/${encodeURIComponent(row.id)}?contentType=${encodeURIComponent(row.contentType)}`
-                    const workflowHref = getAdminContentHref(row)
                     return (
                       <TableRow key={`${row.contentType}-${row.id}`}>
                         <TableCell className="max-w-xs px-4 py-4 align-middle">
@@ -300,19 +292,6 @@ export function ReviewQueueView() {
                             <Button variant="outline" size="sm" asChild>
                               <Link href={detailHref}>Details</Link>
                             </Button>
-                            {workflowHref ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="gap-1"
-                                asChild
-                              >
-                                <Link href={workflowHref}>
-                                  Workflow
-                                  <ExternalLink className="size-3.5 opacity-70" />
-                                </Link>
-                              </Button>
-                            ) : null}
                           </div>
                         </TableCell>
                       </TableRow>

@@ -205,8 +205,8 @@ export default function AgencyPocVideosPage() {
   const [uploading, setUploading] = useState(false)
   const [phaseTab, setPhaseTab] = useState<VideoPhase>("FIRST_LINE_UP")
   const [statusSubTab, setStatusSubTab] = useState<
-    "all" | "approved" | "rejected"
-  >("all")
+    "pending" | "approved" | "rejected"
+  >("pending")
 
   const isAgency = user?.role === "AGENCY_POC"
 
@@ -273,27 +273,28 @@ export default function AgencyPocVideosPage() {
     phaseTab === "FIRST_LINE_UP" ? firstLineUpVideos : firstCutVideos
   const approvedVideos = phaseVideos.filter((v) => v.status === "APPROVED")
   const rejectedVideos = phaseVideos.filter((v) => v.status !== "APPROVED")
+  /** Agency must upload or re-upload (not waiting on Medical / Content-Brand). */
+  const agencyActionVideos = phaseVideos.filter(
+    (v) => v.status === "AGENCY_UPLOAD_PENDING"
+  )
 
   const subTabVideos =
-    statusSubTab === "all"
-      ? phaseVideos
+    statusSubTab === "pending"
+      ? agencyActionVideos
       : statusSubTab === "approved"
         ? approvedVideos
         : rejectedVideos
 
   /**
-   * Phase 5 (First Cut): rows awaiting Agency upload (`AGENCY_UPLOAD_PENDING`) first,
-   * then rejected-return slots, then everything else. Phase 4: rejected-return first
-   * (unchanged).
+   * Always list rows that need agency upload (`AGENCY_UPLOAD_PENDING`) first, then
+   * rejected-return re-uploads before first-time uploads; then recency.
    */
   const subTabVideosSorted = useMemo(() => {
     const list = [...subTabVideos]
     return list.sort((a, b) => {
-      if (phaseTab === "FIRST_CUT") {
-        const aPending = a.status === "AGENCY_UPLOAD_PENDING" ? 1 : 0
-        const bPending = b.status === "AGENCY_UPLOAD_PENDING" ? 1 : 0
-        if (bPending !== aPending) return bPending - aPending
-      }
+      const aAction = a.status === "AGENCY_UPLOAD_PENDING" ? 1 : 0
+      const bAction = b.status === "AGENCY_UPLOAD_PENDING" ? 1 : 0
+      if (bAction !== aAction) return bAction - aAction
       const aResubmit = isAgencyRejectedReturn(a) ? 1 : 0
       const bResubmit = isAgencyRejectedReturn(b) ? 1 : 0
       if (bResubmit !== aResubmit) return bResubmit - aResubmit
@@ -301,7 +302,7 @@ export default function AgencyPocVideosPage() {
         new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
       )
     })
-  }, [subTabVideos, phaseTab])
+  }, [subTabVideos])
 
   const needsUpload = (v: Video) => v.status === "AGENCY_UPLOAD_PENDING"
 
@@ -511,7 +512,7 @@ export default function AgencyPocVideosPage() {
           >
             {(
               [
-                { key: "all" as const, label: "All" },
+                { key: "pending" as const, label: "Pending" },
                 { key: "approved" as const, label: "Approved" },
                 { key: "rejected" as const, label: "Rejected" },
               ] as const
@@ -575,8 +576,8 @@ export default function AgencyPocVideosPage() {
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
               <VideoIcon className="size-12 text-muted-foreground" />
               <p className="mt-4 font-medium">
-                {statusSubTab === "all"
-                  ? `No ${PHASE_LABELS[phaseTab]} videos right now`
+                {statusSubTab === "pending"
+                  ? `Nothing awaiting your upload in ${PHASE_LABELS[phaseTab]}`
                   : `No ${statusSubTab} videos in ${PHASE_LABELS[phaseTab]} right now`}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -584,7 +585,7 @@ export default function AgencyPocVideosPage() {
                   ? "Approved videos will appear here."
                   : statusSubTab === "rejected"
                     ? "Videos awaiting upload or in review (or with changes requested) will appear here."
-                    : "Switch phase or status to see more."}
+                    : "Upload and re-upload tasks for this phase appear here. Switch to Rejected to see cuts in review."}
               </p>
             </CardContent>
           </Card>

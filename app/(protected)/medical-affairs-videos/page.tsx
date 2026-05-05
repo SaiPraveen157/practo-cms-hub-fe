@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -51,6 +51,7 @@ export default function VideosPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [phaseTab, setPhaseTab] = useState<VideoPhase>("FIRST_LINE_UP")
   const [stats, setStats] = useState<Awaited<
     ReturnType<typeof getVideoStats>
   > | null>(null)
@@ -86,16 +87,18 @@ export default function VideosPage() {
       .catch(() => setStats(null))
   }, [token, canAccess])
 
-  const filteredVideos = searchQuery.trim()
-    ? videos.filter((v) => {
-        const title = v.script?.title ?? ""
-        const fileName = v.fileName ?? ""
-        return (
-          title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          fileName.toLowerCase().includes(searchQuery.toLowerCase())
-        )
-      })
-    : videos
+  const filteredVideos = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    const byPhase = videos.filter((v) => v.phase === phaseTab)
+    if (!q) return byPhase
+    return byPhase.filter((v) => {
+      const title = v.script?.title ?? ""
+      const fileName = v.fileName ?? ""
+      return (
+        title.toLowerCase().includes(q) || fileName.toLowerCase().includes(q)
+      )
+    })
+  }, [videos, phaseTab, searchQuery])
 
   if (!canAccess) {
     return (
@@ -126,9 +129,9 @@ export default function VideosPage() {
             Medical Affairs — Videos
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            <strong>Phase 4</strong> — First Line Up · <strong>Phase 5</strong>{" "}
-            — First Cut (after Content/Brand approved Phase 4). Approve or
-            request changes at each stage. TAT 24 hours.
+            Use the tabs below to switch between First Line Up (phase 4) and
+            First Cut (phase 5). Approve or request changes at each stage. TAT
+            24 hours.
           </p>
         </div>
 
@@ -198,6 +201,43 @@ export default function VideosPage() {
           </div>
         </div>
 
+        <div className="w-full border-b border-border">
+          <nav
+            className="flex w-full items-stretch"
+            role="tablist"
+            aria-label="Video production phase"
+          >
+            {(
+              [
+                {
+                  phase: "FIRST_LINE_UP" as const,
+                  label: "Phase 4 — First Line Up",
+                },
+                {
+                  phase: "FIRST_CUT" as const,
+                  label: "Phase 5 — First Cut",
+                },
+              ] as const
+            ).map(({ phase, label }) => (
+              <button
+                key={phase}
+                type="button"
+                role="tab"
+                aria-selected={phaseTab === phase}
+                onClick={() => setPhaseTab(phase)}
+                className={cn(
+                  "flex min-w-0 flex-1 flex-col items-center justify-center border-b-2 px-2 py-3 text-center transition-colors sm:px-4",
+                  phaseTab === phase
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <span className="text-sm font-medium">{label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
+
         {error && (
           <Card className="border-destructive/50 bg-destructive/10">
             <CardContent className="pt-6">
@@ -225,10 +265,12 @@ export default function VideosPage() {
               <p className="mt-4 font-medium">
                 {searchQuery.trim()
                   ? "No videos match your search"
-                  : "No videos in your queue"}
+                  : `No ${PHASE_LABELS[phaseTab]} videos in your queue`}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Videos awaiting your review will appear here.
+                {searchQuery.trim()
+                  ? "Try another term or switch phase."
+                  : "Videos awaiting your Medical Affairs review in this phase will appear here. Switch tabs to see the other phase."}
               </p>
             </CardContent>
           </Card>

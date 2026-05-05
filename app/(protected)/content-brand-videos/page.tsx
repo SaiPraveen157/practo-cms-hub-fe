@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -51,6 +51,7 @@ export default function ContentBrandVideosPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [phaseTab, setPhaseTab] = useState<VideoPhase>("FIRST_LINE_UP")
   const [stats, setStats] = useState<Awaited<
     ReturnType<typeof getVideoStats>
   > | null>(null)
@@ -84,16 +85,18 @@ export default function ContentBrandVideosPage() {
       .catch(() => setStats(null))
   }, [token, isContentBrand])
 
-  const filteredVideos = searchQuery.trim()
-    ? videos.filter((v) => {
-        const title = v.script?.title ?? ""
-        const fileName = v.fileName ?? ""
-        return (
-          title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          fileName.toLowerCase().includes(searchQuery.toLowerCase())
-        )
-      })
-    : videos
+  const filteredVideos = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    const byPhase = videos.filter((v) => v.phase === phaseTab)
+    if (!q) return byPhase
+    return byPhase.filter((v) => {
+      const title = v.script?.title ?? ""
+      const fileName = v.fileName ?? ""
+      return (
+        title.toLowerCase().includes(q) || fileName.toLowerCase().includes(q)
+      )
+    })
+  }, [videos, phaseTab, searchQuery])
 
   if (!isContentBrand) {
     return (
@@ -124,10 +127,10 @@ export default function ContentBrandVideosPage() {
             Content/Brand — Videos
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            <strong>Phase 4</strong> — Approve First Line Up after Medical
-            (approve only). <strong>Phase 5</strong> — Review First Cut: approve
-            or request changes; loop until both Medical and Brand sign off. TAT
-            24 hours.
+            Use the tabs below to switch between First Line Up (phase 4) and
+            First Cut (phase 5). Phase 4: approve after Medical (approve only).
+            Phase 5: approve or request changes until Medical and Brand sign
+            off. TAT 24 hours.
           </p>
         </div>
 
@@ -184,15 +187,54 @@ export default function ContentBrandVideosPage() {
           </div>
         )}
 
-        <div className="relative flex-1">
-          <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Search by script title or file name..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-10 pl-9"
-          />
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative flex-1">
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search by script title or file name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-10 pl-9"
+            />
+          </div>
+        </div>
+
+        <div className="w-full border-b border-border">
+          <nav
+            className="flex w-full items-stretch"
+            role="tablist"
+            aria-label="Video production phase"
+          >
+            {(
+              [
+                {
+                  phase: "FIRST_LINE_UP" as const,
+                  label: "Phase 4 — First Line Up",
+                },
+                {
+                  phase: "FIRST_CUT" as const,
+                  label: "Phase 5 — First Cut",
+                },
+              ] as const
+            ).map(({ phase, label }) => (
+              <button
+                key={phase}
+                type="button"
+                role="tab"
+                aria-selected={phaseTab === phase}
+                onClick={() => setPhaseTab(phase)}
+                className={cn(
+                  "flex min-w-0 flex-1 flex-col items-center justify-center border-b-2 px-2 py-3 text-center transition-colors sm:px-4",
+                  phaseTab === phase
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <span className="text-sm font-medium">{label}</span>
+              </button>
+            ))}
+          </nav>
         </div>
 
         {error && (
@@ -222,10 +264,12 @@ export default function ContentBrandVideosPage() {
               <p className="mt-4 font-medium">
                 {searchQuery.trim()
                   ? "No videos match your search"
-                  : "No videos in your queue"}
+                  : `No ${PHASE_LABELS[phaseTab]} videos in your queue`}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Videos awaiting your approval will appear here.
+                {searchQuery.trim()
+                  ? "Try another term or switch phase."
+                  : "Videos awaiting your Content/Brand action in this phase will appear here. Switch tabs to see the other phase."}
               </p>
             </CardContent>
           </Card>

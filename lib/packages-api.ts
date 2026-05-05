@@ -14,7 +14,13 @@ import {
   normalizeVideoComment,
 } from "@/lib/video-comment"
 import { uploadFileToPresignedUrl } from "@/lib/videos-api"
-import type { VideoComment } from "@/types/video"
+import type {
+  VideoComment,
+  VideoTimestampVersionApis,
+  VideoVersionDetailView,
+  VideoVersionListEntry,
+  VideoVersionsListResponse,
+} from "@/types/video"
 import type {
   AddPackageVideoBody,
   ApprovePackageVideoBody,
@@ -380,6 +386,221 @@ export async function getPackageVideoVersions(
     `/api/packages/videos/${videoId}/versions`,
     { token }
   )
+}
+
+function numOrUndef(v: unknown): number | undefined {
+  if (v == null || v === "") return undefined
+  const n = typeof v === "number" ? v : Number(v)
+  return Number.isFinite(n) ? Math.trunc(n) : undefined
+}
+
+function unwrapDataRecord(raw: Record<string, unknown>): Record<string, unknown> {
+  const d = raw.data
+  if (d != null && typeof d === "object" && !Array.isArray(d)) {
+    return d as Record<string, unknown>
+  }
+  return raw
+}
+
+function pickPrimaryVideoFileFromAssetsBody(
+  body: Record<string, unknown>
+): {
+  fileUrl: string | null
+  fileName: string | null
+  fileType: string | null
+  fileSize: number | null
+} {
+  const assets = body.assets
+  if (Array.isArray(assets)) {
+    const prefer = ["LONG_FORM", "SHORT_FORM"]
+    for (const typ of prefer) {
+      for (const el of assets) {
+        if (!el || typeof el !== "object") continue
+        const o = el as Record<string, unknown>
+        if (String(o.type ?? "").toUpperCase() !== typ) continue
+        const u = o.fileUrl ?? o.file_url
+        if (typeof u === "string" && u) {
+          return {
+            fileUrl: u,
+            fileName:
+              o.fileName != null || o.file_name != null
+                ? String(o.fileName ?? o.file_name)
+                : null,
+            fileType:
+              o.fileType != null || o.file_type != null
+                ? String(o.fileType ?? o.file_type)
+                : null,
+            fileSize: numOrUndef(o.fileSize ?? o.file_size) ?? null,
+          }
+        }
+      }
+    }
+    for (const el of assets) {
+      if (!el || typeof el !== "object") continue
+      const o = el as Record<string, unknown>
+      const ft = String(o.fileType ?? o.file_type ?? "")
+      const u = o.fileUrl ?? o.file_url
+      if (typeof u === "string" && u && ft.startsWith("video/")) {
+        return {
+          fileUrl: u,
+          fileName:
+            o.fileName != null || o.file_name != null
+              ? String(o.fileName ?? o.file_name)
+              : null,
+          fileType: ft || null,
+          fileSize: numOrUndef(o.fileSize ?? o.file_size) ?? null,
+        }
+      }
+    }
+  }
+  const u = body.fileUrl ?? body.file_url
+  return {
+    fileUrl: typeof u === "string" && u ? u : null,
+    fileName:
+      body.fileName != null || body.file_name != null
+        ? String(body.fileName ?? body.file_name)
+        : null,
+    fileType:
+      body.fileType != null || body.file_type != null
+        ? String(body.fileType ?? body.file_type)
+        : null,
+    fileSize: numOrUndef(body.fileSize ?? body.file_size) ?? null,
+  }
+}
+
+/**
+ * GET /api/packages/videos/:videoId/versions — normalized for
+ * {@link useVideoTimestampVersionView} (same shape as Phase 4–5 list).
+ */
+export async function getPackageVideoVersionsListNormalized(
+  token: string | null,
+  videoId: string
+): Promise<VideoVersionsListResponse> {
+  checkToken(token)
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/api/packages/videos/${videoId}/versions`,
+    { token }
+  )
+  const body = unwrapDataRecord(raw)
+  const currentVersion = numOrUndef(
+    body.currentVersion ?? body.current_version
+  )
+  const totalVersions = numOrUndef(
+    body.totalVersions ?? body.total_versions
+  )
+  const versionsRaw = body.versions
+  const versions: VideoVersionListEntry[] = []
+  if (Array.isArray(versionsRaw)) {
+    for (const el of versionsRaw) {
+      if (!el || typeof el !== "object") continue
+      const item = el as Record<string, unknown>
+      const v = numOrUndef(item.version ?? item.videoVersion ?? item.video_version)
+      if (v == null || v < 1) continue
+      const asset = item.asset
+      let fileName: string | undefined
+      if (asset && typeof asset === "object") {
+        const a = asset as Record<string, unknown>
+        fileName =
+          a.fileName != null || a.file_name != null
+            ? String(a.fileName ?? a.file_name)
+            : undefined
+      }
+      versions.push({
+        version: v,
+        videoId,
+        status: typeof item.status === "string" ? item.status : undefined,
+        fileName: fileName ?? undefined,
+        commentCount: numOrUndef(item.commentCount ?? item.comment_count),
+        wasRejected: Boolean(item.wasRejected ?? item.was_rejected),
+        rejectionReason:
+          item.rejectionReason != null || item.rejection_reason != null
+            ? String(item.rejectionReason ?? item.rejection_reason)
+            : null,
+        rejection:
+          item.rejection != null && typeof item.rejection === "object"
+            ? (item.rejection as Record<string, unknown>)
+            : null,
+      })
+    }
+  }
+  versions.sort((a, b) => b.version - a.version)
+  return {
+    success: Boolean(raw.success ?? body.success),
+    currentVersion,
+    totalVersions,
+    versions,
+  }
+}
+
+/** GET /api/packages/videos/:videoId/versions/:version — file URL + timestamp comments. */
+export async function getPackageVideoVersionDetail(
+  token: string | null,
+  videoId: string,
+  version: number
+): Promise<VideoVersionDetailView> {
+  checkToken(token)
+  if (!Number.isFinite(version) || version < 1) {
+    throw new Error("version must be a positive integer")
+  }
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/api/packages/videos/${videoId}/versions/${Math.trunc(version)}`,
+    { token }
+  )
+  const body = unwrapDataRecord(raw)
+  const ver = numOrUndef(body.version) ?? Math.trunc(version)
+  const id = String(
+    body.packageVideoId ??
+      body.package_video_id ??
+      body.videoId ??
+      body.video_id ??
+      videoId
+  ).trim()
+  const { fileUrl, fileName, fileType, fileSize } =
+    pickPrimaryVideoFileFromAssetsBody(body)
+  const list = extractPackageCommentsArray(body)
+  const comments: VideoComment[] = filterVideoCommentsWithTimestamp(
+    list.map((c) =>
+      ensureVideoCommentAssetVersion(
+        normalizeVideoComment(c as Record<string, unknown>),
+        ver
+      )
+    )
+  )
+  return {
+    id: id || videoId,
+    version: ver,
+    isCurrentVersion: Boolean(body.isCurrentVersion ?? body.is_current_version),
+    status: typeof body.currentStatus === "string"
+      ? body.currentStatus
+      : typeof body.status === "string"
+        ? body.status
+        : undefined,
+    fileUrl,
+    fileName,
+    fileType,
+    fileSize,
+    createdAt:
+      typeof body.submittedAt === "string"
+        ? body.submittedAt
+        : typeof body.submitted_at === "string"
+          ? body.submitted_at
+          : typeof body.createdAt === "string"
+            ? body.createdAt
+            : undefined,
+    updatedAt:
+      typeof body.updatedAt === "string"
+        ? body.updatedAt
+        : typeof body.updated_at === "string"
+          ? body.updated_at
+          : undefined,
+    comments,
+  }
+}
+
+/** Phase 6 package video — wire into {@link useVideoTimestampVersionView}. */
+export const packageVideoTimestampVersionApis: VideoTimestampVersionApis = {
+  listVersions: getPackageVideoVersionsListNormalized,
+  getVersionDetail: getPackageVideoVersionDetail,
 }
 
 function extractPackageCommentsArray(data: Record<string, unknown>): unknown[] {

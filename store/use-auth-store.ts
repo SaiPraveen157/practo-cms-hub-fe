@@ -21,6 +21,9 @@ export const useAuthStore = create<AuthState>()(
       logout: () => set({ token: null, user: null }),
       isAuthenticated: () => !!get().token,
     }),
-    { name: "practo-cms-auth", partialize: (s) => ({ token: s.token, user: s.user }) }
+    {
+      name: "practo-cms-auth",
+      partialize: (s) => ({ token: s.token, user: s.user }),
+    }
   )
 )
