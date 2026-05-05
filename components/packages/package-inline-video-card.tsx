@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, type ReactNode } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
@@ -18,13 +18,18 @@ import { labelForSpecialtyValue } from "@/lib/package-specialty-label"
 import { parseAgencyDeliverableBlockBody } from "@/lib/package-composed-description"
 import { formatPackageFileSize, thumbnailsForVideo } from "@/lib/package-ui"
 import VideoPlayerTimeline from "@/components/VideoPlayerTimeline"
+import { VideoVersionHistoryToolbar } from "@/components/video-version-history-toolbar"
 import { usePackageVideoThreadComments } from "@/hooks/use-package-video-thread-comments"
-import { addPackageVideoComment } from "@/lib/packages-api"
+import { useVideoTimestampVersionView } from "@/hooks/use-video-timestamp-version-view"
+import {
+  addPackageVideoComment,
+  packageVideoTimestampVersionApis,
+} from "@/lib/packages-api"
 import { canPostPackageVideoThreadComment } from "@/lib/package-video-thread-comment-permissions"
 import { useAuthStore } from "@/store"
 import type { UserRole } from "@/types/auth"
 import type { PackageVideo } from "@/types/package"
-import { ExternalLink } from "lucide-react"
+import { ExternalLink, Loader2 } from "lucide-react"
 
 export function PackageInlineVideoCard({
   asset,
@@ -72,34 +77,109 @@ export function PackageInlineVideoCard({
   const allowCommentPost =
     packageVideo != null && canPostPackageVideoThreadComment(role, packageVideo)
 
+  const versionHistoryEnabled = Boolean(
+    showThread && threadVideoId && packageVideo && asset.fileUrl
+  )
+
+  const versionHistory = useVideoTimestampVersionView({
+    token,
+    currentVideoId: threadVideoId ?? "",
+    liveVideoVersion: packageVideo?.currentVersion ?? 1,
+    enabled: versionHistoryEnabled,
+    refreshKey: `${threadVideoId ?? ""}-${packageVideo?.currentVersion ?? 0}`,
+    apis: packageVideoTimestampVersionApis,
+  })
+
+  const timelinePlayerComments = useMemo(() => {
+    if (
+      versionHistory.isViewingArchived &&
+      versionHistory.archivedDetail?.comments
+    ) {
+      return versionHistory.archivedDetail.comments
+    }
+    return showThread ? comments : undefined
+  }, [
+    versionHistory.isViewingArchived,
+    versionHistory.archivedDetail,
+    showThread,
+    comments,
+  ])
+
+  const timelinePlayerSrc =
+    versionHistory.isViewingArchived &&
+    versionHistory.archivedDetail?.fileUrl
+      ? versionHistory.archivedDetail.fileUrl
+      : asset.fileUrl
+
+  const timelineMediaKey =
+    versionHistory.isViewingArchived && versionHistory.archivedDetail
+      ? `${versionHistory.archivedDetail.id}-v${versionHistory.archivedDetail.version}`
+      : `${threadVideoId ?? asset.id}-v${packageVideo?.currentVersion ?? 1}`
+
   const videoBlock = (
     <>
       {asset.fileUrl && !videoError ? (
-        <div className="overflow-hidden rounded-xl border border-border bg-black shadow-inner">
-          <VideoPlayerTimeline
-            src={asset.fileUrl}
-            mediaKey={asset.id}
-            showCommentsUi={showThread}
-            comments={showThread ? comments : undefined}
-            commentFormDisabled={showThread && !allowCommentPost}
-            videoClassName="max-h-[min(80vh,40rem)] w-full object-contain"
-            onVideoError={() => setVideoError(true)}
-            onAddComment={
-              showThread
-                ? async ({ content, timestampSeconds }) => {
-                    if (!token || !threadVideoId || !packageVideo) return
-                    await addPackageVideoComment(token, threadVideoId, {
-                      content,
-                      timestampSeconds,
-                      assetVersion: packageVideo.currentVersion,
-                    })
-                    await refresh()
-                    onPackageVideoCommentsUpdated?.()
-                    toast.success("Comment added")
-                  }
-                : undefined
-            }
+        <div className="space-y-4">
+          {versionHistory.listError ? (
+            <p className="text-xs text-muted-foreground">
+              {versionHistory.listError}
+            </p>
+          ) : null}
+          {versionHistory.detailError ? (
+            <p className="text-xs text-destructive">{versionHistory.detailError}</p>
+          ) : null}
+          <VideoVersionHistoryToolbar
+            showToolbar={versionHistory.showToolbar}
+            listLoading={versionHistory.listLoading}
+            selectValue={versionHistory.selectValue}
+            onSelectValueChange={versionHistory.onSelectValueChange}
+            versionOptions={versionHistory.versionOptions}
+            isViewingArchived={versionHistory.isViewingArchived}
+            detailLoading={versionHistory.detailLoading}
+            id={`pkg-inline-video-version-${threadVideoId ?? asset.id}`}
           />
+          {timelinePlayerSrc ? (
+            <div className="overflow-hidden rounded-xl border border-border bg-black shadow-inner">
+              <VideoPlayerTimeline
+                src={timelinePlayerSrc}
+                mediaKey={timelineMediaKey}
+                showCommentsUi={showThread}
+                comments={timelinePlayerComments}
+                commentFormDisabled={
+                  showThread &&
+                  (!allowCommentPost || versionHistory.isViewingArchived)
+                }
+                videoClassName="max-h-[min(80vh,40rem)] w-full object-contain"
+                onVideoError={() => setVideoError(true)}
+                onAddComment={
+                  showThread &&
+                  !versionHistory.isViewingArchived &&
+                  allowCommentPost
+                    ? async ({ content, timestampSeconds }) => {
+                        if (!token || !threadVideoId || !packageVideo) return
+                        await addPackageVideoComment(token, threadVideoId, {
+                          content,
+                          timestampSeconds,
+                          assetVersion: packageVideo.currentVersion,
+                        })
+                        await refresh()
+                        onPackageVideoCommentsUpdated?.()
+                        toast.success("Comment added")
+                      }
+                    : undefined
+                }
+              />
+            </div>
+          ) : versionHistory.isViewingArchived && versionHistory.detailLoading ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              Loading file for this version…
+            </p>
+          ) : versionHistory.isViewingArchived ? (
+            <p className="text-sm text-muted-foreground">
+              No video file for this version.
+            </p>
+          ) : null}
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/30 px-4 py-10 text-center">

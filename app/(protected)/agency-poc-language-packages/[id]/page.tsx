@@ -75,6 +75,10 @@ import {
   humanizeItemFeedbackField,
 } from "@/lib/package-ui"
 import { LanguageVideoPlayerWithThread } from "@/components/language-packages/language-video-player-with-thread"
+import {
+  EMPTY_VIDEO_META,
+  firstAgencyDeliverableSubmitBlockingMessage,
+} from "@/components/packages/agency-package-wizard-ui"
 import { TrackStatusCallout } from "@/components/packages/track-status-callout"
 import {
   TagPillList,
@@ -741,13 +745,44 @@ export default function AgencyLanguagePackageDetailPage() {
   }
 
   async function submitAddVideo() {
-    if (!token || !pkg || !addVideoFile) {
-      toast.error("Choose a video file")
+    if (!token) {
+      toast.error("Please sign in to add a video.")
       return
     }
+    if (!pkg) {
+      toast.error("Package is still loading — try again in a moment.")
+      return
+    }
+    const blocking = firstAgencyDeliverableSubmitBlockingMessage(
+      [
+        {
+          meta: {
+            ...EMPTY_VIDEO_META,
+            title: addTitle,
+            description: addDesc,
+            tagDraft: addTags,
+            doctorName: addDoctor,
+            specialty: addSpecialty,
+          },
+          file: addVideoFile,
+          thumbnailFiles: addThumbFiles,
+        },
+      ],
+      {
+        requireThumbnails: false,
+        requirePackageName: false,
+        packageName: "-",
+      }
+    )
+    if (blocking) {
+      toast.error(blocking)
+      return
+    }
+    const videoFile = addVideoFile
+    if (!videoFile) return
     setAddingVideo(true)
     try {
-      const vMeta = await uploadLanguagePackageVideoFile(token, addVideoFile)
+      const vMeta = await uploadLanguagePackageVideoFile(token, videoFile)
       const thumbs = []
       for (const f of addThumbFiles) {
         const t = await uploadLanguagePackageThumbnailFile(token, f)

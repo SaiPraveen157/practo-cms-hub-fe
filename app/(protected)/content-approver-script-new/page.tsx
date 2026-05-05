@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { useAuthStore } from "@/store"
 import { getScriptQueue, getMyReviews, getScriptStats } from "@/lib/scripts-api"
 import { filterScriptsBySearch } from "@/lib/script-search"
-import type { Script, ScriptStatus, ScriptStatsResponse } from "@/types/script"
+import type { Script, ScriptStatsResponse } from "@/types/script"
 import { ScriptListSkeleton } from "@/components/loading/script-list-skeleton"
 import { ScriptListingCard } from "@/components/script-listing-card"
 import { ScriptListPagination } from "@/components/ui/pagination"
@@ -19,23 +19,24 @@ import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 10
 
-const STATUS_LABELS: Record<ScriptStatus, string> = {
-  DRAFT: "Draft",
-  CONTENT_BRAND_REVIEW: "Content/Brand Review",
-  AGENCY_PRODUCTION: "Agency Production",
-  MEDICAL_REVIEW: "Medical Review",
-  CONTENT_BRAND_APPROVAL: "Content/Brand Approval",
-  CONTENT_APPROVER_REVIEW: "Content Approver Review",
-  LOCKED: "Locked",
-}
+type TabKey = "pending" | "approved" | "rejected"
 
-type TabKey = "all" | "approved" | "rejected"
+function dedupeScriptsById(scripts: Script[]): Script[] {
+  const seen = new Set<string>()
+  const out: Script[] = []
+  for (const s of scripts) {
+    if (seen.has(s.id)) continue
+    seen.add(s.id)
+    out.push(s)
+  }
+  return out
+}
 
 export default function ContentApproverScriptNewPage() {
   const router = useRouter()
   const token = useAuthStore((s) => s.token)
   const user = useAuthStore((s) => s.user)
-  const [tab, setTab] = useState<TabKey>("all")
+  const [tab, setTab] = useState<TabKey>("pending")
   const [scripts, setScripts] = useState<Script[]>([])
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -52,14 +53,15 @@ export default function ContentApproverScriptNewPage() {
     [scripts, searchQuery]
   )
   const displayedScripts = useMemo(() => {
-    if (tab !== "all") return searchFilteredScripts
+    if (tab !== "pending") return searchFilteredScripts
     const start = (page - 1) * PAGE_SIZE
     return searchFilteredScripts.slice(start, start + PAGE_SIZE)
   }, [tab, page, searchFilteredScripts])
 
-  const paginationTotal = tab === "all" ? searchFilteredScripts.length : total
+  const paginationTotal =
+    tab === "pending" ? searchFilteredScripts.length : total
   const paginationTotalPages =
-    tab === "all"
+    tab === "pending"
       ? Math.max(1, Math.ceil(searchFilteredScripts.length / PAGE_SIZE))
       : totalPages
 
@@ -72,18 +74,21 @@ export default function ContentApproverScriptNewPage() {
         setError(null)
       }
     })
-    if (tab === "all") {
+    if (tab === "pending") {
       getScriptQueue(token)
         .then((res) => {
           if (!cancelled) {
-            const combined = [
+            const merged = dedupeScriptsById([
               ...(res.available ?? []),
               ...(res.myReviews ?? []),
-            ]
-            setScripts(combined)
-            setTotal(res.total ?? combined.length)
+            ])
+            const pendingScripts = merged.filter(
+              (s) => s.status === "CONTENT_APPROVER_REVIEW"
+            )
+            setScripts(pendingScripts)
+            setTotal(pendingScripts.length)
             setTotalPages(
-              Math.max(1, Math.ceil((res.total ?? combined.length) / PAGE_SIZE))
+              Math.max(1, Math.ceil(pendingScripts.length / PAGE_SIZE))
             )
           }
         })
@@ -160,8 +165,8 @@ export default function ContentApproverScriptNewPage() {
             Script Approvals
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Final approval authority — Review all content before moving to
-            production.
+            Final approval authority — Pending lists scripts in Content Approver
+            review; approve or reject from the detail page.
           </p>
         </div>
 
@@ -191,7 +196,7 @@ export default function ContentApproverScriptNewPage() {
           >
             {(
               [
-                { key: "all" as TabKey, label: "All" },
+                { key: "pending" as TabKey, label: "Pending" },
                 { key: "approved" as TabKey, label: "Approved" },
                 { key: "rejected" as TabKey, label: "Rejected" },
               ] as const
@@ -233,13 +238,13 @@ export default function ContentApproverScriptNewPage() {
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
               <FileText className="size-12 text-muted-foreground" />
               <p className="mt-4 font-medium">
-                {tab === "all" && "No scripts to lock"}
+                {tab === "pending" && "Nothing pending for you"}
                 {tab === "approved" && "No scripts you approved"}
                 {tab === "rejected" && "No scripts you rejected"}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {tab === "all" &&
-                  "Scripts that have passed Content/Brand final approval will appear here."}
+                {tab === "pending" &&
+                  "Scripts appear here when they reach Content Approver review (after Content/Brand approval)."}
                 {tab === "approved" &&
                   "Scripts you locked (approved) will appear here."}
                 {tab === "rejected" && "Scripts you rejected will appear here."}
@@ -278,7 +283,7 @@ export default function ContentApproverScriptNewPage() {
                   router.push(`/content-approver-script-new/${script.id}`)
                 }
                 actions={
-                  tab === "approved" ? null : (
+                  tab === "pending" ? (
                     <div className="flex flex-wrap gap-2">
                       <Button
                         asChild
@@ -304,7 +309,7 @@ export default function ContentApproverScriptNewPage() {
                         </Link>
                       </Button>
                     </div>
-                  )
+                  ) : null
                 }
               />
             ))}

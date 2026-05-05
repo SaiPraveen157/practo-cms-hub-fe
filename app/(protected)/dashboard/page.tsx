@@ -7,6 +7,7 @@ import {
   BarChart3,
   FileText,
   Film,
+  Layers,
   Package,
   Users,
 } from "lucide-react"
@@ -18,6 +19,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { SuperAdminScriptsOverview } from "@/components/admin/super-admin-scripts-overview"
 import { getAdminOverview, getAdminOverdue } from "@/lib/admin-api"
 import { useAuthStore } from "@/store"
 import type { AdminOverviewResponse, AdminOverdueItem } from "@/types/admin"
@@ -173,6 +175,27 @@ export default function DashboardPage() {
           </Button>
         </div>
 
+        <Card className="border-primary/20 bg-primary/5 shadow-none ring-1 ring-primary/15">
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-medium text-foreground">
+                End-to-end script command center
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Expand any script below for Phases 1–7 in one place — script body,
+                FLU/FC videos, final package, language packages, and the admin audit
+                timeline — or open the content library for filters.
+              </p>
+            </div>
+            <Button variant="secondary" size="sm" className="shrink-0 gap-1.5" asChild>
+              <Link href="/content-library?phase=SCRIPT">
+                <Layers className="size-4" aria-hidden />
+                Choose script in library
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+
         {error && (
           <Card className="border-destructive/50 bg-destructive/10">
             <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
@@ -203,6 +226,8 @@ export default function DashboardPage() {
             ))}
           </section>
         ) : null}
+
+        {!loading && <SuperAdminScriptsOverview />}
 
         {overview && !loading && overview.videos && (
           <section className="space-y-3">

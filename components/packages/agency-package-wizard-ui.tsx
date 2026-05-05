@@ -121,6 +121,93 @@ export function isVideoMetaComplete(m: PerVideoMeta): boolean {
   )
 }
 
+/** Minimal slot shape for submit-time validation (Phase 6 / Phase 7 wizards). */
+export type AgencyDeliverableSlotForSubmitValidation = {
+  meta: PerVideoMeta
+  file: File | null
+  thumbnailFiles?: File[] | null
+  videoType?: "LONG_FORM" | "SHORT_FORM"
+}
+
+function deliverableLabelForSubmitToast(
+  videoType: "LONG_FORM" | "SHORT_FORM" | undefined,
+  slotIndex: number,
+  totalSlots: number
+): string {
+  const kind =
+    videoType === "LONG_FORM"
+      ? "Long-form"
+      : videoType === "SHORT_FORM"
+        ? "Short-form"
+        : null
+  if (kind) {
+    return totalSlots > 1 ? `${kind} (video ${slotIndex + 1})` : kind
+  }
+  return totalSlots > 1 ? `Video ${slotIndex + 1}` : "this video"
+}
+
+const PACKAGE_NAME_REQUIRED_MESSAGE =
+  "Please enter a package name. It is required and cannot be empty or only spaces."
+
+/**
+ * Returns the first blocking issue for agency package / language-package submit.
+ * When a package name is required, it is validated first, then videos (file → title
+ * → description → tags → thumbnails), then merged tags.
+ */
+export function firstAgencyDeliverableSubmitBlockingMessage(
+  slots: readonly AgencyDeliverableSlotForSubmitValidation[],
+  opts: {
+    requireThumbnails: boolean
+    requirePackageName: boolean
+    packageName: string
+  }
+): string | null {
+  if (opts.requirePackageName && !opts.packageName.trim()) {
+    return PACKAGE_NAME_REQUIRED_MESSAGE
+  }
+
+  if (slots.length < 1) {
+    return "Please add at least one video."
+  }
+
+  for (let i = 0; i < slots.length; i += 1) {
+    const slot = slots[i]!
+    const label = deliverableLabelForSubmitToast(
+      slot.videoType,
+      i,
+      slots.length
+    )
+
+    if (!slot.file) {
+      return `Please upload a video file for ${label}.`
+    }
+    if (!slot.meta.title.trim()) {
+      return `Please enter a title for ${label}.`
+    }
+    if (!slot.meta.description.trim()) {
+      return `Please enter a description for ${label}.`
+    }
+    if (effectiveTagsFromMeta(slot.meta).length === 0) {
+      return `Please add at least one tag for ${label} (type tags and press Enter, or use commas).`
+    }
+    if (opts.requireThumbnails) {
+      const thumbCount = slot.thumbnailFiles?.length ?? 0
+      if (thumbCount < 1) {
+        return `Please add at least one thumbnail for ${label}.`
+      }
+    }
+  }
+
+  const merged = mergePackageTags(
+    ...slots.map((s) => effectiveTagsFromMeta(s.meta))
+  )
+  if (merged.length === 0) {
+    return "Please add at least one tag across your videos."
+  }
+
+  return null
+}
+
 export function PackageWizardChrome({
   currentStep,
   labels,

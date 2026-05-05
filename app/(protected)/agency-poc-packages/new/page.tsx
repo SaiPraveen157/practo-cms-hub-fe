@@ -87,6 +87,7 @@ import {
   WizardFooter,
   WIZARD_COLUMN,
   effectiveTagsFromMeta,
+  firstAgencyDeliverableSubmitBlockingMessage,
   isVideoMetaComplete,
   mergePackageTags,
   type PerVideoMeta,
@@ -484,9 +485,11 @@ export default function AgencySubmitPackagePage() {
   }, [wizardStep])
 
   function canProceedFromStep(step: number): boolean {
+    const packageNameOkForNew =
+      Boolean(existingPackage) || packageName.trim().length > 0
     switch (step) {
       case 0:
-        return true
+        return packageNameOkForNew
       case 1:
         return (
           videoSlots.length > 0 &&
@@ -502,33 +505,22 @@ export default function AgencySubmitPackagePage() {
   }
 
   async function performSubmit() {
-    if (!token || !scriptId) return
-    if (videoSlots.length < 1) {
-      toast.error("Add at least one video")
+    if (!token) {
+      toast.error("Please sign in to submit.")
       return
     }
-    const incomplete = videoSlots.some(
-      (s) =>
-        !isVideoMetaComplete(s.meta) ||
-        !s.file ||
-        (s.thumbnailFiles?.length ?? 0) === 0
-    )
-    if (incomplete) {
-      toast.error(
-        "Each video needs a file, title, description, at least one tag, and a thumbnail"
-      )
+    if (!scriptId) {
+      toast.error("Missing script — open this flow from the packages list.")
       return
     }
-    if (mergedPackageTags.length === 0) {
-      toast.error("Add tags for your videos")
+    const blocking = firstAgencyDeliverableSubmitBlockingMessage(videoSlots, {
+      requireThumbnails: true,
+      requirePackageName: !existingPackage,
+      packageName,
+    })
+    if (blocking) {
+      toast.error(blocking)
       return
-    }
-    if (!existingPackage) {
-      const trimmedPkgName = packageName.trim()
-      if (!trimmedPkgName) {
-        toast.error("Enter a package name.")
-        return
-      }
     }
 
     setSubmitting(true)
@@ -735,7 +727,7 @@ export default function AgencySubmitPackagePage() {
   const lastStepBlockedHint = !allReady
     ? "Complete all steps first"
     : !addingToExisting && !packageName.trim()
-      ? "Enter a package name"
+      ? "Enter a package name (required, cannot be only spaces)"
       : undefined
 
   return (
@@ -841,18 +833,24 @@ export default function AgencySubmitPackagePage() {
                     <CardHeader>
                       <CardTitle className="text-base">Package name</CardTitle>
                       <CardDescription>
-                        This label appears in queues and headers. It is separate
-                        from each video&apos;s title on the next step.
+                        Required — this label appears in queues and headers. It
+                        is separate from each video&apos;s title on the next
+                        step.
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-2">
-                      <Label htmlFor="package-name">Name</Label>
+                      <Label htmlFor="package-name">
+                        Name{" "}
+                        <span className="font-normal text-destructive">*</span>
+                      </Label>
                       <Input
                         id="package-name"
                         value={packageName}
                         onChange={(e) => setPackageName(e.target.value)}
                         placeholder="e.g. Heart Health Q1 final package"
                         autoComplete="off"
+                        required
+                        aria-required
                       />
                     </CardContent>
                   </Card>
@@ -1146,14 +1144,22 @@ function ReviewSummaryCard({
           <div className="space-y-4">
             <ReviewSectionTitle>Package name</ReviewSectionTitle>
             <div className="rounded-xl border border-border/80 bg-card p-4 shadow-sm">
-              <Label htmlFor="review-package-name">Name</Label>
+              <Label htmlFor="review-package-name">
+                Name{" "}
+                <span className="font-normal text-destructive">*</span>
+              </Label>
               <Input
                 id="review-package-name"
                 className="mt-2"
                 value={packageName}
                 onChange={(e) => onPackageNameChange(e.target.value)}
                 placeholder="Package name shown in lists"
+                required
+                aria-required
               />
+              <p className="mt-2 text-xs text-muted-foreground">
+                Required — cannot be empty or only spaces.
+              </p>
             </div>
           </div>
         ) : null}
@@ -1206,7 +1212,7 @@ function ReviewSummaryCard({
             {!addingToExisting ? (
               <ReviewCheck
                 ok={packageName.trim().length > 0}
-                text="Package name entered"
+                text="Package name entered (required, non-empty)"
               />
             ) : null}
             <ReviewCheck

@@ -19,6 +19,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
   Select,
@@ -64,6 +65,7 @@ import {
   WizardFooter,
   WIZARD_COLUMN,
   effectiveTagsFromMeta,
+  firstAgencyDeliverableSubmitBlockingMessage,
   isVideoMetaComplete,
   mergePackageTags,
   type PerVideoMeta,
@@ -259,7 +261,11 @@ export default function AgencyNewLanguagePackagePage() {
   function canProceedFromStep(step: number): boolean {
     switch (step) {
       case 0:
-        return Boolean(language && languageOptions.length > 0)
+        return Boolean(
+          language &&
+            languageOptions.length > 0 &&
+            packageName.trim().length > 0
+        )
       case 1:
         return (
           videoSlots.length > 0 &&
@@ -284,36 +290,43 @@ export default function AgencyNewLanguagePackagePage() {
 
   const lastStepBlockedHint = !language
     ? "Select a language"
-    : !metaAndFileReady
-      ? "Complete each video’s metadata and file"
-      : mergedTags.length === 0
-        ? "Add at least one tag across your videos"
-        : languageOptions.length === 0
-          ? "No languages left for this script"
-          : !packageName.trim()
-            ? "English package name missing — refresh or contact support"
+    : !packageName.trim()
+      ? "Enter a package name (required, cannot be only spaces)"
+      : !metaAndFileReady
+        ? "Complete each video’s metadata and file"
+        : mergedTags.length === 0
+          ? "Add at least one tag across your videos"
+          : languageOptions.length === 0
+            ? "No languages left for this script"
             : undefined
 
   async function performSubmit() {
-    if (!token || !scriptId || !packageName.trim() || !language) {
-      toast.error("Complete all steps before submitting.")
+    if (!token) {
+      toast.error("Please sign in to submit.")
       return
     }
-    if (videoSlots.length < 1) {
-      toast.error("Add at least one video.")
+    if (!scriptId) {
+      toast.error("Missing script — open this flow from the language packages list.")
       return
     }
-    const incomplete = videoSlots.some(
-      (s) => !isVideoMetaComplete(s.meta) || !s.file
+    if (!language) {
+      toast.error("Please select a language.")
+      return
+    }
+    if (languageOptions.length === 0) {
+      toast.error("No languages are available for this script.")
+      return
+    }
+    const blocking = firstAgencyDeliverableSubmitBlockingMessage(
+      videoSlots,
+      {
+        requireThumbnails: false,
+        requirePackageName: true,
+        packageName,
+      }
     )
-    if (incomplete) {
-      toast.error(
-        "Each video needs a file, title, description, and at least one tag."
-      )
-      return
-    }
-    if (mergedTags.length === 0) {
-      toast.error("Add tags for your videos.")
+    if (blocking) {
+      toast.error(blocking)
       return
     }
     setSubmitting(true)
@@ -577,15 +590,25 @@ export default function AgencyNewLanguagePackagePage() {
                       Package name (from Phase 6)
                     </CardTitle>
                     <CardDescription>
-                      Reuses the English final package name for this script so
-                      lists stay consistent. You only choose the language below;
-                      the localized video title is on the next step.
+                      Pre-filled from your English final package so lists stay
+                      consistent; you can edit it. Required — cannot be empty or
+                      only spaces. Localized video titles are on the next step.
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <p className="text-sm font-medium text-foreground">
-                      {packageName.trim() || "—"}
-                    </p>
+                  <CardContent className="space-y-2">
+                    <Label htmlFor="lang-wizard-package-name">
+                      Name{" "}
+                      <span className="font-normal text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="lang-wizard-package-name"
+                      value={packageName}
+                      onChange={(e) => setPackageName(e.target.value)}
+                      placeholder="Package name shown in lists"
+                      autoComplete="off"
+                      required
+                      aria-required
+                    />
                   </CardContent>
                 </Card>
 
@@ -900,7 +923,7 @@ function LanguagePackageReviewSummary({
           <ul className="mt-4 space-y-0 divide-y divide-border rounded-xl border border-border bg-card text-sm shadow-sm">
             <ReviewCheck
               ok={packageName.trim().length > 0}
-              text="Package name from English final package"
+              text="Package name entered (required, non-empty)"
             />
             <ReviewCheck
               ok={Boolean(language)}
