@@ -26,12 +26,10 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Skeleton } from "@/components/ui/skeleton"
-import { getAdminContent, type AdminContentQuery } from "@/lib/admin-api"
+import { getAdminContent, getContentLibrary, type AdminContentQuery } from "@/lib/admin-api"
 import { useAuthStore } from "@/store"
-import type {
-  AdminContentItem,
-  AdminContentResponse,
-} from "@/types/admin"
+import type { UserRole } from "@/types/auth"
+import type { AdminContentItem, AdminContentResponse } from "@/types/admin"
 import { cn } from "@/lib/utils"
 
 const thBase =
@@ -71,6 +69,7 @@ const ADMIN_PHASE_PARAMS = new Set([
 
 export function ContentLibraryView() {
   const token = useAuthStore((s) => s.token)
+  const role = useAuthStore((s) => s.user?.role) as UserRole | undefined
   const searchParams = useSearchParams()
   const appliedUrlPhase = useRef(false)
   const [searchInput, setSearchInput] = useState("")
@@ -118,7 +117,7 @@ export function ContentLibraryView() {
     setListLoading(true)
     setListError(null)
     try {
-      const data = await getAdminContent(token, {
+      const query: AdminContentQuery = {
         search: debouncedSearch || undefined,
         status: statusFilter || undefined,
         phase: phaseFilter || undefined,
@@ -127,7 +126,11 @@ export function ContentLibraryView() {
         page,
         limit,
         sort: sort ?? "newest",
-      })
+      }
+      const data =
+        role === "SUPER_ADMIN"
+          ? await getAdminContent(token, query)
+          : await getContentLibrary(token, query)
       setListRes(data)
     } catch (e) {
       setListError(e instanceof Error ? e.message : "Failed to load content")
@@ -137,6 +140,7 @@ export function ContentLibraryView() {
     }
   }, [
     token,
+    role,
     debouncedSearch,
     statusFilter,
     phaseFilter,
@@ -170,264 +174,271 @@ export function ContentLibraryView() {
         </div>
 
         <div className="space-y-6">
-            <Card className="overflow-hidden border-border/80 shadow-none ring-1 ring-border/60">
-              <CardHeader className="space-y-1 border-b border-border/60 px-4 py-3 sm:px-5">
-                <CardTitle className="text-sm font-medium tracking-tight">
-                  Filters
-                </CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  Combined with AND. Options reflect your current data.
-                </p>
-              </CardHeader>
-              <CardContent className="p-4 sm:p-5">
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-end">
-                  <div className="space-y-2 lg:col-span-4">
-                    <Label
-                      htmlFor="search-content"
-                      className="text-xs font-medium text-muted-foreground"
-                    >
-                      Search
-                    </Label>
-                    <div className="relative">
-                      <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        id="search-content"
-                        placeholder="Title, doctor, package…"
-                        value={searchInput}
-                        onChange={(e) => setSearchInput(e.target.value)}
-                        className="h-10 pl-9"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2 lg:col-span-2">
-                    <Label className="text-xs font-medium text-muted-foreground">
-                      Phase
-                    </Label>
-                    <Select
-                      value={phaseFilter === "" ? "all" : phaseFilter}
-                      onValueChange={(v) =>
-                        setPhaseFilter(v == null || v === "all" ? "" : v)
-                      }
-                    >
-                      <SelectTrigger className="h-10 w-full">
-                        <SelectValue placeholder="Phase" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All phases</SelectItem>
-                        {phaseSelectOptions.map((p) => (
-                          <SelectItem key={p} value={p}>
-                            {p}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2 lg:col-span-2">
-                    <Label className="text-xs font-medium text-muted-foreground">
-                      Status
-                    </Label>
-                    <Select
-                      value={statusFilter || "all"}
-                      onValueChange={(v) =>
-                        setStatusFilter(v == null || v === "all" ? "" : v)
-                      }
-                    >
-                      <SelectTrigger className="h-10 w-full">
-                        <SelectValue placeholder="All statuses" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All statuses</SelectItem>
-                        {(filterOptions?.statuses ?? []).map((s) => (
-                          <SelectItem key={s} value={s}>
-                            {s}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2 lg:col-span-2">
-                    <Label className="text-xs font-medium text-muted-foreground">
-                      Sort
-                    </Label>
-                    <Select
-                      value={sort ?? "newest"}
-                      onValueChange={(v) =>
-                        setSort((v ?? "newest") as AdminContentQuery["sort"])
-                      }
-                    >
-                      <SelectTrigger className="h-10 w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="newest">Newest</SelectItem>
-                        <SelectItem value="oldest">Oldest</SelectItem>
-                        <SelectItem value="title">Title</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="space-y-2">
-                    <Label className="text-xs font-medium text-muted-foreground">
-                      Language
-                    </Label>
-                    <Select
-                      value={languageFilter || "all"}
-                      onValueChange={(v) =>
-                        setLanguageFilter(v == null || v === "all" ? "" : v)
-                      }
-                    >
-                      <SelectTrigger className="h-10 w-full">
-                        <SelectValue placeholder="All" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All languages</SelectItem>
-                        {(filterOptions?.languages ?? []).map((s) => (
-                          <SelectItem key={s} value={s}>
-                            {s}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs font-medium text-muted-foreground">
-                      Asset type
-                    </Label>
-                    <Select
-                      value={typeFilter || "all"}
-                      onValueChange={(v) =>
-                        setTypeFilter(v == null || v === "all" ? "" : v)
-                      }
-                    >
-                      <SelectTrigger className="h-10 w-full">
-                        <SelectValue placeholder="All" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All types</SelectItem>
-                        {(filterOptions?.assetTypes ?? []).map((s) => (
-                          <SelectItem key={s} value={s}>
-                            {s}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-end lg:col-span-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-10 w-full gap-2 sm:w-auto"
-                      onClick={() => void loadList()}
-                    >
-                      <Filter className="size-4" />
-                      Refresh
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {listError && (
-              <Card className="border-destructive/50 bg-destructive/10">
-                <CardContent className="py-4 text-sm text-destructive">
-                  {listError}
-                </CardContent>
-              </Card>
-            )}
-
-            <Card className="overflow-hidden border-border/80 shadow-none ring-1 ring-border/60">
-              <div className="flex flex-col gap-0.5 border-b border-border/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-                <CardTitle className="text-sm font-medium tracking-tight text-foreground">
-                  Results
-                </CardTitle>
-                <p className="text-xs text-muted-foreground tabular-nums">
-                  {listLoading
-                    ? "Loading…"
-                    : `${listRes?.total ?? 0} ${listRes?.total === 1 ? "item" : "items"}`}
-                </p>
-              </div>
-              {listLoading ? (
-                <div className="space-y-3 p-4 sm:p-5">
-                  <Skeleton className="h-14 w-full rounded-md" />
-                  <Skeleton className="h-14 w-full rounded-md" />
-                  <Skeleton className="h-14 w-full rounded-md" />
-                  <Skeleton className="h-14 w-full rounded-md" />
-                </div>
-              ) : (
-                <Table className="[&_tbody_tr]:border-border/50">
-                  <TableHeader>
-                    <TableRow className="border-border/60 hover:bg-transparent [&>th]:border-b-0">
-                      <TableHead className={cn("min-w-[200px] text-left", thBase)}>
-                        Title
-                      </TableHead>
-                      <TableHead className={cn("min-w-[100px] text-left", thBase)}>
-                        Phase
-                      </TableHead>
-                      <TableHead className={cn("min-w-[120px] text-left", thBase)}>
-                        Status
-                      </TableHead>
-                      <TableHead
-                        className={cn("min-w-[140px] max-w-[220px] text-left", thBase)}
-                      >
-                        Doctor & specialty
-                      </TableHead>
-                      <TableHead className={cn("min-w-[96px] text-left", thBase)}>
-                        Updated
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody className="[&_tr]:border-border/40">
-                    {items.length === 0 ? (
-                      <TableRow className="hover:bg-transparent">
-                        <TableCell
-                          colSpan={5}
-                          className="py-14 text-center text-sm text-muted-foreground"
-                        >
-                          No results for these filters.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      items.map((row: AdminContentItem) => (
-                        <ContentRow
-                          key={`${row.contentType}-${row.id}`}
-                          row={row}
-                        />
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              )}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between gap-3 border-t border-border/60 px-4 py-3 sm:px-5">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground"
-                    disabled={page <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+          <Card className="overflow-hidden border-border/80 shadow-none ring-1 ring-border/60">
+            <CardHeader className="space-y-1 border-b border-border/60 px-4 py-3 sm:px-5">
+              <CardTitle className="text-sm font-medium tracking-tight">
+                Filters
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Combined with AND. Options reflect your current data.
+              </p>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-5">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-end">
+                <div className="space-y-2 lg:col-span-4">
+                  <Label
+                    htmlFor="search-content"
+                    className="text-xs font-medium text-muted-foreground"
                   >
-                    Previous
-                  </Button>
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {page} / {totalPages}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground"
-                    disabled={page >= totalPages}
-                    onClick={() =>
-                      setPage((p) => Math.min(totalPages, p + 1))
+                    Search
+                  </Label>
+                  <div className="relative">
+                    <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="search-content"
+                      placeholder="Title, doctor, package…"
+                      value={searchInput}
+                      onChange={(e) => setSearchInput(e.target.value)}
+                      className="h-10 pl-9"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2 lg:col-span-2">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Phase
+                  </Label>
+                  <Select
+                    value={phaseFilter === "" ? "all" : phaseFilter}
+                    onValueChange={(v) =>
+                      setPhaseFilter(v == null || v === "all" ? "" : v)
                     }
                   >
-                    Next
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue placeholder="Phase" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All phases</SelectItem>
+                      {phaseSelectOptions.map((p) => (
+                        <SelectItem key={p} value={p}>
+                          {p}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2 lg:col-span-2">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Status
+                  </Label>
+                  <Select
+                    value={statusFilter || "all"}
+                    onValueChange={(v) =>
+                      setStatusFilter(v == null || v === "all" ? "" : v)
+                    }
+                  >
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue placeholder="All statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All statuses</SelectItem>
+                      {(filterOptions?.statuses ?? []).map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2 lg:col-span-2">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Sort
+                  </Label>
+                  <Select
+                    value={sort ?? "newest"}
+                    onValueChange={(v) =>
+                      setSort((v ?? "newest") as AdminContentQuery["sort"])
+                    }
+                  >
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="newest">Newest</SelectItem>
+                      <SelectItem value="oldest">Oldest</SelectItem>
+                      <SelectItem value="title">Title</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Language
+                  </Label>
+                  <Select
+                    value={languageFilter || "all"}
+                    onValueChange={(v) =>
+                      setLanguageFilter(v == null || v === "all" ? "" : v)
+                    }
+                  >
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All languages</SelectItem>
+                      {(filterOptions?.languages ?? []).map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Asset type
+                  </Label>
+                  <Select
+                    value={typeFilter || "all"}
+                    onValueChange={(v) =>
+                      setTypeFilter(v == null || v === "all" ? "" : v)
+                    }
+                  >
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All types</SelectItem>
+                      {(filterOptions?.assetTypes ?? []).map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-end lg:col-span-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-10 w-full gap-2 sm:w-auto"
+                    onClick={() => void loadList()}
+                  >
+                    <Filter className="size-4" />
+                    Refresh
                   </Button>
                 </div>
-              )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {listError && (
+            <Card className="border-destructive/50 bg-destructive/10">
+              <CardContent className="py-4 text-sm text-destructive">
+                {listError}
+              </CardContent>
             </Card>
+          )}
+
+          <Card className="overflow-hidden border-border/80 shadow-none ring-1 ring-border/60">
+            <div className="flex flex-col gap-0.5 border-b border-border/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+              <CardTitle className="text-sm font-medium tracking-tight text-foreground">
+                Results
+              </CardTitle>
+              <p className="text-xs text-muted-foreground tabular-nums">
+                {listLoading
+                  ? "Loading…"
+                  : `${listRes?.total ?? 0} ${listRes?.total === 1 ? "item" : "items"}`}
+              </p>
+            </div>
+            {listLoading ? (
+              <div className="space-y-3 p-4 sm:p-5">
+                <Skeleton className="h-14 w-full rounded-md" />
+                <Skeleton className="h-14 w-full rounded-md" />
+                <Skeleton className="h-14 w-full rounded-md" />
+                <Skeleton className="h-14 w-full rounded-md" />
+              </div>
+            ) : (
+              <Table className="[&_tbody_tr]:border-border/50">
+                <TableHeader>
+                  <TableRow className="border-border/60 hover:bg-transparent [&>th]:border-b-0">
+                    <TableHead
+                      className={cn("min-w-[200px] text-left", thBase)}
+                    >
+                      Title
+                    </TableHead>
+                    <TableHead
+                      className={cn("min-w-[100px] text-left", thBase)}
+                    >
+                      Phase
+                    </TableHead>
+                    <TableHead
+                      className={cn("min-w-[120px] text-left", thBase)}
+                    >
+                      Status
+                    </TableHead>
+                    <TableHead
+                      className={cn(
+                        "max-w-[220px] min-w-[140px] text-left",
+                        thBase
+                      )}
+                    >
+                      Doctor & specialty
+                    </TableHead>
+                    <TableHead className={cn("min-w-[96px] text-left", thBase)}>
+                      Updated
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="[&_tr]:border-border/40">
+                  {items.length === 0 ? (
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell
+                        colSpan={5}
+                        className="py-14 text-center text-sm text-muted-foreground"
+                      >
+                        No results for these filters.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    items.map((row: AdminContentItem) => (
+                      <ContentRow
+                        key={`${row.contentType}-${row.id}`}
+                        row={row}
+                      />
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            )}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between gap-3 border-t border-border/60 px-4 py-3 sm:px-5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Previous
+                </Button>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {page} / {totalPages}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next
+                </Button>
+              </div>
+            )}
+          </Card>
         </div>
       </div>
     </AdminPageShell>
@@ -484,7 +495,7 @@ function ContentRow({ row }: { row: AdminContentItem }) {
       aria-label={`Open details: ${titleLabel}`}
       className={cn(
         "group cursor-pointer border-border/50 transition-colors",
-        "hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        "hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
       )}
       onClick={handleClick}
       onAuxClick={handleAuxClick}
@@ -514,7 +525,7 @@ function ContentRow({ row }: { row: AdminContentItem }) {
       </TableCell>
       <TableCell
         className={cn(
-          "max-w-[220px] align-top text-sm leading-snug text-muted-foreground whitespace-normal",
+          "max-w-[220px] align-top text-sm leading-snug whitespace-normal text-muted-foreground",
           cellPad
         )}
       >
@@ -522,7 +533,7 @@ function ContentRow({ row }: { row: AdminContentItem }) {
       </TableCell>
       <TableCell
         className={cn(
-          "align-top text-sm tabular-nums text-muted-foreground",
+          "align-top text-sm text-muted-foreground tabular-nums",
           cellPad
         )}
         title={formatDate(row.updatedAt)}

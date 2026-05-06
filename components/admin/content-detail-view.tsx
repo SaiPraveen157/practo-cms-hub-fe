@@ -39,6 +39,8 @@ import { getScript } from "@/lib/scripts-api"
 import { getVideo, getVideoQueue } from "@/lib/videos-api"
 import { getPackageVideo } from "@/lib/packages-api"
 import { getLanguagePackageVideo } from "@/lib/language-packages-api"
+import { TagPillList } from "@/components/packages/tag-pill-list"
+import { formatPackageFileSize } from "@/lib/package-ui"
 import { useAuthStore } from "@/store"
 import type { ScriptTimelineResponse, ScriptTimelineEntry } from "@/types/admin"
 import type { Script } from "@/types/script"
@@ -412,6 +414,66 @@ function currentPackageAsset(pv: PackageVideo) {
   return pv.assets?.find((a) => a.version === v) ?? pv.assets?.[0]
 }
 
+function currentLanguageVideoAsset(lv: LanguageVideo) {
+  const v = lv.currentVersion
+  return lv.assets?.find((a) => a.version === v) ?? lv.assets?.[0]
+}
+
+/** Read-only thumbnail strip for package / language video assets on the content library detail page. */
+function AssetThumbnailsReadonlySection({
+  thumbnails,
+}: {
+  thumbnails: Array<{
+    id: string
+    fileUrl: string
+    fileName: string
+    status?: string | null
+    comment?: string | null
+  }>
+}) {
+  if (thumbnails.length === 0) return null
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] font-medium text-muted-foreground">Thumbnails</p>
+      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {thumbnails.map((t) => (
+          <li
+            key={t.id}
+            className="overflow-hidden rounded-lg border border-border/60 bg-muted/10"
+          >
+            <div className="aspect-video w-full bg-black">
+              <img
+                src={t.fileUrl}
+                alt={t.fileName}
+                className="h-full w-full object-contain"
+                loading="lazy"
+              />
+            </div>
+            <div className="space-y-1 p-2">
+              <p
+                className="truncate text-xs font-medium text-foreground"
+                title={t.fileName}
+              >
+                {t.fileName}
+              </p>
+              {t.status ? (
+                <Badge variant="outline" className="text-[10px] font-normal">
+                  {String(t.status).replace(/_/g, " ")}
+                </Badge>
+              ) : null}
+              {t.comment ? (
+                <p className="line-clamp-2 text-[11px] text-muted-foreground">
+                  {t.comment}
+                </p>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 const hubRowLinkClass = cn(
   "group flex items-center gap-3 rounded-md border border-border/40 bg-muted/10 px-3 py-2.5 transition-colors",
   "hover:border-border/70 hover:bg-muted/25",
@@ -423,11 +485,14 @@ function HubAssetRow({
   title,
   meta,
   hintTitle,
+  previewImageUrl,
 }: {
   href: string
   title: string
   meta: string
   hintTitle?: string
+  /** First thumbnail URL when the deliverable has thumbnails (Phase 6 / 7). */
+  previewImageUrl?: string | null
 }) {
   return (
     <Link
@@ -436,6 +501,16 @@ function HubAssetRow({
       aria-label={`View details: ${title}. ${meta}`}
       className={hubRowLinkClass}
     >
+      {previewImageUrl ? (
+        <div className="size-14 shrink-0 overflow-hidden rounded-md border border-border/50 bg-muted">
+          <img
+            src={previewImageUrl}
+            alt=""
+            className="size-full object-cover"
+            loading="lazy"
+          />
+        </div>
+      ) : null}
       <div className="min-w-0 flex-1 space-y-0.5">
         <div className="text-sm font-medium leading-snug text-foreground">{title}</div>
         <div className="text-[11px] leading-snug text-muted-foreground">{meta}</div>
@@ -503,6 +578,9 @@ function ScriptDetailVideoHub({
                   hintTitle={`Video ID: ${v.id}`}
                   title={phaseVideoLabel(v.phase)}
                   meta={`${v.status.replace(/_/g, " ")} · v${v.version}`}
+                  previewImageUrl={
+                    v.fileCategory === "image" && v.fileUrl ? v.fileUrl : null
+                  }
                 />
               </li>
             ))}
@@ -551,6 +629,8 @@ function ScriptDetailVideoHub({
                 asset?.title ? ` · ${asset.title}` : ""
               }`
               const meta = `${pv.status.replace(/_/g, " ")} · Video ${pv.videoTrackStatus} · Metadata ${pv.metadataTrackStatus} · v${pv.currentVersion}`
+              const preview =
+                asset?.thumbnails?.find((th) => th.fileUrl)?.fileUrl ?? null
               return (
                 <li key={pv.id}>
                   <HubAssetRow
@@ -558,6 +638,7 @@ function ScriptDetailVideoHub({
                     hintTitle={`Package video ID: ${pv.id}`}
                     title={primaryLabel}
                     meta={meta}
+                    previewImageUrl={preview}
                   />
                 </li>
               )
@@ -603,16 +684,25 @@ function ScriptDetailVideoHub({
                   </Badge>
                 </div>
                 <ul className="space-y-1.5">
-                  {(lp.videos ?? []).map((lv) => (
-                    <li key={lv.id}>
-                      <HubAssetRow
-                        href={`/content-library/${encodeURIComponent(lv.id)}?contentType=languagevideo`}
-                        hintTitle={`Language video ID: ${lv.id}`}
-                        title={`${String(lp.language)} · localized video`}
-                        meta={`${lv.status.replace(/_/g, " ")} · v${lv.currentVersion}`}
-                      />
-                    </li>
-                  ))}
+                  {(lp.videos ?? []).map((lv) => {
+                    const la = currentLanguageVideoAsset(lv)
+                    const preview =
+                      la?.thumbnails?.find((th) => th.fileUrl)?.fileUrl ?? null
+                    const titleMeta =
+                      la?.title?.trim() ||
+                      `${String(lp.language)} · localized video`
+                    return (
+                      <li key={lv.id}>
+                        <HubAssetRow
+                          href={`/content-library/${encodeURIComponent(lv.id)}?contentType=languagevideo`}
+                          hintTitle={`Language video ID: ${lv.id}`}
+                          title={titleMeta}
+                          meta={`${lv.status.replace(/_/g, " ")} · v${lv.currentVersion}`}
+                          previewImageUrl={preview}
+                        />
+                      </li>
+                    )
+                  })}
                 </ul>
               </li>
             ))}
@@ -716,7 +806,7 @@ export function ContentDetailView() {
       try {
         if (contentType === "script") {
           const [tl, sc, queueRes, pkgRes, langRes] = await Promise.all([
-            getScriptTimeline(authToken, id),
+            getScriptTimeline(authToken, id).catch(() => null),
             getScript(authToken, id).then((r) => r.script).catch(() => null),
             getVideoQueue(authToken).catch(() => null),
             getPackageByScriptId(authToken, id).catch(() => null),
@@ -1144,18 +1234,62 @@ export function ContentDetailView() {
             {video?.fileUrl && (
               <Card className={shellCard}>
                 <CardHeader className={shellHead}>
-                  <CardTitle className={shellTitle}>Video file</CardTitle>
+                  <CardTitle className={shellTitle}>Video</CardTitle>
+                  {video.script?.title ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Script:{" "}
+                      <span className="font-medium text-foreground">
+                        {video.script.title}
+                      </span>
+                    </p>
+                  ) : null}
                 </CardHeader>
-                <CardContent className="space-y-2 px-4 pb-5 pt-0 sm:px-5">
+                <CardContent className="space-y-4 px-4 pb-5 pt-0 sm:px-5">
                   <video
                     className="aspect-video w-full min-w-0 overflow-hidden rounded-lg border border-border/60 bg-black"
                     controls
                     src={video.fileUrl}
                     preload="metadata"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    {video.fileName ?? "—"} · {video.fileType ?? "—"}
-                  </p>
+                  <div className="grid gap-3 text-sm sm:grid-cols-2">
+                    <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2">
+                      <p className="text-[11px] font-medium text-muted-foreground">
+                        File name
+                      </p>
+                      <p className="mt-0.5 wrap-break-word font-medium text-foreground">
+                        {video.fileName ?? "—"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2">
+                      <p className="text-[11px] font-medium text-muted-foreground">
+                        Type
+                      </p>
+                      <p className="mt-0.5 font-medium text-foreground">
+                        {video.fileType ?? "—"}
+                        {video.fileCategory
+                          ? ` · ${String(video.fileCategory)}`
+                          : ""}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2">
+                      <p className="text-[11px] font-medium text-muted-foreground">
+                        Size
+                      </p>
+                      <p className="mt-0.5 font-medium text-foreground">
+                        {formatPackageFileSize(video.fileSize ?? null) || "—"}
+                      </p>
+                    </div>
+                    {video.uploadedBy ? (
+                      <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2">
+                        <p className="text-[11px] font-medium text-muted-foreground">
+                          Uploaded by
+                        </p>
+                        <p className="mt-0.5 font-medium text-foreground">
+                          {video.uploadedBy.firstName} {video.uploadedBy.lastName}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -1238,6 +1372,7 @@ function SummaryTile({ label, value }: { label: string; value: string }) {
 function PackageVideoSection({ pv }: { pv: PackageVideo }) {
   const asset = currentPackageAsset(pv)
   const url = asset?.fileUrl
+  const thumbs = asset?.thumbnails ?? []
   return (
     <Card className={shellCard}>
       <CardHeader className={shellHead}>
@@ -1254,6 +1389,18 @@ function PackageVideoSection({ pv }: { pv: PackageVideo }) {
             src={url}
             preload="metadata"
           />
+        ) : null}
+        {asset?.fileName ? (
+          <p className="text-xs text-muted-foreground">
+            {asset.fileName}
+            {asset.fileType ? ` · ${asset.fileType}` : ""}
+            {(() => {
+              const sz = formatPackageFileSize(
+                typeof asset.fileSize === "number" ? asset.fileSize : null
+              )
+              return sz ? ` · ${sz}` : ""
+            })()}
+          </p>
         ) : null}
         <div className="grid gap-3 text-sm sm:grid-cols-2">
           <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2">
@@ -1272,7 +1419,43 @@ function PackageVideoSection({ pv }: { pv: PackageVideo }) {
               {asset?.description ?? "—"}
             </p>
           </div>
+          {(asset?.doctorName?.trim() || asset?.specialty) && (
+            <>
+              {asset?.doctorName?.trim() ? (
+                <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2">
+                  <p className="text-[11px] font-medium text-muted-foreground">
+                    Doctor
+                  </p>
+                  <p className="mt-0.5 font-medium text-foreground">
+                    {asset.doctorName}
+                  </p>
+                </div>
+              ) : null}
+              {asset?.specialty ? (
+                <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2">
+                  <p className="text-[11px] font-medium text-muted-foreground">
+                    Specialty
+                  </p>
+                  <p className="mt-0.5 font-medium text-foreground">
+                    {String(asset.specialty).replace(/_/g, " ")}
+                  </p>
+                </div>
+              ) : null}
+            </>
+          )}
+          <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2 sm:col-span-2">
+            <p className="text-[11px] font-medium text-muted-foreground">Tags</p>
+            <div className="mt-2">
+              <TagPillList
+                tags={asset?.tags}
+                emptyLabel={
+                  <span className="text-muted-foreground">No tags</span>
+                }
+              />
+            </div>
+          </div>
         </div>
+        <AssetThumbnailsReadonlySection thumbnails={thumbs} />
         <div className="flex flex-wrap items-center gap-2">
           <WorkflowStatusBadge status={pv.status} />
           <span className="text-xs text-muted-foreground">
@@ -1285,8 +1468,15 @@ function PackageVideoSection({ pv }: { pv: PackageVideo }) {
 }
 
 function LanguageVideoSection({ lv }: { lv: LanguageVideo }) {
-  const asset = lv.assets?.find((a) => a.version === lv.currentVersion) ?? lv.assets?.[0]
+  const asset = currentLanguageVideoAsset(lv)
   const url = asset?.fileUrl
+  const thumbs = asset?.thumbnails ?? []
+  const fileSize =
+    typeof asset?.fileSize === "number"
+      ? asset.fileSize
+      : typeof asset?.fileSize === "string"
+        ? Number(asset.fileSize)
+        : null
   return (
     <Card className={shellCard}>
       <CardHeader className={shellHead}>
@@ -1295,7 +1485,7 @@ function LanguageVideoSection({ lv }: { lv: LanguageVideo }) {
           {lv.package?.language ?? "—"} · {lv.package?.name ?? lv.packageId}
         </p>
       </CardHeader>
-      <CardContent className="px-4 pb-5 pt-0 sm:px-5">
+      <CardContent className="space-y-4 px-4 pb-5 pt-0 sm:px-5">
         {url ? (
           <video
             className="aspect-video w-full min-w-0 overflow-hidden rounded-lg border border-border/60 bg-black"
@@ -1308,6 +1498,72 @@ function LanguageVideoSection({ lv }: { lv: LanguageVideo }) {
             No video file on this version.
           </p>
         )}
+        {asset?.fileName ? (
+          <p className="text-xs text-muted-foreground">
+            {asset.fileName}
+            {asset.fileType ? ` · ${asset.fileType}` : ""}
+            {formatPackageFileSize(Number.isFinite(fileSize) ? fileSize : null)
+              ? ` · ${formatPackageFileSize(Number.isFinite(fileSize) ? fileSize : null)}`
+              : ""}
+          </p>
+        ) : null}
+        <div className="grid gap-3 text-sm sm:grid-cols-2">
+          <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2">
+            <p className="text-[11px] font-medium text-muted-foreground">
+              Title
+            </p>
+            <p className="mt-0.5 font-medium text-foreground">
+              {asset?.title ?? "—"}
+            </p>
+          </div>
+          <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2 sm:col-span-2">
+            <p className="text-[11px] font-medium text-muted-foreground">
+              Description
+            </p>
+            <p className="mt-0.5 leading-relaxed text-muted-foreground">
+              {asset?.description ?? "—"}
+            </p>
+          </div>
+          {(asset?.doctorName?.trim() || asset?.specialty) && (
+            <>
+              {asset?.doctorName?.trim() ? (
+                <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2">
+                  <p className="text-[11px] font-medium text-muted-foreground">
+                    Doctor
+                  </p>
+                  <p className="mt-0.5 font-medium text-foreground">
+                    {asset.doctorName}
+                  </p>
+                </div>
+              ) : null}
+              {asset?.specialty ? (
+                <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2">
+                  <p className="text-[11px] font-medium text-muted-foreground">
+                    Specialty
+                  </p>
+                  <p className="mt-0.5 font-medium text-foreground">
+                    {String(asset.specialty).replace(/_/g, " ")}
+                  </p>
+                </div>
+              ) : null}
+            </>
+          )}
+          <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2 sm:col-span-2">
+            <p className="text-[11px] font-medium text-muted-foreground">Tags</p>
+            <div className="mt-2">
+              <TagPillList
+                tags={asset?.tags}
+                emptyLabel={
+                  <span className="text-muted-foreground">No tags</span>
+                }
+              />
+            </div>
+          </div>
+        </div>
+        <AssetThumbnailsReadonlySection thumbnails={thumbs} />
+        <div className="flex flex-wrap items-center gap-2">
+          <WorkflowStatusBadge status={lv.status} />
+        </div>
       </CardContent>
     </Card>
   )

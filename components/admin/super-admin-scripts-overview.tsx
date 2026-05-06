@@ -26,15 +26,18 @@ import { useAuthStore } from "@/store"
 import type { ScriptTimelineResponse } from "@/types/admin"
 import type { AdminContentItem } from "@/types/admin"
 import type { LanguagePackage, LanguageVideo } from "@/types/language-package"
-import type { FinalPackage, PackageVideo, PackageVideoAsset } from "@/types/package"
+import type {
+  FinalPackage,
+  PackageVideo,
+  PackageVideoAsset,
+} from "@/types/package"
 import type { Script } from "@/types/script"
 import type { Video } from "@/types/video"
 import { cn } from "@/lib/utils"
 
 const shellCard =
   "overflow-hidden border-border/80 shadow-none ring-1 ring-border/60"
-const shellHead =
-  "border-b border-border/60 bg-muted/20 px-4 py-3 sm:px-5"
+const shellHead = "border-b border-border/60 bg-muted/20 px-4 py-3 sm:px-5"
 const shellTitle = "text-sm font-medium tracking-tight text-foreground"
 
 function formatWhen(iso: string) {
@@ -168,49 +171,52 @@ export function SuperAdminScriptsOverview() {
     }
   }, [token])
 
-  const loadDetail = useCallback(async (scriptId: string) => {
-    if (!token) return
-    if (cacheRef.current[scriptId]) return
-    if (detailInflight.current.has(scriptId)) return
-    detailInflight.current.add(scriptId)
-    setLoadingDetail(scriptId)
-    try {
-      const [tl, sc, pkg, langs] = await Promise.all([
-        getScriptTimeline(token, scriptId).catch(() => null),
-        getScript(token, scriptId)
-          .then((r) => r.script)
-          .catch(() => null),
-        getPackageByScriptId(token, scriptId).catch(() => null),
-        getLanguagePackagesByScriptId(token, scriptId).catch(() => ({
-          data: [] as LanguagePackage[],
-        })),
-      ])
-      setCache((prev) => ({
-        ...prev,
-        [scriptId]: {
-          timeline: tl,
-          script: sc,
-          finalPackage: pkg?.package ?? null,
-          languagePackages: langs?.data ?? [],
-          error: null,
-        },
-      }))
-    } catch (e) {
-      setCache((prev) => ({
-        ...prev,
-        [scriptId]: {
-          timeline: null,
-          script: null,
-          finalPackage: null,
-          languagePackages: [],
-          error: e instanceof Error ? e.message : "Failed to load details",
-        },
-      }))
-    } finally {
-      detailInflight.current.delete(scriptId)
-      setLoadingDetail(null)
-    }
-  }, [token])
+  const loadDetail = useCallback(
+    async (scriptId: string) => {
+      if (!token) return
+      if (cacheRef.current[scriptId]) return
+      if (detailInflight.current.has(scriptId)) return
+      detailInflight.current.add(scriptId)
+      setLoadingDetail(scriptId)
+      try {
+        const [tl, sc, pkg, langs] = await Promise.all([
+          getScriptTimeline(token, scriptId).catch(() => null),
+          getScript(token, scriptId)
+            .then((r) => r.script)
+            .catch(() => null),
+          getPackageByScriptId(token, scriptId).catch(() => null),
+          getLanguagePackagesByScriptId(token, scriptId).catch(() => ({
+            data: [] as LanguagePackage[],
+          })),
+        ])
+        setCache((prev) => ({
+          ...prev,
+          [scriptId]: {
+            timeline: tl,
+            script: sc,
+            finalPackage: pkg?.package ?? null,
+            languagePackages: langs?.data ?? [],
+            error: null,
+          },
+        }))
+      } catch (e) {
+        setCache((prev) => ({
+          ...prev,
+          [scriptId]: {
+            timeline: null,
+            script: null,
+            finalPackage: null,
+            languagePackages: [],
+            error: e instanceof Error ? e.message : "Failed to load details",
+          },
+        }))
+      } finally {
+        detailInflight.current.delete(scriptId)
+        setLoadingDetail(null)
+      }
+    },
+    [token]
+  )
 
   const handleToggle = useCallback(
     (id: string) => {
@@ -230,9 +236,9 @@ export function SuperAdminScriptsOverview() {
         <div>
           <AdminSectionTitle>Every script — Phases 1–7</AdminSectionTitle>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            One row per script. Expand to load script copy, admin audit timeline,
-            first-line-up / first-cut videos, final English package, and language
-            packages (whatever exists on the server).
+            One row per script. Expand to load script copy, admin audit
+            timeline, first-line-up / first-cut videos, final English package,
+            and language packages (whatever exists on the server).
           </p>
         </div>
         {!listLoading && (
@@ -256,7 +262,9 @@ export function SuperAdminScriptsOverview() {
       {listLoading ? (
         <div className="flex items-center justify-center gap-2 rounded-xl border border-border/60 bg-muted/10 py-16">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">Loading scripts…</span>
+          <span className="text-sm text-muted-foreground">
+            Loading scripts…
+          </span>
         </div>
       ) : items.length === 0 ? (
         <Card className={shellCard}>
@@ -293,7 +301,10 @@ export function SuperAdminScriptsOverview() {
                         {row.title || "Untitled"}
                       </span>
                       <WorkflowStatusBadge status={row.status} />
-                      <Badge variant="outline" className="text-[10px] font-normal">
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] font-normal"
+                      >
                         v{row.version ?? "—"}
                       </Badge>
                     </div>
@@ -310,7 +321,7 @@ export function SuperAdminScriptsOverview() {
                 </button>
 
                 {expanded && (
-                  <CardContent className="space-y-6 border-t border-border/60 px-4 pb-6 pt-4 sm:px-5">
+                  <CardContent className="space-y-6 border-t border-border/60 px-4 pt-4 pb-6 sm:px-5">
                     {loadingDetail === sid && !bundle && (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Loader2 className="size-4 animate-spin" />
@@ -358,7 +369,7 @@ export function SuperAdminScriptsOverview() {
                                     Insight
                                   </CardTitle>
                                 </CardHeader>
-                                <CardContent className="px-4 pb-5 pt-0 text-sm leading-relaxed text-muted-foreground sm:px-5">
+                                <CardContent className="px-4 pt-0 pb-5 text-sm leading-relaxed text-muted-foreground sm:px-5">
                                   {bundle.script.insight}
                                 </CardContent>
                               </Card>
@@ -369,7 +380,7 @@ export function SuperAdminScriptsOverview() {
                                   Script body
                                 </CardTitle>
                               </CardHeader>
-                              <CardContent className="px-4 pb-5 pt-0 sm:px-5">
+                              <CardContent className="px-4 pt-0 pb-5 sm:px-5">
                                 {bundle.script.content?.trim() ? (
                                   <div
                                     className="script-admin-html max-w-none rounded-lg border border-border/60 bg-background/50 p-4 text-sm leading-relaxed [&_a]:text-primary [&_p]:my-2"
@@ -401,10 +412,13 @@ export function SuperAdminScriptsOverview() {
                                     Latest rejection (script)
                                   </CardTitle>
                                 </CardHeader>
-                                <CardContent className="space-y-2 px-4 pb-5 pt-0 text-sm sm:px-5">
+                                <CardContent className="space-y-2 px-4 pt-0 pb-5 text-sm sm:px-5">
                                   <p className="text-xs text-muted-foreground">
                                     {bundle.script.latestRejection.rejectedBy} ·{" "}
-                                    {bundle.script.latestRejection.stageAtReview}{" "}
+                                    {
+                                      bundle.script.latestRejection
+                                        .stageAtReview
+                                    }{" "}
                                     ·{" "}
                                     {formatWhen(
                                       bundle.script.latestRejection.reviewedAt
@@ -445,7 +459,7 @@ export function SuperAdminScriptsOverview() {
                                       {v.id} · v{v.version}
                                     </p>
                                   </CardHeader>
-                                  <CardContent className="space-y-3 px-4 pb-5 pt-0 sm:px-5">
+                                  <CardContent className="space-y-3 px-4 pt-0 pb-5 sm:px-5">
                                     {v.fileUrl ? (
                                       <video
                                         className="aspect-video w-full max-w-3xl overflow-hidden rounded-lg border border-border/60 bg-black"
@@ -479,7 +493,9 @@ export function SuperAdminScriptsOverview() {
                                             · {r.reviewerType} ·{" "}
                                             {formatWhen(r.reviewedAt)}
                                             {r.comments ? (
-                                              <p className="mt-1">{r.comments}</p>
+                                              <p className="mt-1">
+                                                {r.comments}
+                                              </p>
                                             ) : null}
                                           </div>
                                         ))}
@@ -528,19 +544,20 @@ export function SuperAdminScriptsOverview() {
                                   <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
                                     <span>
                                       Created{" "}
-                                      {formatWhen(bundle.finalPackage.createdAt)}
+                                      {formatWhen(
+                                        bundle.finalPackage.createdAt
+                                      )}
                                     </span>
                                     <span>
                                       Updated{" "}
-                                      {formatWhen(bundle.finalPackage.updatedAt)}
+                                      {formatWhen(
+                                        bundle.finalPackage.updatedAt
+                                      )}
                                     </span>
                                   </div>
                                   {(bundle.finalPackage.videos ?? []).map(
                                     (pv) => (
-                                      <Phase6VideoCard
-                                        key={pv.id}
-                                        pv={pv}
-                                      />
+                                      <Phase6VideoCard key={pv.id} pv={pv} />
                                     )
                                   )}
                                 </CardContent>
@@ -568,7 +585,10 @@ export function SuperAdminScriptsOverview() {
                                   <CardHeader className={shellHead}>
                                     <CardTitle className={shellTitle}>
                                       {lp.name}{" "}
-                                      <Badge variant="secondary" className="ml-2 font-normal">
+                                      <Badge
+                                        variant="secondary"
+                                        className="ml-2 font-normal"
+                                      >
                                         {String(lp.language)}
                                       </Badge>
                                     </CardTitle>
@@ -626,9 +646,7 @@ export function SuperAdminScriptsOverview() {
             variant="outline"
             size="sm"
             disabled={page >= totalPages}
-            onClick={() =>
-              setPage((p) => (p < totalPages ? p + 1 : p))
-            }
+            onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
           >
             Next
           </Button>
@@ -685,9 +703,7 @@ function Phase6VideoCard({ pv }: { pv: PackageVideo }) {
               Tags
             </p>
             <p className="text-muted-foreground">
-              {asset?.tags?.length
-                ? asset.tags.join(", ")
-                : "—"}
+              {asset?.tags?.length ? asset.tags.join(", ") : "—"}
             </p>
           </div>
           <div>
@@ -720,7 +736,7 @@ function Phase6VideoCard({ pv }: { pv: PackageVideo }) {
                     alt={t.fileName}
                     className="aspect-video h-auto w-full object-cover"
                   />
-                  <span className="absolute bottom-0 left-0 right-0 bg-background/90 px-1 py-0.5 text-[9px] text-muted-foreground">
+                  <span className="absolute right-0 bottom-0 left-0 bg-background/90 px-1 py-0.5 text-[9px] text-muted-foreground">
                     {t.status}
                   </span>
                 </div>
@@ -802,7 +818,7 @@ function Phase7VideoCard({ lv }: { lv: LanguageVideo }) {
                 alt={t.fileName}
                 className="aspect-video h-auto w-full object-cover"
               />
-              <span className="absolute bottom-0 left-0 right-0 bg-background/90 px-0.5 text-[8px]">
+              <span className="absolute right-0 bottom-0 left-0 bg-background/90 px-0.5 text-[8px]">
                 {t.status}
               </span>
             </div>
