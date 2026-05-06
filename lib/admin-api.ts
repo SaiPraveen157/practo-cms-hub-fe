@@ -71,10 +71,9 @@ export async function getPipelineMetrics(
   period: PipelinePeriod = "month"
 ): Promise<PipelineResponse> {
   const q = new URLSearchParams({ period })
-  return apiRequest<PipelineResponse>(
-    `/api/admin/pipeline?${q.toString()}`,
-    { token }
-  )
+  return apiRequest<PipelineResponse>(`/api/admin/pipeline?${q.toString()}`, {
+    token,
+  })
 }
 
 export type AdminContentQuery = {
@@ -90,10 +89,7 @@ export type AdminContentQuery = {
   sort?: AdminContentSort
 }
 
-export async function getAdminContent(
-  token: string,
-  query: AdminContentQuery = {}
-): Promise<AdminContentResponse> {
+function adminContentQueryString(query: AdminContentQuery): string {
   const q = new URLSearchParams()
   if (query.search) q.set("search", query.search)
   if (query.status) q.set("status", query.status)
@@ -105,9 +101,29 @@ export async function getAdminContent(
   if (query.page != null) q.set("page", String(query.page))
   if (query.limit != null) q.set("limit", String(query.limit))
   if (query.sort) q.set("sort", query.sort)
-  const qs = q.toString()
+  return q.toString()
+}
+
+export async function getAdminContent(
+  token: string,
+  query: AdminContentQuery = {}
+): Promise<AdminContentResponse> {
+  const qs = adminContentQueryString(query)
   const raw = await apiRequest<unknown>(
     `/api/admin/content${qs ? `?${qs}` : ""}`,
+    { token }
+  )
+  return coerceAdminContentResponse(raw)
+}
+
+/** Same query/response as {@link getAdminContent}; use for non–Super Admin roles (`view_content`). */
+export async function getContentLibrary(
+  token: string,
+  query: AdminContentQuery = {}
+): Promise<AdminContentResponse> {
+  const qs = adminContentQueryString(query)
+  const raw = await apiRequest<unknown>(
+    `/api/content-library${qs ? `?${qs}` : ""}`,
     { token }
   )
   return coerceAdminContentResponse(raw)

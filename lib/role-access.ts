@@ -6,12 +6,7 @@ import type { RouteKey } from "./routes"
  * Add or remove route keys to change what appears in the sidebar.
  */
 export const ROLE_ACCESS: Record<UserRole, RouteKey[]> = {
-  SUPER_ADMIN: [
-    "DASHBOARD",
-    "CONTENT_LIBRARY",
-    "REVIEW_QUEUE",
-    "USERS",
-  ],
+  SUPER_ADMIN: ["DASHBOARD", "CONTENT_LIBRARY", "REVIEW_QUEUE", "USERS"],
 
   MEDICAL_AFFAIRS: [
     "MEDICAL_AFFAIRS_SCRIPTS",

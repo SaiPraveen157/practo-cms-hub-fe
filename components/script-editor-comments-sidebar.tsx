@@ -93,7 +93,6 @@ export function ScriptEditorCommentsSidebar({
   emptyListHint,
 }: ScriptEditorCommentsSidebarProps) {
   const [filter, setFilter] = useState<FilterTab>("all")
-  /** Bumps when the ProseMirror doc changes so we re-merge doc order with `feedbackStickers`. */
   const [docTick, setDocTick] = useState(0)
   const listScrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -134,7 +133,7 @@ export function ScriptEditorCommentsSidebar({
       }
     }
     return out
-  }, [editor, docTick, feedbackStickers])
+  }, [editor, feedbackStickers])
 
   const filteredIds = useMemo(() => {
     return orderedIds.filter((id) => {

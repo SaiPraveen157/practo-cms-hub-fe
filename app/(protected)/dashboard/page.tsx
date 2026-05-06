@@ -47,7 +47,7 @@ function StatCard({
       <CardContent className="flex flex-row items-center justify-between gap-4 p-4">
         <div className="min-w-0 space-y-1">
           <p className="text-sm font-medium text-muted-foreground">{label}</p>
-          <p className="text-2xl font-bold tabular-nums tracking-tight">
+          <p className="text-2xl font-bold tracking-tight tabular-nums">
             {value}
           </p>
           {hint ? (
@@ -70,13 +70,11 @@ function StatCard({
 
 function buildStats(overview: AdminOverviewResponse) {
   const v = overview.videos
-  const videoTotal =
-    (v?.firstLineUp?.total ?? 0) + (v?.firstCut?.total ?? 0)
+  const videoTotal = (v?.firstLineUp?.total ?? 0) + (v?.firstCut?.total ?? 0)
   const videoOverdue =
     (v?.firstLineUp?.overdue ?? 0) + (v?.firstCut?.overdue ?? 0)
   const pkgTotal =
-    (overview.packages?.total ?? 0) +
-    (overview.languagePackages?.total ?? 0)
+    (overview.packages?.total ?? 0) + (overview.languagePackages?.total ?? 0)
 
   return [
     {
@@ -182,12 +180,17 @@ export default function DashboardPage() {
                 End-to-end script command center
               </p>
               <p className="text-sm text-muted-foreground">
-                Expand any script below for Phases 1–7 in one place — script body,
-                FLU/FC videos, final package, language packages, and the admin audit
-                timeline — or open the content library for filters.
+                Expand any script below for Phases 1–7 in one place — script
+                body, FLU/FC videos, final package, language packages, and the
+                admin audit timeline — or open the content library for filters.
               </p>
             </div>
-            <Button variant="secondary" size="sm" className="shrink-0 gap-1.5" asChild>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="shrink-0 gap-1.5"
+              asChild
+            >
               <Link href="/content-library?phase=SCRIPT">
                 <Layers className="size-4" aria-hidden />
                 Choose script in library
@@ -233,26 +236,42 @@ export default function DashboardPage() {
           <section className="space-y-3">
             <AdminSectionTitle>Video pipeline (Phases 4–5)</AdminSectionTitle>
             <p className="text-sm text-muted-foreground">
-              First line up and first cut cuts live here. Open the content library
-              filtered by phase to review rows and previews.
+              First line up and first cut cuts live here. Open the content
+              library filtered by phase to review rows and previews.
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <Card className="border-border/80 shadow-none ring-1 ring-border/60">
                 <CardContent className="space-y-3 p-4 sm:p-5">
                   <div className="flex items-center gap-2">
-                    <Film className="size-4 text-muted-foreground" aria-hidden />
+                    <Film
+                      className="size-4 text-muted-foreground"
+                      aria-hidden
+                    />
                     <p className="text-sm font-medium">First line up</p>
                   </div>
-                  <p className="text-3xl font-bold tabular-nums tracking-tight">
+                  <p className="text-3xl font-bold tracking-tight tabular-nums">
                     {overview.videos.firstLineUp.total}
                   </p>
                   <ul className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                    <li>Awaiting upload: {overview.videos.firstLineUp.awaitingUpload}</li>
-                    <li>Medical review: {overview.videos.firstLineUp.medicalReview}</li>
-                    <li>Brand review: {overview.videos.firstLineUp.brandReview}</li>
+                    <li>
+                      Awaiting upload:{" "}
+                      {overview.videos.firstLineUp.awaitingUpload}
+                    </li>
+                    <li>
+                      Medical review:{" "}
+                      {overview.videos.firstLineUp.medicalReview}
+                    </li>
+                    <li>
+                      Brand review: {overview.videos.firstLineUp.brandReview}
+                    </li>
                     <li>Approved: {overview.videos.firstLineUp.approved}</li>
                   </ul>
-                  <Button variant="outline" size="sm" className="w-full sm:w-auto" asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full sm:w-auto"
+                    asChild
+                  >
                     <Link href="/content-library?phase=FIRST_LINE_UP">
                       View in content library
                     </Link>
@@ -262,19 +281,33 @@ export default function DashboardPage() {
               <Card className="border-border/80 shadow-none ring-1 ring-border/60">
                 <CardContent className="space-y-3 p-4 sm:p-5">
                   <div className="flex items-center gap-2">
-                    <Film className="size-4 text-muted-foreground" aria-hidden />
+                    <Film
+                      className="size-4 text-muted-foreground"
+                      aria-hidden
+                    />
                     <p className="text-sm font-medium">First cut</p>
                   </div>
-                  <p className="text-3xl font-bold tabular-nums tracking-tight">
+                  <p className="text-3xl font-bold tracking-tight tabular-nums">
                     {overview.videos.firstCut.total}
                   </p>
                   <ul className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                    <li>Awaiting upload: {overview.videos.firstCut.awaitingUpload}</li>
-                    <li>Medical review: {overview.videos.firstCut.medicalReview}</li>
-                    <li>Brand review: {overview.videos.firstCut.brandReview}</li>
+                    <li>
+                      Awaiting upload: {overview.videos.firstCut.awaitingUpload}
+                    </li>
+                    <li>
+                      Medical review: {overview.videos.firstCut.medicalReview}
+                    </li>
+                    <li>
+                      Brand review: {overview.videos.firstCut.brandReview}
+                    </li>
                     <li>Approved: {overview.videos.firstCut.approved}</li>
                   </ul>
-                  <Button variant="outline" size="sm" className="w-full sm:w-auto" asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full sm:w-auto"
+                    asChild
+                  >
                     <Link href="/content-library?phase=FIRST_CUT">
                       View in content library
                     </Link>
@@ -315,9 +348,7 @@ export default function DashboardPage() {
             </Card>
             <Card
               className={cn(
-                overdueTotal > 0
-                  ? "border-destructive/40 bg-destructive/5"
-                  : ""
+                overdueTotal > 0 ? "border-destructive/40 bg-destructive/5" : ""
               )}
             >
               <CardContent className="flex items-center gap-3 p-4">
@@ -336,9 +367,7 @@ export default function DashboardPage() {
                     {overdueTotal}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {overdueTotal > 0
-                      ? "Items past TAT"
-                      : "Nothing overdue"}
+                    {overdueTotal > 0 ? "Items past TAT" : "Nothing overdue"}
                   </p>
                 </div>
               </CardContent>
